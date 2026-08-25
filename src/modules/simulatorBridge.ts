@@ -1,0 +1,301 @@
+/**
+ * simulatorBridge.ts
+ * ---------------------------------------------------------
+ * Bridge between Alpha-new (agents / personal assistant)
+ * and heavt-guard-simulator (trading platform).
+ *
+ * Architecture
+ * ────────────
+ * The simulator runs on its own origin (Render / Replit) and
+ * exposes a typed REST API (openapi.yaml in lib/api-spec).
+ * This module is a thin, typed HTTP client that wraps those
+ * endpoints so every agent in agents/App.jsx can call them
+ * as plain async functions, without knowing the URL or auth.
+ *
+ * Config (stored in localStorage, never hard-coded):
+ *   alpha:sim:url    – base URL of the simulator backend
+ *                      e.g. "https://heavt-guard-simulator-1.onrender.com"
+ *   alpha:sim:apiKey – optional Bearer token if the simulator
+ *                      is deployed with auth enabled
+ *
+ * Usage in agents/App.jsx:
+ *   import { sim } from "../src/modules/simulatorBridge";
+ *
+ *   // Read live market data
+ *   const data = await sim.getBinanceMulti();
+ *
+ *   // Let the JARVIS / Alpha assistant answer a market question
+ *   const ctx = await sim.getMarketContext(); // returns a string
+ *   // → pass ctx into the Gemini/Claude prompt as extra context
+ */
+
+// Compile-time flag, injected by vite.config.ts's `define` — true only in
+// the `npm run build:render` output, where a Render Rewrite Rule proxies
+// /api/* to the simulator's Node service same-origin. Always false in the
+// default GitHub Pages build.
+declare const __COMBINED_DEPLOY__: boolean;
+
+/* ── Config helpers ─────────────────────────────────────── */
+
+const K_URL = "alpha:sim:url";
+const K_KEY = "alpha:sim:apiKey";
+
+export function getSimUrl(): string {
+  const stored = (localStorage.getItem(K_URL) || "").replace(/\/$/, "");
+  if (stored) return stored;
+  // build:render deployment: a Render Static Site with a Rewrite Rule
+  // proxying /api/* to the simulator's Node service (see
+  // README-combined-deploy.md) — no URL needs to be typed into Settings at
+  // all, same-origin is always correct there. The default GitHub Pages
+  // build never sets this flag and falls through to "" as before.
+  if (__COMBINED_DEPLOY__ && typeof location !== "undefined") {
+    return location.origin;
+  }
+  return "";
+}
+export function setSimUrl(url: string): void {
+  localStorage.setItem(K_URL, url.trim());
+}
+export function getSimApiKey(): string {
+  return localStorage.getItem(K_KEY) || "";
+}
+export function setSimApiKey(key: string): void {
+  localStorage.setItem(K_KEY, key.trim());
+}
+export function isSimConfigured(): boolean {
+  return getSimUrl().startsWith("http");
+}
+
+/* ── Low-level fetch wrapper ────────────────────────────── */
+
+async function simFetch<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const base = getSimUrl();
+  if (!base) throw new Error("Simulator URL not configured. Set it in Settings.");
+  const key = getSimApiKey();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(key ? { Authorization: `Bearer ${key}` } : {}),
+    ...(options.headers as Record<string, string> | undefined),
+  };
+  const res = await fetch(`${base}/api${path}`, { ...options, headers });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText);
+    throw new Error(`Simulator API ${path} → ${res.status}: ${msg}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+/* ── Shared types (minimal mirror of openapi.yaml schemas) ─ */
+
+export interface BinanceData {
+  symbol: string;
+  markPrice: string;
+  lastFundingRate: string;
+  nextFundingTime: number;
+  time: number;
+}
+
+export interface ScalpSignal {
+  symbol: string;
+  direction: "LONG" | "SHORT";
+  confidence: number;
+  entry: number;
+  sl: number;
+  tp: number;
+  rsi: number;
+  reasoning?: string;
+}
+
+export interface MomentumCoin {
+  symbol: string;
+  rvol: number;
+  roc: number;
+  price: number;
+  direction: "LONG" | "SHORT";
+}
+
+export interface FuturesOrder {
+  symbol: string;
+  side: "BUY" | "SELL";
+  type: "MARKET" | "LIMIT";
+  quantity: number;
+  price?: number;
+  leverage?: number;
+}
+
+export interface FuturesPosition {
+  symbol: string;
+  positionAmt: string;
+  entryPrice: string;
+  unRealizedProfit: string;
+  leverage: string;
+  marginType: string;
+}
+
+export interface UserState {
+  [slot: string]: unknown;
+}
+
+export interface MarketOverview {
+  fearGreed?: { value: number; classification: string };
+  topMovers?: { symbol: string; priceChangePercent: string }[];
+  dominance?: { btc: number; eth: number };
+}
+
+/* ── Public API surface ─────────────────────────────────── */
+
+export const sim = {
+  /* ── Health ── */
+
+  /** Returns true when the simulator server is reachable. */
+  async ping(): Promise<boolean> {
+    try {
+      await simFetch<{ status: string }>("/healthz");
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  /* ── Market data ── */
+
+  /** Live Binance Futures mark price + funding rate for one symbol. */
+  getBinanceData(symbol = "BTCUSDT"): Promise<BinanceData> {
+    return simFetch(`/crypto/binance?symbol=${symbol}`);
+  },
+
+  /** Live data for BTC, ETH, SOL, BNB in one call. */
+  getBinanceMulti(): Promise<BinanceData[]> {
+    return simFetch("/crypto/binance/multi");
+  },
+
+  /** Market overview: Fear & Greed, top movers, BTC dominance. */
+  getMarketOverview(): Promise<MarketOverview> {
+    return simFetch("/crypto/overview");
+  },
+
+  /** Scalp signals (RSI/EMA/ATR on 15m top-30 coins). */
+  getScalpSignals(): Promise<ScalpSignal[]> {
+    return simFetch("/crypto/scalp");
+  },
+
+  /** Momentum surge scanner (5m RVol/ROC). */
+  getMomentumCoins(): Promise<MomentumCoin[]> {
+    return simFetch("/crypto/momentum");
+  },
+
+  /* ── User state ── */
+
+  /** Read the simulator user's persisted state (settings, wallet). */
+  getUserState(): Promise<UserState> {
+    return simFetch("/user/state");
+  },
+
+  /** Write/merge the simulator user's state. */
+  putUserState(patch: UserState): Promise<UserState> {
+    return simFetch("/user/state", {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    });
+  },
+
+  /* ── Convenience: AI market context ── */
+
+  /**
+   * Build a short natural-language context string that can be injected
+   * into an AI prompt so Alpha / the agents can answer trading questions
+   * grounded in live simulator data.
+   *
+   * Example output (English):
+   *   "Live market snapshot (paper trading):
+   *    BTC $67,420 | funding +0.01% | Fear & Greed 72 (Greed)
+   *    Top scalp signal: ETHUSDT LONG @ 3,480 (conf 87%)"
+   */
+  async getMarketContext(): Promise<string> {
+    try {
+      const [multi, overview, scalp, momentum] = await Promise.allSettled([
+        sim.getBinanceMulti(),
+        sim.getMarketOverview(),
+        sim.getScalpSignals(),
+        sim.getMomentumCoins(),
+      ]);
+
+      const prices =
+        multi.status === "fulfilled"
+          ? multi.value
+              .map(
+                (d) =>
+                  `${d.symbol.replace("USDT", "")} $${parseFloat(d.markPrice).toLocaleString()}`
+              )
+              .join(" | ")
+          : "prices unavailable";
+
+      const fg =
+        overview.status === "fulfilled" && overview.value.fearGreed
+          ? ` | Fear & Greed ${overview.value.fearGreed.value} (${overview.value.fearGreed.classification})`
+          : "";
+
+      const topSignal =
+        scalp.status === "fulfilled" && scalp.value.length > 0
+          ? ` | Top signal: ${scalp.value[0].symbol} ${scalp.value[0].direction} @ ${scalp.value[0].entry} (conf ${Math.round(scalp.value[0].confidence * 100)}%)`
+          : "";
+
+      const topMomentum =
+        momentum.status === "fulfilled" && momentum.value.length > 0
+          ? ` | Momentum: ${momentum.value[0].symbol} ${momentum.value[0].direction} (RVol ${momentum.value[0].rvol.toFixed(1)}x)`
+          : "";
+
+      return `Live market snapshot (Reuven's trading fleet, paper simulator):\n${prices}${fg}${topSignal}${topMomentum}`;
+    } catch (e) {
+      return `Simulator unavailable: ${(e as Error).message}`;
+    }
+  },
+};
+
+/* ── Agent tool definitions (for use in agents/App.jsx) ─── */
+
+/**
+ * AGENT_TOOLS — drop these into the tool definitions array of any
+ * agent that should be able to operate the trading simulator.
+ *
+ * Usage in agents/App.jsx:
+ *
+ *   import { AGENT_TOOLS, handleAgentToolCall } from "../src/modules/simulatorBridge";
+ *
+ *   // Inside an agent's system prompt or tool list:
+ *   tools: [...existingTools, ...AGENT_TOOLS]
+ *
+ *   // In the tool-call handler:
+ *   const result = await handleAgentToolCall(toolName, toolInput);
+ */
+export const AGENT_TOOLS = [
+  {
+    name: "sim_market_context",
+    description:
+      "Get a live market snapshot from the HeavyGuard trading simulator: prices, Fear & Greed, and top scalp signal. Call this before answering any trading question.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+];
+
+/** Handle a tool call coming back from the LLM for simulator tools. */
+export async function handleAgentToolCall(
+  name: string,
+  _input: Record<string, unknown>
+): Promise<string> {
+  if (!isSimConfigured()) {
+    return "Simulator not connected. Ask the owner to set the Simulator URL in Settings.";
+  }
+  try {
+    switch (name) {
+      case "sim_market_context":
+        return await sim.getMarketContext();
+      default:
+        return `Unknown simulator tool: ${name}`;
+    }
+  } catch (e) {
+    return `Simulator error: ${(e as Error).message}`;
+  }
+}

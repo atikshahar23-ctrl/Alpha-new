@@ -1,0 +1,1983 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<script>
+/* Same cache/service-worker purge index.html already does. Without it an
+   iPad can keep serving a stale copy of THIS page, which then loads an old
+   JS bundle — the reason freshly-shipped fixes appeared not to work on
+   device even though the deploy had gone out. */
+(function(){
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});
+  }
+  if('caches' in window){
+    caches.keys().then(function(ks){ks.forEach(function(k){caches.delete(k);});}).catch(function(){});
+  }
+})();
+</script>
+
+<title>OCTOPUS · מנוע חדשות עתידני</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<!-- non-blocking: media=print keeps the webfont off the critical path (it was holding first paint hostage on slow/cellular iPads); onload swaps it in -->
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet"></noscript>
+<style>
+:root{
+  --bg:#04060d; --cyan:#00f0ff; --magenta:#ff2fd6; --gold:#ffd166;
+  --up:#00ffa6; --down:#ff3d6e;
+  --panel:rgba(8,14,30,.82); --panel2:rgba(5,9,20,.66);
+  --line:rgba(0,240,255,.24); --txt:#d9f4ff; --dim:#6d90a8;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg)}
+body{font-family:'Heebo','Segoe UI',sans-serif;color:var(--txt);min-height:100vh;min-height:100dvh;
+  background:
+    radial-gradient(60% 40% at 80% -5%, rgba(255,47,214,.10), transparent 70%),
+    radial-gradient(55% 45% at 10% 0%, rgba(0,240,255,.10), transparent 70%),
+    var(--bg)}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(0,240,255,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,240,255,.03) 1px, transparent 1px);
+  background-size:44px 44px;
+  mask-image:radial-gradient(ellipse 90% 60% at 50% 0%, black 10%, transparent 80%)}
+.num{direction:ltr;unicode-bidi:isolate;font-family:'Orbitron',monospace}
+.clip{clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px)}
+.panel{background:linear-gradient(150deg,var(--panel),var(--panel2));
+  border:1px solid var(--line);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:0 0 26px rgba(0,240,255,.08)}
+.wrap{position:relative;z-index:1;max-width:860px;margin:0 auto;padding:14px 14px 60px}
+
+/* header */
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px;margin-bottom:14px}
+.brand{display:flex;align-items:center;gap:11px}
+.brand .oct{font-size:30px;filter:drop-shadow(0 0 12px rgba(255,47,214,.6))}
+.brand .tt{line-height:1.1}
+.brand .name{font-family:'Orbitron',monospace;font-weight:900;font-size:21px;letter-spacing:3px;direction:ltr;
+  background:linear-gradient(90deg,var(--magenta),#ff8af0 45%,var(--cyan));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.brand .sub{font-size:11px;color:var(--dim);letter-spacing:1px}
+#arms{display:flex;gap:5px;margin-inline-start:auto;align-items:center}
+#arms .arm{width:9px;height:9px;border-radius:50%;background:rgba(109,144,168,.35);transition:all .3s}
+#arms .arm.ok{background:var(--up);box-shadow:0 0 8px var(--up)}
+#arms .arm.sim{background:var(--gold);box-shadow:0 0 8px var(--gold)}
+#armsLbl{font-size:10px;color:var(--dim);letter-spacing:1px;margin-inline-start:7px}
+.home-btn{flex:none;display:flex;align-items:center;gap:6px;padding:8px 13px;
+  font-size:13px;font-weight:700;color:var(--gold);text-decoration:none;
+  border:1px solid rgba(255,209,102,.4);background:rgba(6,12,26,.6);cursor:pointer;transition:all .15s}
+.home-btn:hover{border-color:var(--gold);box-shadow:0 0 14px rgba(255,209,102,.3)}
+#refreshBtn{border:1px solid var(--line);background:rgba(6,12,26,.6);color:var(--txt);cursor:pointer;
+  font-family:'Heebo',sans-serif;font-size:12px;font-weight:600;padding:7px 13px;
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+#refreshBtn:hover{border-color:var(--cyan);color:var(--cyan)}
+#refreshBtn.spin{color:var(--cyan);pointer-events:none}
+.icon-btn{flex:none;display:flex;align-items:center;justify-content:center;width:34px;height:34px;
+  color:var(--cyan);border:1px solid var(--line);background:rgba(6,12,26,.6);cursor:pointer;font-size:15px;
+  transition:all .15s;padding:0}
+.icon-btn:hover{border-color:var(--cyan);box-shadow:0 0 14px rgba(0,240,255,.3)}
+.icon-btn.on{background:rgba(0,240,255,.15)}
+/* top headlines — the "front page" strip: #1 story huge, the rest ranked */
+#headlines{padding:14px 18px;margin-bottom:14px;border-color:rgba(255,209,102,.35)}
+#headlines .hl-h{font-size:12px;letter-spacing:1.5px;color:var(--gold);font-weight:800;margin-bottom:10px;display:flex;align-items:baseline;gap:10px}
+#headlines .hl-sub{font-size:10px;color:var(--dim);font-weight:400;letter-spacing:.3px}
+.hl-item{display:flex;align-items:baseline;gap:10px;padding:7px 0;cursor:pointer;border-bottom:1px solid rgba(255,209,102,.12)}
+.hl-item:last-child{border-bottom:none}
+.hl-item .hl-rank{flex:none;font-family:'Orbitron',monospace;font-size:13px;color:var(--gold);width:22px;text-align:center}
+.hl-item .hl-t{font-size:14px;font-weight:700;color:var(--txt);line-height:1.35}
+.hl-item:hover .hl-t{color:var(--gold)}
+.hl-item.first .hl-t{font-size:19px;font-weight:800}
+.hl-item .hl-meta{flex:none;margin-inline-start:auto;font-size:10px;color:var(--dim);white-space:nowrap}
+.hl-item .hl-x{color:var(--cyan);font-weight:700}
+.tr-mark{font-size:10px;opacity:.55;margin-inline-start:3px}
+.voice-btn{flex:none;margin-inline-start:auto;background:rgba(138,92,255,.12);border:1px solid rgba(138,92,255,.4);
+  color:#c9b3ff;font-size:13px;cursor:pointer;padding:4px 9px;border-radius:4px;line-height:1}
+.voice-btn:hover{border-color:#8a5cff;color:#fff}
+.voice-btn.speaking{background:rgba(138,92,255,.32);box-shadow:0 0 12px rgba(138,92,255,.5);animation:pulse 1s infinite}
+#headlines .hl-h .voice-btn{margin-inline-start:auto}
+#timeRow{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
+.c-new{font-size:10px;font-weight:800;color:var(--up);padding:2px 7px;border:1px solid rgba(0,255,166,.45);letter-spacing:.5px}
+.tl-row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12px;border-bottom:1px solid rgba(0,240,255,.08)}
+.tl-row .tl-when{color:var(--dim);font-size:10.5px;flex:none;width:74px}
+.tl-row .tl-lag{margin-inline-start:auto;font-size:10.5px;color:var(--gold)}
+#hotEntities{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px;align-items:center}
+#hotEntities .he-lbl{font-size:10px;color:var(--gold);letter-spacing:.5px;font-weight:700}
+#hotEntities .he-chip{font-size:11px;font-weight:600;cursor:pointer;padding:3px 9px;color:var(--txt);
+  background:rgba(255,209,102,.07);border:1px solid rgba(255,209,102,.25);transition:all .15s}
+#hotEntities .he-chip b{color:var(--gold);margin-inline-start:4px;font-size:10px}
+#hotEntities .he-chip:hover{border-color:var(--gold)}
+body.compact .cluster{padding:8px 12px;margin-bottom:6px}
+body.compact .cluster h3{font-size:13px;margin:2px 0}
+body.compact .ana-intel{margin:10px 0;padding:10px 12px;border:1px solid rgba(0,240,255,.22);border-radius:10px;background:rgba(0,240,255,.04)}
+.ana-intel .ai-h{font-weight:800;font-size:12px;color:var(--cyan);margin-bottom:8px}
+.ana-intel .ai-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:5px}
+.ana-intel .ai-grid span{display:flex;flex-direction:column;gap:1px;padding:5px 7px;border-radius:6px;background:rgba(0,0,0,.25);font-size:10px;color:var(--dim)}
+.ana-intel .ai-grid b{font-size:13px;color:var(--txt);font-family:'JetBrains Mono',monospace}
+.ana-intel .ai-outlets{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.ana-intel .ai-warn{margin-top:8px;padding:6px 9px;border-radius:7px;background:rgba(255,209,102,.1);color:#ffd166;font-size:11px;line-height:1.6}
+.ana-intel .ai-run{margin-top:8px;padding:6px 9px;border-radius:7px;background:rgba(0,240,255,.08);color:#9be8ff;font-size:11px;line-height:1.6}
+.ana-intel .ai-hot{margin-top:8px;padding:6px 9px;border-radius:7px;background:rgba(255,61,110,.1);color:#ff9ec4;font-size:11px;line-height:1.6}
+.cluster .c-sum{margin:6px 0 0;font-size:11.5px;line-height:1.65;color:var(--dim)}
+.cluster .c-cred{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 2px;font-size:10px;color:var(--dim)}
+.cluster .cred-bar{width:74px;height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;flex:none}
+.cluster .cred-bar i{display:block;height:100%;border-radius:3px}
+.cluster .cred-n{font-weight:800;color:var(--txt);font-family:'JetBrains Mono',monospace}
+.cluster .cred-hot{color:#ffd166;font-weight:700}
+.cluster .cred-div{color:#ff9ec4;font-weight:700}
+#sinceBar{margin:0 0 12px;padding:10px 14px;border-radius:12px;font-size:12px;line-height:1.7;
+  border:1px solid rgba(0,255,166,.4);background:rgba(0,255,166,.06);color:#bdfff0;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#sinceBar b{color:#00ffa6;font-family:'JetBrains Mono',monospace}
+#sinceBar .sb-btn{margin-inline-start:auto;cursor:pointer;padding:4px 11px;border-radius:20px;
+  border:1px solid rgba(0,255,166,.5);color:#00ffa6;font-weight:700;font-size:11px;background:transparent}
+#sinceBar .sb-btn.on{background:rgba(0,255,166,.16)}
+#scorecard{margin-bottom:12px}
+#scList{display:flex;flex-direction:column;gap:4px;max-height:280px;overflow-y:auto}
+.sc-row{display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:8px;
+  background:rgba(0,240,255,.04);font-size:11px}
+.sc-row .sc-rank{font-family:'JetBrains Mono',monospace;color:var(--dim);min-width:20px}
+.sc-row .sc-name{font-weight:700;color:var(--txt);min-width:96px}
+.sc-row .sc-bar{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden;min-width:50px}
+.sc-row .sc-bar i{display:block;height:100%;background:linear-gradient(90deg,#00f0ff,#00ffa6)}
+.sc-row .sc-n{font-family:'JetBrains Mono',monospace;color:var(--dim);white-space:nowrap}
+.sc-row .sc-solo{color:#ffd166}
+#followToast{position:fixed;z-index:80;left:50%;bottom:22px;transform:translateX(-50%) translateY(24px);
+  opacity:0;pointer-events:none;transition:opacity .35s,transform .35s;cursor:pointer;
+  display:flex;flex-direction:column;gap:3px;max-width:min(460px,92vw);
+  padding:11px 16px;border-radius:12px;background:rgba(6,12,26,.96);
+  border:1px solid rgba(255,209,102,.65);box-shadow:0 0 26px rgba(255,209,102,.22);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+#followToast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+#followToast b{color:#ffd166;font-size:12px}
+#followToast span{color:var(--txt);font-size:11.5px;line-height:1.6}
+.cluster .c-follow{cursor:pointer;opacity:.5;margin-inline-start:4px;font-size:12px}
+.cluster .c-follow.on{opacity:1;filter:drop-shadow(0 0 6px rgba(255,209,102,.8))}
+.he-chip.surge{border-color:rgba(255,209,102,.7)!important;box-shadow:0 0 12px rgba(255,209,102,.2)}
+.he-chip .he-v{font-style:normal;font-size:9px;margin-inline-start:4px;font-family:'JetBrains Mono',monospace}
+.he-chip .he-v.up{color:#ffd166} .he-chip .he-v.dn{color:#9dc4d8} .he-chip .he-v.new{color:#00ffa6}
+.cluster .cred-run{color:#9be8ff;font-weight:700}
+.cluster .cred-since{color:#00ffa6;font-weight:700}
+.cluster .c-first{margin-top:6px;font-size:10px;color:var(--dim);opacity:.85}
+.cluster .c-hint{display:none}
+body.compact .cluster .c-srcs{margin-top:2px}
+#searchRow{display:flex;gap:8px;margin:10px 0}
+#searchBox{flex:1;min-width:0;background:rgba(6,12,26,.6);color:var(--txt);border:1px solid var(--line);
+  padding:8px 12px;font-size:12.5px;font-family:'Heebo',sans-serif;border-radius:2px}
+#searchBox::placeholder{color:var(--dim)}
+#searchBox:focus{outline:none;border-color:var(--cyan)}
+#bookmarkFilter{flex:none}
+.c-star{cursor:pointer;font-size:15px;opacity:.55;transition:opacity .15s}
+.c-star:hover{opacity:.9}
+.c-star.on{opacity:1;color:var(--gold)}
+.c-sentiment{font-size:10px;font-weight:700;padding:2px 7px;letter-spacing:.5px}
+.c-sentiment.pos{color:var(--up);border:1px solid rgba(0,255,166,.35)}
+.c-sentiment.neg{color:var(--down);border:1px solid rgba(255,61,110,.35)}
+.c-sentiment.neu{color:var(--dim);border:1px solid rgba(109,144,168,.3)}
+.cluster.breaking{border-color:rgba(255,209,102,.55);box-shadow:0 0 20px rgba(255,209,102,.15)}
+.c-breaking{font-size:10px;font-weight:700;color:var(--gold);padding:2px 7px;border:1px solid rgba(255,209,102,.4);
+  animation:pulse 1.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+/* ── settings panel — same schema-driven control-room pattern as NEXUS·ARENA ── */
+@media (max-width:520px){
+  #octoStage{height:185px}
+  html{font-size:93%}
+}
+#simNotice{margin:0 0 12px;padding:10px 14px;border:1px solid rgba(255,209,102,.5);border-radius:12px;
+  background:rgba(255,209,102,.08);color:var(--gold);font-size:12.5px;font-weight:600}
+.os-act{background:rgba(0,240,255,.08);border:1px solid rgba(0,240,255,.35);color:var(--cyan);
+  border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;font-family:inherit}
+.os-act:hover{background:rgba(0,240,255,.16)}
+#octoSettingsPanel{position:fixed;z-index:40;top:60px;left:50%;transform:translateX(-50%);
+  width:min(94vw,480px);max-height:80vh;overflow-y:auto;padding:16px 18px;display:none}
+.os-title{font-size:15px;font-weight:800;letter-spacing:1px;color:var(--cyan);margin-bottom:10px;text-align:center}
+.os-sec{margin-top:14px}
+.os-sec:first-child{margin-top:4px}
+.os-h{font-size:11px;color:var(--magenta);letter-spacing:2px;font-weight:700;margin-bottom:9px;
+  border-bottom:1px solid rgba(255,47,214,.18);padding-bottom:5px}
+.os-row{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:10px;font-size:12.5px}
+.os-row label{color:var(--txt);flex:1;min-width:0}
+.os-row .os-desc{display:block;font-size:10px;color:var(--dim);margin-top:1px;font-weight:400}
+.os-row input[type=range]{flex:none;width:110px;accent-color:var(--cyan)}
+.os-row input[type=checkbox]{flex:none;width:17px;height:17px;accent-color:var(--cyan);cursor:pointer}
+.os-val{flex:none;width:50px;text-align:left;font-family:'Orbitron',monospace;font-size:11px;color:var(--cyan)}
+.os-arm{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0}
+.os-close{margin-top:14px;text-align:center;font-size:12px;color:var(--dim);cursor:pointer;padding:7px}
+.os-close:hover{color:var(--txt)}
+#breakingBanner{position:fixed;z-index:50;top:-80px;left:50%;transform:translateX(-50%);
+  width:min(94vw,560px);padding:11px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  border-color:rgba(255,209,102,.5);box-shadow:0 0 26px rgba(255,209,102,.25);transition:top .4s ease}
+#breakingBanner.show{top:12px}
+#breakingBanner .bb-tag{flex:none;font-size:11px;font-weight:800;color:var(--gold);letter-spacing:.5px}
+#breakingBanner #breakingText{font-size:12.5px;color:var(--txt);font-weight:600}
+
+/* situation strip */
+/* 3D octopus stage — a small living hero: tentacles reach out per active
+   arm while it's fetching and glow the arm's topic color; a brief bright
+   flash on the tip when that arm's sources came back with news. */
+#octoStage{position:relative;height:270px;margin-bottom:14px;overflow:hidden;padding:0;
+  background:radial-gradient(ellipse 70% 60% at 50% 62%, rgba(0,240,255,.07), transparent 70%)}
+#octoCv{display:block;width:100%;height:100%}
+#octoCaption{position:absolute;bottom:9px;left:0;right:0;text-align:center;font-size:11px;
+  color:var(--cyan);letter-spacing:1px;font-weight:600;pointer-events:none;text-shadow:0 0 10px rgba(0,240,255,.5)}
+#situation{padding:13px 16px;margin-bottom:14px}
+#situation .sh{font-size:11px;letter-spacing:2px;color:var(--cyan);font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+#situation .sh .upd{font-size:10px;color:var(--dim);letter-spacing:.5px;font-weight:400}
+#stats{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:10px}
+#stats .st b{font-family:'Orbitron',monospace;font-size:19px;color:#eaffff;text-shadow:0 0 12px rgba(0,240,255,.4)}
+#stats .st span{font-size:10.5px;color:var(--dim);display:block;letter-spacing:.5px}
+#topics{display:flex;gap:6px;flex-wrap:wrap}
+.tchip{font-size:11.5px;font-weight:600;cursor:pointer;padding:5px 11px;color:var(--dim);
+  background:rgba(6,12,26,.6);border:1px solid rgba(0,240,255,.14);transition:all .15s;
+  clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px)}
+.tchip b{color:var(--cyan);font-weight:700;margin-inline-start:4px}
+.tchip:hover{color:var(--txt)}
+.tchip.on{color:#02141a;background:linear-gradient(120deg,var(--cyan),#7dfbff);border-color:var(--cyan)}
+.tchip.on b{color:#02141a}
+
+/* clusters */
+.cluster{padding:13px 15px;margin-bottom:11px;cursor:pointer;transition:border-color .15s, box-shadow .2s, transform .2s}
+.cluster:hover{border-color:rgba(255,47,214,.45);box-shadow:0 8px 30px rgba(255,47,214,.14);transform:translateY(-2px)}
+.cluster.watched{border-color:rgba(255,209,102,.55);box-shadow:0 0 14px rgba(255,209,102,.12)}
+.c-watch{font-size:10px;color:var(--gold);border:1px solid rgba(255,209,102,.4);border-radius:20px;padding:2px 8px}
+/* first-load entrance: cards rise into place once, staggered. The class is
+   added only on the first successful render (see renderClusters) so the
+   frequent per-arm re-renders during a pull don't strobe the whole feed. */
+.first-load .cluster{animation:cardIn .55s cubic-bezier(.2,.75,.25,1) both}
+.first-load .cluster:nth-child(1){animation-delay:.04s}.first-load .cluster:nth-child(2){animation-delay:.1s}
+.first-load .cluster:nth-child(3){animation-delay:.16s}.first-load .cluster:nth-child(4){animation-delay:.22s}
+.first-load .cluster:nth-child(5){animation-delay:.28s}.first-load .cluster:nth-child(6){animation-delay:.34s}
+@keyframes cardIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+/* deep-space nebula — two vast color fields drifting behind everything */
+body::after{content:'';position:fixed;inset:-20%;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(42% 34% at 18% 22%, rgba(0,240,255,.075), transparent 70%),
+    radial-gradient(46% 40% at 82% 74%, rgba(255,47,214,.07), transparent 70%),
+    radial-gradient(30% 26% at 60% 12%, rgba(138,92,255,.06), transparent 70%);
+  animation:nebulaDrift 46s ease-in-out infinite alternate}
+@keyframes nebulaDrift{from{transform:translate(-2.5%,-2%) scale(1)}to{transform:translate(2.5%,2.5%) scale(1.07)}}
+/* the octopus stage breathes — its frame pulses between the two brand colors */
+#octoStage{animation:stagePulse 7s ease-in-out infinite}
+@keyframes stagePulse{
+  0%,100%{border-color:rgba(0,240,255,.24);box-shadow:0 0 26px rgba(0,240,255,.10)}
+  50%{border-color:rgba(255,47,214,.38);box-shadow:0 0 34px rgba(255,47,214,.14)}}
+/* gold light sweeps across the front-page strip every few seconds */
+#headlines{position:relative;overflow:hidden}
+#headlines::after{content:'';position:absolute;top:0;bottom:0;width:34%;left:-40%;pointer-events:none;
+  background:linear-gradient(105deg,transparent,rgba(255,209,102,.09),transparent);
+  animation:goldSweep 6.5s ease-in-out infinite}
+@keyframes goldSweep{0%,55%{left:-40%}90%,100%{left:110%}}
+@media (prefers-reduced-motion:reduce){
+  body::after,#octoStage,#headlines::after,.first-load .cluster{animation:none}
+}
+.cluster .c-top{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
+.cluster .c-topic{font-size:9.5px;font-weight:700;letter-spacing:1px;color:var(--magenta);
+  border:1px solid rgba(255,47,214,.4);padding:2px 8px}
+.cluster .c-angles{font-size:9.5px;font-weight:700;letter-spacing:.5px;color:#02141a;
+  background:linear-gradient(120deg,var(--gold),#ffe9a8);padding:2px 8px}
+.cluster .c-time{font-size:10px;color:var(--dim);margin-inline-start:auto}
+.cluster h3{font-size:15.5px;font-weight:800;line-height:1.45;color:#eaffff}
+.cluster .c-srcs{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.cluster .src{font-size:9.5px;font-weight:700;letter-spacing:.5px;color:var(--cyan);
+  border:1px solid rgba(0,240,255,.3);padding:2px 7px}
+.cluster .c-hint{font-size:10px;color:var(--dim);margin-top:7px;letter-spacing:.5px}
+#clusters .empty{text-align:center;color:var(--dim);font-size:13px;padding:40px 0}
+
+/* analysis modal */
+#anaWrap{position:fixed;inset:0;z-index:50;display:none;align-items:flex-start;justify-content:center;
+  background:rgba(2,4,10,.7);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);overflow-y:auto;padding:26px 12px}
+#anaWrap.open{display:flex}
+#ana{width:min(96vw,640px);padding:18px 20px;margin-bottom:30px}
+#ana .a-h{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+#ana .a-badge{font-size:10px;font-weight:800;letter-spacing:2px;color:var(--magenta);border:1px solid rgba(255,47,214,.45);padding:3px 9px}
+#ana .a-close{margin-inline-start:auto;width:30px;height:30px;border:1px solid var(--line);background:transparent;
+  color:var(--dim);cursor:pointer;font-size:14px}
+#ana .a-close:hover{color:var(--down);border-color:var(--down)}
+#ana h2{font-size:18px;font-weight:800;line-height:1.4;margin:8px 0 12px;color:#eaffff}
+.a-sec{margin-top:13px}
+.a-sec .s-t{font-size:11px;letter-spacing:2px;color:var(--cyan);font-weight:700;margin-bottom:7px}
+.a-angle{padding:8px 11px;margin-bottom:6px;background:rgba(6,12,26,.55);border-right:2px solid var(--cyan);font-size:12.5px;line-height:1.5}
+.a-angle .src{color:var(--gold);font-weight:700;font-size:10.5px;letter-spacing:.5px;margin-inline-end:7px}
+.a-angle a{color:inherit;text-decoration:none}
+.a-angle a:hover{color:var(--cyan)}
+.a-kv{display:flex;gap:6px;flex-wrap:wrap}
+.a-ent{font-size:11px;font-weight:600;color:#bfeeff;background:rgba(0,240,255,.08);border:1px solid rgba(0,240,255,.2);padding:3px 9px}
+#anaAiBody{font-size:13px;line-height:1.75;color:var(--txt);white-space:pre-wrap}
+#anaAiBody:empty::after{content:'—'}
+.a-note{font-size:10px;color:var(--dim);margin-top:10px;letter-spacing:.4px}
+.a-spin{color:var(--cyan);font-size:12px;letter-spacing:1px;animation:blink 1.1s infinite}
+@keyframes blink{50%{opacity:.35}}
+
+@media (max-width:560px){
+  header{padding:10px 12px}
+  .brand .name{font-size:17px;letter-spacing:2px}
+  #arms{width:100%;margin:2px 0 0}
+  #stats{gap:12px}
+  .cluster h3{font-size:14px}
+}
+</style>
+<style>
+  /* smooth crossfade on same-origin navigation (ignored where unsupported) */
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div id="breakingBanner" class="panel clip">
+  <span class="bb-tag">🔥 מתפתח — הצטלב כבר ב-3 מקורות</span>
+  <span id="breakingText"></span>
+</div>
+<div class="wrap">
+  <header class="panel clip">
+    <a class="home-btn" href="./" title="חזרה לאלפא">⌂ אלפא</a>
+    <div class="brand">
+      <span class="oct">🐙</span>
+      <div class="tt">
+        <div class="name">OCTOPUS</div>
+        <div class="sub" id="octoSub">מנוע חדשות עתידני · מצליב · מגבש תמונה · מנתח</div>
+      </div>
+    </div>
+    <div id="arms" title="מצב הזרועות"></div>
+    <span id="armsLbl">זרועות</span>
+    <button id="settingsBtn" class="icon-btn" title="הגדרות OCTOPUS">⚙️</button>
+    <button id="refreshBtn">🔄 רענן</button>
+  </header>
+
+  <section id="octoStage" class="panel clip">
+    <canvas id="octoCv"></canvas>
+    <div id="octoCaption">🐙 מתעורר…</div>
+  </section>
+
+  <section id="situation" class="panel clip">
+    <div class="sh">🛰️ תמונת מצב <span class="upd" id="updLbl">—</span></div>
+    <div id="stats">
+      <div class="st"><b id="stStories" class="num">0</b><span>כתבות</span></div>
+      <div class="st"><b id="stClusters" class="num">0</b><span>סיפורים</span></div>
+      <div class="st"><b id="stCross" class="num">0</b><span>הצלבות רב-זוויתיות</span></div>
+      <div class="st"><b id="stArms" class="num">0/13</b><span>זרועות חיות</span></div>
+    </div>
+    <div id="searchRow">
+      <input id="searchBox" type="text" placeholder="🔍 חיפוש בכותרות ובמקורות…">
+      <span id="bookmarkFilter" class="tchip">⭐ מועדפים</span>
+    </div>
+    <div id="timeRow">
+      <span class="tchip tf on" data-h="0">כל הזמנים</span>
+      <span class="tchip tf" data-h="1">שעה אחרונה</span>
+      <span class="tchip tf" data-h="6">6 שעות</span>
+      <span class="tchip tf" data-h="24">היום</span>
+    </div>
+    <div id="hotEntities" title="המילים הבולטות בכל הסיפורים כרגע — הקשה מסננת"></div>
+    <div id="topics"></div>
+  </section>
+
+  <section id="headlines" class="panel clip" style="display:none">
+    <div class="hl-h">🗞️ הכותרות הראשיות עכשיו <span class="hl-sub">מדורג לפי הצלבות + טריות</span>
+      <button id="hlVoice" class="voice-btn" title="🎙 מהדורה קולית — הקראת חמש הכותרות">🎙</button></div>
+    <div id="hlList"></div>
+  </section>
+
+  <div id="sinceBar" style="display:none"></div>
+  <section id="scorecard" class="panel clip" style="display:none">
+    <div class="sh">🏅 מי מביא ראשון · דירוג מקורות <span class="upd" id="scNote">נמדד לאורך זמן במכשיר שלך</span></div>
+    <div id="scList"></div>
+  </section>
+  <div id="simNotice" style="display:none">⚠️ אין כרגע חיבור למקורות החדשות — מוצגות כתבות הדגמה. בדקו חיבור לרשת ולחצו 🔄 רענן.</div>
+  <main id="clusters"><div class="empty">🐙 שולח זרועות…</div></main>
+</div>
+
+<div id="octoSettingsPanel" class="panel clip">
+  <div class="os-title">⚙️ הגדרות OCTOPUS</div>
+  <div id="osBody"></div>
+  <div class="os-close" id="osClose">✕ סגור</div>
+</div>
+
+<div id="anaWrap">
+  <div id="ana" class="panel clip">
+    <div class="a-h">
+      <span class="a-badge">ניתוח OCTOPUS</span>
+      <span class="a-badge" id="anaTopic" style="color:var(--gold);border-color:rgba(255,209,102,.45)"></span>
+      <button id="anaVoice" class="voice-btn" title="🔊 הקראת הכתבה והניתוח">🔊</button>
+      <button class="a-close" id="anaClose">✕</button>
+    </div>
+    <h2 id="anaTitle"></h2>
+    <div class="a-sec"><div class="s-t">📡 הזוויות — מי מדווח ומה</div><div id="anaAngles"></div></div>
+    <div class="a-sec"><div class="s-t">⏱️ ציר זמן הדיווח</div><div id="anaTimeline"></div></div>
+    <div class="a-sec"><div class="s-t">🔑 מוקדי הסיפור</div><div class="a-kv" id="anaEnts"></div></div>
+    <div class="a-sec"><div class="s-t">🧠 תמונה כוללת · ניתוח AI</div><div id="anaAiBody"></div></div>
+    <div class="a-note" id="anaNote"></div>
+  </div>
+</div>
+
+<script type="module">
+/* ============================================================
+   🐙 3D OCTOPUS — a living holographic creature, not a logo.
+   A body wrapped in a soft energy-shield aura, hovering over a
+   scanning holo-pedestal, drifting bioluminescent data motes in
+   the air, and one tentacle per news arm ringed around it. While
+   that arm's sources are being fetched, its tentacle stretches
+   out, brightens, and its suckers light up in sequence toward the
+   tip; the instant results land, the tip flashes bright and the
+   arm coils back in — the creature visibly "goes looking" for
+   news, one arm at a time, exactly matching which arm is active.
+   Sizes itself from window.ARM_GROUPS (falls back to 8 defaults
+   if that isn't ready yet), so it always has one tentacle per
+   real news arm regardless of how many arms the engine defines.
+   Independent of the main script's timing (guards on
+   window.__octoReach existing), so data flow never waits on the
+   render loop or vice versa.
+   ============================================================ */
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+const cv=document.getElementById('octoCv');
+const W=()=>cv.clientWidth||220, H=()=>cv.clientHeight||270;
+let renderer;
+try{ renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true}); }
+catch(e){ document.getElementById('octoStage').style.display='none'; }
+if(renderer){
+  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  renderer.setSize(W(),H(),false);
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.15;
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(38,W()/H(),0.1,100);
+  camera.position.set(0,2.05,8.6); camera.lookAt(0,0.65,0);
+  scene.add(new THREE.AmbientLight(0x224466,1.2));
+  const key=new THREE.PointLight(0x00f0ff,2.4,32); key.position.set(3,5,4); scene.add(key);
+  const rim=new THREE.PointLight(0xff2fd6,1.6,32); rim.position.set(-4,2,-3); scene.add(rim);
+  const under=new THREE.PointLight(0x00ffa6,0.9,20); under.position.set(0,-0.5,2); scene.add(under);
+
+  function radialTex(inner,outer){
+    const c=document.createElement('canvas'); c.width=c.height=128;
+    const g=c.getContext('2d');
+    const gr=g.createRadialGradient(64,64,0,64,64,64);
+    gr.addColorStop(0,inner); gr.addColorStop(1,outer);
+    g.fillStyle=gr; g.fillRect(0,0,128,128);
+    return new THREE.CanvasTexture(c);
+  }
+  const glowTex=radialTex('rgba(255,255,255,1)','rgba(255,255,255,0)');
+
+  // ── body + glowing mantle with a visible pulsing core inside ──
+  const bodyMat=new THREE.MeshStandardMaterial({color:0x0c2a3a,emissive:0x0aa6c2,emissiveIntensity:0.4,roughness:0.35,metalness:0.15});
+  const body=new THREE.Mesh(new THREE.SphereGeometry(1.02,32,24),bodyMat);
+  body.scale.set(1,0.84,1.04); body.position.y=0.95; scene.add(body);
+  const mantle=new THREE.Mesh(new THREE.SphereGeometry(0.62,24,18),
+    new THREE.MeshStandardMaterial({color:0x123344,emissive:0x0a5a70,emissiveIntensity:0.3,roughness:0.4,transparent:true,opacity:0.62}));
+  mantle.position.y=1.55; mantle.scale.set(1,1.15,1); scene.add(mantle);
+  const core=new THREE.Mesh(new THREE.SphereGeometry(0.22,16,16),
+    new THREE.MeshBasicMaterial({color:0x9dfcff,transparent:true,opacity:0.85}));
+  core.position.y=1.55; scene.add(core);
+  const eyeGeo=new THREE.SphereGeometry(0.125,16,16), eyeMat=new THREE.MeshBasicMaterial({color:0x9dfcff});
+  const eyeL=new THREE.Mesh(eyeGeo,eyeMat); eyeL.position.set(-0.33,1.08,0.86); scene.add(eyeL);
+  const eyeR=eyeL.clone(); eyeR.position.x=0.33; scene.add(eyeR);
+  const pupL=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,8),new THREE.MeshBasicMaterial({color:0x022}));
+  pupL.position.set(-0.33,1.08,0.96); scene.add(pupL);
+  const pupR=pupL.clone(); pupR.position.x=0.33; scene.add(pupR);
+  // ── personality: pupils follow the reader's pointer, eyes blink, and a
+  // random arm occasionally twitches with "curiosity" — a pet, not a logo ──
+  let lookX=0, lookY=0, blinkT=2.5+Math.random()*4, blinkPhase=0, curioT=4+Math.random()*5;
+  addEventListener('pointermove',e=>{
+    lookX=(e.clientX/innerWidth)*2-1;
+    lookY=(e.clientY/innerHeight)*2-1;
+  },{passive:true});
+  // ── ink burst — a puff of dark droplets ejected on breaking news ──
+  const INK_N=18;
+  const inkPos=new Float32Array(INK_N*3), inkVel=new Float32Array(INK_N*3);
+  const inkGeo=new THREE.BufferGeometry();
+  inkGeo.setAttribute('position',new THREE.BufferAttribute(inkPos,3));
+  const ink=new THREE.Points(inkGeo,new THREE.PointsMaterial({size:0.16,map:glowTex,color:0x1a2f66,transparent:true,opacity:0,depthWrite:false,sizeAttenuation:true}));
+  scene.add(ink);
+  let inkLife=0;
+  function fireInk(){
+    inkLife=1;
+    for(let i=0;i<INK_N;i++){
+      const a=Math.random()*Math.PI*2, up=Math.random()*0.7+0.2, sp=0.9+Math.random()*1.4;
+      inkPos[i*3]=0; inkPos[i*3+1]=1.1; inkPos[i*3+2]=0;
+      inkVel[i*3]=Math.cos(a)*sp; inkVel[i*3+1]=up*sp; inkVel[i*3+2]=Math.sin(a)*sp;
+    }
+  }
+
+  // ── energy-shield aura — a larger backside-lit shell around the whole
+  // creature, the classic cheap sci-fi "force field" look ──
+  const shield=new THREE.Mesh(new THREE.SphereGeometry(1.55,24,18),
+    new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.07,side:THREE.BackSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+  shield.position.y=1.1; shield.scale.set(1,1.05,1); scene.add(shield);
+
+  // ── holo pedestal — concentric scan rings on the floor + a rotating
+  // radar sweep, so the octopus reads as a projected hologram on display ──
+  const pedGroup=new THREE.Group(); pedGroup.position.y=-0.02; scene.add(pedGroup);
+  [1.3,1.75,2.15].forEach((r,i)=>{
+    const ring=new THREE.Mesh(new THREE.RingGeometry(r-0.02,r,64),
+      new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.16-i*0.03,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+    ring.rotation.x=-Math.PI/2; pedGroup.add(ring);
+  });
+  const sweep=new THREE.Mesh(new THREE.CircleGeometry(2.15,48,0,Math.PI*0.22),
+    new THREE.MeshBasicMaterial({color:0x00f0ff,transparent:true,opacity:0.14,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+  sweep.rotation.x=-Math.PI/2; pedGroup.add(sweep);
+
+  // ── ambient bioluminescent data motes drifting through the air ──
+  const MOTE_N=70;
+  const motePos=new Float32Array(MOTE_N*3), moteVel=new Float32Array(MOTE_N);
+  for(let i=0;i<MOTE_N;i++){
+    const r=Math.sqrt(Math.random())*2.1, a=Math.random()*Math.PI*2;
+    motePos[i*3]=Math.cos(a)*r; motePos[i*3+1]=Math.random()*2.6; motePos[i*3+2]=Math.sin(a)*r;
+    moteVel[i]=0.12+Math.random()*0.22;
+  }
+  const moteGeo=new THREE.BufferGeometry();
+  moteGeo.setAttribute('position',new THREE.BufferAttribute(motePos,3));
+  const motes=new THREE.Points(moteGeo,new THREE.PointsMaterial({size:0.055,map:glowTex,color:0x7dfbff,transparent:true,opacity:0.55,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true}));
+  scene.add(motes);
+
+  // ── tentacles — sized to the REAL arm count (window.ARM_GROUPS), each
+  // carrying a few bioluminescent "sucker" markers that light up in
+  // sequence toward the tip while that arm is actively reaching ──
+  const FALLBACK_COLORS=[0x00f0ff,0xffd166,0x00ffa6,0xff2fd6,0x8a5cff,0xff3d6e,0x7fb3d5,0xf0b90b];
+  const COLORS=(window.ARM_GROUPS&&window.ARM_GROUPS.length? window.ARM_GROUPS.map(g=>g[1][1]) : FALLBACK_COLORS);
+  const N=COLORS.length, SEG=10, SUCKERS=4;
+  const tentacles=[];
+  for(let i=0;i<N;i++){
+    const ang=(i/N)*Math.PI*2;
+    const mat=new THREE.MeshStandardMaterial({color:COLORS[i],emissive:COLORS[i],emissiveIntensity:0.5,roughness:0.4,metalness:0.1,transparent:true,opacity:0.94});
+    const seed=new THREE.CatmullRomCurve3([new THREE.Vector3(0,0.9,0),new THREE.Vector3(0,0.8,0)]);
+    const mesh=new THREE.Mesh(new THREE.TubeGeometry(seed,SEG,0.09,6,false),mat);
+    scene.add(mesh);
+    const tip=new THREE.Mesh(new THREE.SphereGeometry(0.075,10,10),new THREE.MeshBasicMaterial({color:COLORS[i],transparent:true}));
+    scene.add(tip);
+    const suckers=[];
+    for(let s=0;s<SUCKERS;s++){
+      const su=new THREE.Mesh(new THREE.SphereGeometry(0.032,8,8),new THREE.MeshBasicMaterial({color:COLORS[i],transparent:true,opacity:0.3}));
+      scene.add(su); suckers.push(su);
+    }
+    tentacles.push({ang,mesh,mat,tip,suckers,reach:0,reachTarget:0,flash:0,phase:Math.random()*10});
+  }
+  // Called by the data layer: gi = arm/group index, pulling = fetch in
+  // flight, found = that arm's pull landed with at least one story.
+  window.__octoReach=function(gi,pulling,found){
+    const t=tentacles[gi]; if(!t) return;
+    t.reachTarget=pulling?1:0;
+    if(!pulling && found) t.flash=1;
+  };
+  // Called by the data layer when a story crosses the breaking-news
+  // threshold (3+ independent sources) — a decaying pulse (1→0) that the
+  // creature visibly reacts to: faster spin, a gold-red shield/body flash.
+  let breakingPulse=0;
+  const shieldBaseColor=new THREE.Color(0x00f0ff), alertColor=new THREE.Color(0xffb020);
+  const coreBaseColor=new THREE.Color(0x9dfcff);
+  window.__octoBreaking=function(){ breakingPulse=1; fireInk(); };
+  function jointPositions(t,time){
+    const pts=[]; const baseLen=1.15, reach=t.reach;
+    const len=baseLen+reach*2.5;
+    for(let s=0;s<=SEG;s++){
+      const f=s/SEG, r=f*len;
+      const curl=Math.sin(time*1.6+t.phase+f*3.1)*0.24*(0.35+f)*(1-reach*0.55);
+      const droop=-f*f*0.5*(1-reach*0.65);
+      const x=Math.cos(t.ang)*r+Math.cos(t.ang+Math.PI/2)*curl;
+      const z=Math.sin(t.ang)*r+Math.sin(t.ang+Math.PI/2)*curl;
+      const y=0.85+droop+Math.sin(time*2+t.phase)*0.05*(1-reach);
+      pts.push(new THREE.Vector3(x,y,z));
+    }
+    return pts;
+  }
+  let rot=0, capT=0;
+  const captionEl=document.getElementById('octoCaption');
+  function updateCaption(){
+    const active=tentacles.map((t,i)=>({t,i})).filter(x=>x.t.reachTarget>0);
+    if(!window.ARM_GROUPS){ captionEl.textContent='🐙 מתעורר…'; return; }
+    if(active.length) captionEl.textContent='🐙 מחפש: '+active.map(x=>window.ARM_GROUPS[x.i][0]).join(' · ');
+    else captionEl.textContent='🐙 '+N+' זרועות · ממתין לרענון הבא';
+  }
+  function animate(){
+    requestAnimationFrame(animate);
+    const time=performance.now()*0.001;
+    breakingPulse*=0.985; // decays back to calm over a couple of seconds
+    // continuous slow turntable spin — reads as a displayed hologram, not a
+    // creature nervously swaying in place — briefly speeding up on breaking news
+    rot+=0.0026+breakingPulse*0.02; scene.rotation.y=rot;
+    pedGroup.rotation.y-=0.006; // pedestal + scan sweep rotate opposite the body for a layered-motion feel
+    body.position.y=0.95+Math.sin(time*1.3)*0.03;
+    mantle.position.y=1.55+Math.sin(time*1.3)*0.03;
+    core.position.y=mantle.position.y;
+    core.material.opacity=0.6+Math.sin(time*2.4)*0.25; // pulsing "neural core" glow
+    core.material.color.copy(coreBaseColor).lerp(alertColor,breakingPulse);
+    core.scale.setScalar(1+Math.sin(time*2.4)*0.08+breakingPulse*0.35);
+    bodyMat.emissiveIntensity=0.4+breakingPulse*0.9;
+    shield.material.opacity=0.05+Math.sin(time*0.9)*0.02+breakingPulse*0.24;
+    shield.material.color.copy(shieldBaseColor).lerp(alertColor,breakingPulse);
+    // pupils track the pointer (small parallax so it stays subtle from the
+    // fixed camera), and both eyes blink together every few seconds
+    pupL.position.x=-0.33+lookX*0.045; pupR.position.x=0.33+lookX*0.045;
+    pupL.position.y=pupR.position.y=1.08-lookY*0.04;
+    blinkT-=0.016;
+    if(blinkT<=0){ blinkPhase=1; blinkT=2.5+Math.random()*5; }
+    if(blinkPhase>0){
+      blinkPhase=Math.max(0,blinkPhase-0.13);
+      const lid=Math.abs(blinkPhase-0.5)*2; // 1→0→1: closes then reopens
+      eyeL.scale.y=eyeR.scale.y=Math.max(0.08,lid);
+      pupL.visible=pupR.visible=lid>0.35;
+    }
+    // idle curiosity — an occasional small self-initiated tentacle reach
+    curioT-=0.016;
+    if(curioT<=0){
+      curioT=4+Math.random()*7;
+      const t=tentacles[(Math.random()*tentacles.length)|0];
+      if(t && t.reachTarget===0){ t.reachTarget=0.4; setTimeout(()=>{ if(t.reachTarget===0.4) t.reachTarget=0; },1100); }
+    }
+    // ink droplets — gravity-arced puff that fades as it spreads
+    if(inkLife>0){
+      inkLife=Math.max(0,inkLife-0.014);
+      for(let i=0;i<INK_N;i++){
+        inkVel[i*3+1]-=0.03;
+        inkPos[i*3]+=inkVel[i*3]*0.016; inkPos[i*3+1]+=inkVel[i*3+1]*0.016; inkPos[i*3+2]+=inkVel[i*3+2]*0.016;
+      }
+      ink.geometry.attributes.position.needsUpdate=true;
+      ink.material.opacity=inkLife*0.85;
+      ink.material.size=0.16+(1-inkLife)*0.3;
+    } else ink.material.opacity=0;
+    // drifting motes — loop upward through the shield volume
+    const mp=motes.geometry.attributes.position.array;
+    for(let i=0;i<MOTE_N;i++){
+      mp[i*3+1]+=moteVel[i]*0.016;
+      if(mp[i*3+1]>2.6) mp[i*3+1]=0;
+    }
+    motes.geometry.attributes.position.needsUpdate=true;
+    capT+=0.016; if(capT>0.5){ capT=0; updateCaption(); }
+    tentacles.forEach(t=>{
+      t.reach+=(t.reachTarget-t.reach)*0.06;
+      t.flash=Math.max(0,t.flash-0.02);
+      const pts=jointPositions(t,time);
+      const curve=new THREE.CatmullRomCurve3(pts);
+      t.mesh.geometry.dispose();
+      t.mesh.geometry=new THREE.TubeGeometry(curve,SEG,0.085+t.reach*0.02,6,false);
+      t.tip.position.copy(pts[pts.length-1]);
+      t.mat.emissiveIntensity=0.4+t.reach*1.1+t.flash*1.4;
+      t.tip.material.opacity=0.85+t.flash*0.15;
+      t.tip.scale.setScalar(1+t.flash*0.9);
+      // suckers light up in sequence toward the tip while the arm reaches —
+      // the visible "searching" detail along the limb, not just at its end
+      t.suckers.forEach((su,si)=>{
+        const f=(si+1)/(t.suckers.length+1);
+        const idx=Math.round(f*SEG);
+        su.position.copy(pts[Math.min(idx,pts.length-1)]);
+        const litPhase=clamp01((t.reach*1.3)-f*0.6);
+        su.material.opacity=0.22+litPhase*0.7+t.flash*0.3;
+        su.scale.setScalar(0.8+litPhase*0.7);
+      });
+    });
+    if(composerAvail) composer.render(); else renderer.render(scene,camera);
+  }
+  const clamp01=v=>Math.max(0,Math.min(1,v));
+  let composerAvail=false, composer=null;
+  try{
+    composer=new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene,camera));
+    const bloom=new UnrealBloomPass(new THREE.Vector2(W(),H()),0.85,0.55,0.72);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    composer.setSize(W(),H());
+    composerAvail=true;
+  }catch(e){ composerAvail=false; }
+  animate();
+  addEventListener('resize',()=>{
+    renderer.setSize(W(),H(),false);
+    camera.aspect=W()/H(); camera.updateProjectionMatrix();
+    if(composerAvail) composer.setSize(W(),H());
+  });
+}
+</script>
+<script>
+'use strict';
+/* ============================================================
+   🐙 OCTOPUS — a standalone futuristic news engine.
+   Eight arms fetch in parallel; stories are CROSS-REFERENCED:
+   similar headlines from different sources merge into one
+   cluster ("the same story from several angles"). The engine
+   builds an overall situation picture (topics, counts, live
+   arms) and analyzes any story — locally always, and with the
+   platform's Groq/Gemini key it writes a real multi-angle
+   synthesis. Offline → SIM feed so the app never goes dark.
+   ============================================================ */
+const $=id=>document.getElementById(id);
+// ---------- settings (persisted control room, parity with NEXUS·ARENA) ----------
+const OCTO_DEFAULTS={autoRefresh:true,refreshMin:5,soundOn:true,breakingAlerts:true,showSentiment:true,
+  maxStories:160,clusterSens:'normal',fontScale:1,compactMode:false,showEntities:true,translateHe:true,
+  muteWords:'',watchWords:'',hideStage:false,pushNotify:false,disabledArms:[]};
+function loadOctoSettings(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('octo:settings')||'null');
+    if(raw && typeof raw==='object') return Object.assign({},OCTO_DEFAULTS,raw,{disabledArms:Array.isArray(raw.disabledArms)?raw.disabledArms:[]});
+  }catch{}
+  return Object.assign({},OCTO_DEFAULTS,{disabledArms:[]});
+}
+const octoSettings=loadOctoSettings();
+function saveOctoSettings(){ try{ localStorage.setItem('octo:settings',JSON.stringify(octoSettings)); }catch{} }
+let bookmarks=new Set();
+try{ bookmarks=new Set(JSON.parse(localStorage.getItem('octo:bookmarks')||'[]')); }catch{}
+function saveBookmarks(){ try{ localStorage.setItem('octo:bookmarks',JSON.stringify([...bookmarks])); }catch{} }
+let bookmarkFilterOn=false, searchQuery='';
+// minimal WebAudio beep for breaking-news alerts — gated by octoSettings.soundOn
+let AC=null;
+function ensureAC(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } if(AC&&AC.state==='suspended') AC.resume(); }
+document.addEventListener('pointerdown',ensureAC,{once:true});
+function beep(seq){
+  if(!octoSettings.soundOn||!AC) return;
+  let t=AC.currentTime;
+  seq.forEach(([f,d])=>{
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(AC.destination);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.1,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    o.start(t); o.stop(t+d+0.03); t+=d*0.8;
+  });
+}
+// 8 THEMATIC ARMS × 2-3 free sources each = 20 sources total. Each arm is
+// one tentacle of the octopus and one topic domain; every source inside an
+// arm is pulled in parallel, so one arm going quiet doesn't blind the whole
+// limb. This is the same free/keyless technique the rest of the platform
+// uses (RSS through a public CORS proxy) — no paid news API anywhere.
+const ARM_GROUPS=[
+  ['חדשות ישראל', ['📰',0x00f0ff], [
+    ['ynet', 'https://www.ynet.co.il/Integration/StoryRss2.xml'],
+    ['וואלה', 'https://rss.walla.co.il/feed/1'],
+    ['מאקו', 'https://www.mako.co.il/Rss/news-israel/pages/israel.xml'],
+    ['סרוגים', 'https://www.srugim.co.il/feed'],
+    ['כיפה', 'https://www.kipa.co.il/feed/'],
+  ]],
+  ['כלכלה ועסקים', ['💰',0xffd166], [
+    ['כלכליסט', 'https://www.calcalist.co.il/GeneralRSS/0,16335,L-8,00.xml'],
+    ['גלובס', 'https://www.globes.co.il/webservice/rss/rssfeeder.asmx/FeederNode?iID=2'],
+    ['ynet כלכלה', 'https://www.ynet.co.il/Integration/StoryRss6.xml'],
+    ['Business Insider', 'https://www.businessinsider.com/rss'],
+    ['CNBC', 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114'],
+  ]],
+  ['שוקי הון עולמיים', ['📈',0x00ffa6], [
+    ['Yahoo Finance', 'https://finance.yahoo.com/news/rssindex'],
+    ['MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories'],
+    ['Investing.com', 'https://www.investing.com/rss/news.rss'],
+    ['Seeking Alpha', 'https://seekingalpha.com/market_currents.xml'],
+  ]],
+  ['קריפטו', ['🪙',0xff2fd6], [
+    ['CoinDesk', 'https://www.coindesk.com/arc/outboundfeeds/rss/'],
+    ['Cointelegraph', 'https://cointelegraph.com/rss'],
+    ['Decrypt', 'https://decrypt.co/feed'],
+    ['Bitcoin Magazine', 'https://bitcoinmagazine.com/feed'],
+    ['The Block', 'https://www.theblock.co/rss.xml'],
+  ]],
+  ['טכנולוגיה', ['💻',0x8a5cff], [
+    ['TechCrunch', 'https://techcrunch.com/feed/'],
+    ['The Verge', 'https://www.theverge.com/rss/index.xml'],
+    ['גיקטיים', 'https://www.geektime.co.il/feed/'],
+    ['Ars Technica', 'https://feeds.arstechnica.com/arstechnica/index'],
+    ['Engadget', 'https://www.engadget.com/rss.xml'],
+    ['Wired', 'https://www.wired.com/feed/rss'],
+  ]],
+  ['בינה מלאכותית', ['🤖',0x36d7ff], [
+    ['VentureBeat AI', 'https://venturebeat.com/category/ai/feed/'],
+    ['MIT Tech Review', 'https://www.technologyreview.com/feed/'],
+    ['AI News', 'https://www.artificialintelligence-news.com/feed/'],
+  ]],
+  ['ביטחון ומזה"ת', ['🛡️',0xff3d6e], [
+    ['ynet חדשות', 'https://www.ynet.co.il/Integration/StoryRss3.xml'],
+    ['Times of Israel', 'https://www.timesofisrael.com/feed/'],
+    ['Jerusalem Post', 'https://www.jpost.com/rss/rssfeedsfrontpage.aspx'],
+    ['Al-Monitor', 'https://www.al-monitor.com/rss'],
+  ]],
+  ['עולם', ['🌍',0x7fb3d5], [
+    ['BBC World', 'http://feeds.bbci.co.uk/news/world/rss.xml'],
+    ['Al Jazeera', 'https://www.aljazeera.com/xml/rss/all.xml'],
+    ['Guardian World', 'https://www.theguardian.com/world/rss'],
+    ['NPR World', 'https://feeds.npr.org/1004/rss.xml'],
+    ['France24', 'https://www.france24.com/en/rss'],
+    ['DW', 'https://rss.dw.com/rdf/rss-en-all'],
+  ]],
+  ['ספורט ותרבות', ['🎭',0xf0b90b], [
+    ['ynet ספורט', 'https://www.ynet.co.il/Integration/StoryRss5.xml'],
+    ['וואלה ספורט', 'https://rss.walla.co.il/feed/22'],
+    ['ESPN', 'https://www.espn.com/espn/rss/news'],
+    ['BBC Sport', 'http://feeds.bbci.co.uk/sport/rss.xml'],
+  ]],
+  ['מדע ובריאות', ['🔬',0x00e0a0], [
+    ['Live Science', 'https://www.livescience.com/feeds/all'],
+    ['ScienceDaily', 'https://www.sciencedaily.com/rss/all.xml'],
+    ['Nature', 'https://www.nature.com/nature.rss'],
+    ['Phys.org', 'https://phys.org/rss-feed/'],
+    ['Space.com', 'https://www.space.com/feeds/all'],
+  ]],
+  ['גיימינג', ['🎮',0xc770ff], [
+    ['IGN', 'https://feeds.ign.com/ign/all'],
+    ['Polygon', 'https://www.polygon.com/rss/index.xml'],
+    ['GameSpot', 'https://www.gamespot.com/feeds/mashup/'],
+    ['PC Gamer', 'https://www.pcgamer.com/rss/'],
+  ]],
+  ['רכב ותחבורה', ['🚗',0x9ae6b4], [
+    ['Electrek', 'https://electrek.co/feed/'],
+    ['InsideEVs', 'https://insideevs.com/rss/articles/all/'],
+    ['Autoblog', 'https://www.autoblog.com/rss.xml'],
+  ]],
+  ['בידור וקולנוע', ['🎬',0xf687b3], [
+    ['Variety', 'https://variety.com/feed/'],
+    ['Hollywood Reporter', 'https://www.hollywoodreporter.com/feed/'],
+    ['Deadline', 'https://deadline.com/feed/'],
+  ]],
+  ['אסיה ואוקיאניה', ['🌏',0x4dd2ff], [
+    ['SCMP', 'https://www.scmp.com/rss/91/feed'],
+    ['Times of India', 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms'],
+    ['ABC Australia', 'https://www.abc.net.au/news/feed/51120/rss.xml'],
+    ['Japan Times', 'https://www.japantimes.co.jp/feed/'],
+  ]],
+  ['אירופה ואמריקות', ['🗺️',0xffa94d], [
+    ['Euronews', 'https://www.euronews.com/rss'],
+    ['Sky News World', 'https://feeds.skynews.com/feeds/rss/world.xml'],
+    ['CNN World', 'http://rss.cnn.com/rss/edition_world.rss'],
+    ['CBC World', 'https://www.cbc.ca/webfeed/rss/rss-world'],
+    ['Politico Europe', 'https://www.politico.eu/feed/'],
+  ]],
+];
+// flattened source list — kept for the arm-status dots / live counter, in
+// ARM_GROUPS order so index i belongs to whichever group contains it
+const ARMS=ARM_GROUPS.flatMap(([gname,,srcs])=>srcs.map(([n,u])=>[n,u,gname]));
+const armGroupOf=i=>{ let n=0; for(const g of ARM_GROUPS){ if(i<n+g[2].length) return g; n+=g[2].length; } return ARM_GROUPS[0]; };
+let armPulling=new Array(ARM_GROUPS.length).fill(false); // drives the 3D octopus tentacles
+const srcStats=ARMS.map(()=>({ok:0,fail:0,last:0})); // per-source pull health, shown in settings
+window.ARM_GROUPS=ARM_GROUPS; // read by the 3D-octopus module for its caption text
+
+const TOPICS=[
+  ['קריפטו',['ביטקוין','קריפטו','אתריום','bitcoin','crypto','ethereum','btc','eth','בלוקצ','טוקן','solana']],
+  ['שווקים',['בורסה','מניה','מניות','נאסד','וול סטריט','מדד','s&p','nasdaq','stock','market','דאו','תשואה','אג"ח']],
+  ['כלכלה',['ריבית','אינפלציה','בנק ישראל','הפד','fed','שקל','דולר','מחירים','משכנתא','תקציב','מס']],
+  ['טכנולוגיה',['בינה מלאכותית','ai','סטארט','טק','אפליקצי','גוגל','אפל','מיקרוסופט','nvidia','שבב','סייבר']],
+  ['ביטחון',['צה"ל','חיזבאללה','חמאס','עזה','לבנון','איראן','פיגוע','טיל','כטב"ם','מבצע']],
+  ['פוליטיקה',['כנסת','ממשלה','בחירות','ראש הממשלה','שר ','ח"כ','קואליציה','אופוזיציה','בג"ץ']],
+  ['עולם',['ארה"ב','טראמפ','אירופה','רוסיה','אוקראינה','סין','האו"ם','נשיא']],
+  ['מדע',['מחקר','חלל','נאס"א','nasa','מדענים','study','research','space','גילוי','אבולוצי','כוכב']],
+  ['גיימינג',['משחק','גיימינג','פלייסטיישן','אקסבוקס','nintendo','playstation','xbox','steam','גיימר','קונסולה']],
+  ['AI',['בינה מלאכותית','artificial intelligence','openai','chatgpt','claude','gemini','llm','machine learning','deep learning','anthropic','מודל שפה']],
+  ['רכב',['רכב חשמלי','טסלה','tesla','ev','רכב אוטונומי','electric vehicle','charging','battery','מכונית']],
+  ['בידור',['סרט','סדרה','נטפליקס','netflix','קולנוע','במאי','שחקן','hollywood','box office','טריילר','פרס']],
+];
+// simple keyword-based sentiment tag — not a claim of real NLP, just a quick
+// visual cue (rises/gains/wins read positive, falls/crises/deaths read
+// negative) so a skimmed situation picture also carries a mood, not just topics
+// Tone lexicon. The old one had 13 positive and 14 negative Hebrew words,
+// which meant most headlines — and nearly every English one — scored as
+// neutral. Both lists are now weighted (a war is not the same size of
+// negative as a delay) and cover English, because half these feeds are.
+const SENT_POS=[['פריצת דרך',3],['ניצחון',3],['הישג',2],['זינוק',2],['שיא',2],['הצלחה',2],['מוצלח',2],
+  ['שיפור',2],['התאוששות',2],['הסכם',2],['פתרון',2],['חדשנות',2],['הפסקת אש',3],['שחרור',2],['רווח',1],
+  ['גדל',1],['עולה',1],['עליה',1],['עלייה',1],['צמיחה',2],['אישור',1],['התקדמות',2],['תמיכה',1],['חיובי',2],
+  ['breakthrough',3],['record high',3],['surge',2],['rally',2],['soar',2],['jump',2],['gain',1],['profit',1],
+  ['beat expectations',3],['upgrade',2],['recovery',2],['deal',1],['agreement',2],['ceasefire',3],['approved',2],
+  ['boost',2],['optimism',2],['rebound',2],['wins',2],['success',2],['growth',2]];
+const SENT_NEG=[['מלחמה',3],['פיגוע',3],['אסון',3],['קריסה',3],['משבר',3],['נהרג',3],['הרוגים',3],['קורבנות',3],
+  ['פשיטת רגל',3],['פיטורים',2],['כישלון',2],['נכשל',2],['נזק',2],['הפסד',2],['אזהרה',2],['סכנה',2],['איום',2],
+  ['ירידה',1],['נופל',1],['צניחה',2],['התרסקות',3],['שריפה',2],['פציעה',2],['חקירה',1],['שחיתות',2],['שלילי',2],
+  ['עיכוב',1],['ביטול',1],['מחאה',1],['שביתה',2],['גירעון',2],['אינפלציה',1],
+  ['war',3],['attack',3],['killed',3],['dead',3],['crash',3],['collapse',3],['crisis',3],['bankrupt',3],
+  ['layoffs',2],['plunge',2],['slump',2],['tumble',2],['loss',1],['warning',2],['risk',1],['threat',2],
+  ['downgrade',2],['recession',3],['probe',1],['fraud',2],['lawsuit',1],['strike',1],['protest',1],['fears',2]];
+// A "not" in front of a word flips it — "לא הצליח" and "failed to reach a
+// deal" are the two ways a naive keyword counter gets a story backwards.
+const NEGATORS=['לא ','אין ','ללא ','נמנע','failed to','no ','not ','without '];
+function toneScore(text){
+  const t=(text||'').toLowerCase();
+  let pos=0,neg=0;
+  const hit=(word,w)=>{
+    let i=t.indexOf(word);
+    if(i<0) return 0;
+    const before=t.slice(Math.max(0,i-14),i);
+    return NEGATORS.some(n=>before.includes(n)) ? -w : w;
+  };
+  for(const [k,w] of SENT_POS){ const v=hit(k,w); if(v>0) pos+=v; else if(v<0) neg+=-v; }
+  for(const [k,w] of SENT_NEG){ const v=hit(k,w); if(v>0) neg+=v; else if(v<0) pos+=-v; }
+  return {pos,neg};
+}
+function sentimentOf(grp){
+  const {pos,neg}=toneScore(grp.map(g=>g.title+' '+(g.desc||'')).join(' '));
+  // a one-point edge is noise; require a real margin before taking a side
+  if(pos-neg>=2) return 'pos';
+  if(neg-pos>=2) return 'neg';
+  return 'neu';
+}
+let items=[], clusters=[], armState=new Array(ARMS.length).fill('off');
+let topicFilter=null, lastPull=0;
+const notifiedBreaking=new Set();
+
+// ---------- fetch ----------
+function fetchT(url,ms){
+  const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),ms||9000);
+  return fetch(url,{signal:ctl.signal}).finally(()=>clearTimeout(t));
+}
+
+// ---------- Hebrew translation of English stories — the same proven
+// two-engine chain the Lyrics app uses (Google's free gtx endpoint, Lingva
+// as fallback since both rate-limit by IP), serialized so we never hammer
+// a free service, and cached persistently so a headline is translated at
+// most once ever. Purely additive: originals stay untouched (clustering
+// already ran on them) — titleHe is display-only.
+const HEB_RE=/[֐-׿]/;
+const needsHe=t=>!HEB_RE.test(t)&&/[A-Za-z]{3,}/.test(String(t||''));
+let trCache=new Map();
+try{ trCache=new Map(Object.entries(JSON.parse(localStorage.getItem('octo:trCache')||'{}'))); }catch{}
+function saveTrCache(){
+  try{ localStorage.setItem('octo:trCache',JSON.stringify(Object.fromEntries([...trCache.entries()].slice(-500)))); }catch{}
+}
+async function trOne(text){
+  if(trCache.has(text)) return trCache.get(text);
+  let out=null;
+  try{
+    const r=await fetchT('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=iw&dt=t&q='+encodeURIComponent(text),8000);
+    if(r.ok){ const d=await r.json(); if(d&&Array.isArray(d[0])) out=d[0].map(s=>s&&s[0]?s[0]:'').join('')||null; }
+  }catch{}
+  if(!out){
+    try{
+      const r=await fetchT('https://lingva.ml/api/v1/auto/he/'+encodeURIComponent(text),9000);
+      if(r.ok){ const d=await r.json(); if(d&&typeof d.translation==='string'&&d.translation) out=d.translation; }
+    }catch{}
+  }
+  if(out){ trCache.set(text,out); saveTrCache(); }
+  return out;
+}
+let trQueue=Promise.resolve(), trDirty=false;
+function translateFeedItems(){
+  if(!octoSettings.translateHe) return;
+  const pending=items.filter(n=>!n.titleHe&&needsHe(n.title)).slice(0,40);
+  if(!pending.length) return;
+  pending.forEach(n=>{
+    trQueue=trQueue.then(async()=>{
+      if(n.titleHe||!octoSettings.translateHe) return;
+      const t=await trOne(n.title);
+      if(t){ n.titleHe=t; trDirty=true; }
+    });
+  });
+  trQueue=trQueue.then(()=>{
+    if(trDirty){ trDirty=false; renderClusters(); renderHeadlines(); }
+  });
+}
+const dispTitle=n=>(octoSettings.translateHe&&n.titleHe)? n.titleHe : n.title;
+const trMark=n=>(octoSettings.translateHe&&n.titleHe)? ' <span class="tr-mark" title="תורגם אוטומטית מאנגלית">🌐</span>' : '';
+
+// ---------- voice — the same built-in speech synthesis the arena's chart
+// lesson uses (no key, works offline). One speaker at a time; clicking the
+// active button again stops it.
+function octoSpeak(text,btn){
+  if(!('speechSynthesis' in window)) return;
+  const wasBtn=octoSpeak._btn;
+  if(speechSynthesis.speaking){
+    speechSynthesis.cancel();
+    if(wasBtn) wasBtn.classList.remove('speaking');
+    octoSpeak._btn=null;
+    if(wasBtn===btn) return; // same button = toggle off
+  }
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang='he-IL'; u.rate=1.02;
+  const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.toLowerCase().startsWith('he'));
+  if(v) u.voice=v;
+  octoSpeak._btn=btn||null;
+  if(btn) btn.classList.add('speaking');
+  u.onend=u.onerror=()=>{ if(btn) btn.classList.remove('speaking'); octoSpeak._btn=null; };
+  speechSynthesis.speak(u);
+}
+
+// ---------- "what's new since my last visit" — story keys seen on previous
+// sessions; anything not in that set gets a 🆕 badge this session
+let prevSeen=new Set();
+try{ prevSeen=new Set(JSON.parse(localStorage.getItem('octo:seen')||'[]')); }catch{}
+const firstVisit=prevSeen.size===0;
+const seenKey=t=>String(t||'').slice(0,70);
+function persistSeen(){
+  try{
+    const keys=new Set(prevSeen);
+    items.forEach(n=>keys.add(seenKey(n.title)));
+    localStorage.setItem('octo:seen',JSON.stringify([...keys].slice(-800)));
+  }catch{}
+}
+const isNewCluster=c=>!firstVisit&&!prevSeen.has(seenKey(c.head.title));
+
+// ---------- per-source health counters (rendered in the settings panel)
+let timeFilterH=0;
+
+// Several public CORS relays instead of one: a single dead / rate-limited /
+// cache-happy proxy was the reason the same headlines kept coming back — if
+// one relay fails or returns stale XML, the next takes over. Each source
+// remembers which relay served it last (sticky), and the allorigins URL gets
+// a timestamp param so its edge cache can never freeze a feed.
+const CORS_PROXIES=[
+  {mk:u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u)+'&_ts='+Math.floor(Date.now()/60000), kind:'xml'},
+  {mk:u=>'https://corsproxy.io/?url='+encodeURIComponent(u), kind:'xml'},
+  {mk:u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u), kind:'xml'},
+  {mk:u=>'https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent(u), kind:'json'},
+];
+// rss2json parses the feed server-side and returns clean JSON — a lifeline
+// when every raw-XML relay is down or serving garbage
+function parseRss2json(j,name){
+  if(j?.status!=='ok'||!Array.isArray(j.items)) return [];
+  return j.items.slice(0,10).map(it=>({
+    src:name,
+    title:String(it.title||'').trim(),
+    link:String(it.link||'#').trim(),
+    desc:String(it.description||'').replace(/<[^>]*>/g,' ').trim().slice(0,400),
+    at:Date.parse(it.pubDate||'')||Date.now(),
+  })).filter(x=>x.title);
+}
+// gentle global throttle: free relays rate-limit per IP (codetabs ~5/s) —
+// firing all ~70 sources at once just converts them into 429s
+let pullSlots=0; const pullQueue=[];
+function withPullSlot(fn){
+  return new Promise((resolve)=>{
+    const run=async()=>{ pullSlots++;
+      try{ resolve(await fn()); }
+      finally{ pullSlots--; const n=pullQueue.shift(); if(n) n(); } };
+    if(pullSlots<7) run(); else pullQueue.push(run);
+  });
+}
+const srcProxyPref=ARMS.map(()=>0);
+// RSS <item> AND Atom <entry> — The Verge, Politico and other Atom feeds
+// used to fail silently because only <item> was parsed
+function parseFeedDoc(doc,name){
+  return [...doc.querySelectorAll('item,entry')].slice(0,10).map(it=>{
+    const linkEl=it.querySelector('link');
+    return {
+      src:name,
+      title:(it.querySelector('title')?.textContent||'').trim(),
+      link:((linkEl?.getAttribute('href'))||linkEl?.textContent||'#').trim(),
+      desc:((it.querySelector('description')||it.querySelector('summary')||it.querySelector('content'))?.textContent||'')
+        .replace(/<[^>]*>/g,' ').trim().slice(0,400),
+      at:Date.parse((it.querySelector('pubDate')||it.querySelector('updated')||it.querySelector('published'))?.textContent||'')||Date.now(),
+    };
+  }).filter(x=>x.title);
+}
+function pullOneSource(i){
+  return withPullSlot(async()=>{
+    const [name,url]=ARMS[i];
+    const start=srcProxyPref[i];
+    for(let k=0;k<CORS_PROXIES.length;k++){
+      const pi=(start+k)%CORS_PROXIES.length;
+      const relay=CORS_PROXIES[pi];
+      try{
+        const r=await fetchT(relay.mk(url),k===0?8000:5500);
+        if(!r.ok) throw 0;
+        const got=relay.kind==='json'
+          ? parseRss2json(await r.json(),name)
+          : parseFeedDoc(new DOMParser().parseFromString(await r.text(),'text/xml'),name);
+        if(!got.length) throw 0;
+        srcProxyPref[i]=pi;
+        armState[i]='ok';
+        srcStats[i].ok++; srcStats[i].last=Date.now();
+        return got;
+      }catch(e){ /* next relay */ }
+    }
+    armState[i]='off'; srcStats[i].fail++; return [];
+  });
+}
+// One tentacle per thematic group: all sources in the group are pulled in
+// parallel, and armPulling[groupIdx] flags the 3D octopus to reach that arm
+// out while the request is in flight (and retract when it lands).
+async function pullGroup(gi){
+  const group=ARM_GROUPS[gi];
+  let base=0; for(let k=0;k<gi;k++) base+=ARM_GROUPS[k][2].length;
+  const idxs=group[2].map((_,k)=>base+k);
+  if(octoSettings.disabledArms.includes(gi)){
+    idxs.forEach(i=>armState[i]='off');
+    return [];
+  }
+  armPulling[gi]=true; if(window.__octoReach) window.__octoReach(gi,true);
+  const results=await Promise.all(idxs.map(pullOneSource));
+  armPulling[gi]=false; if(window.__octoReach) window.__octoReach(gi,false, results.some(r=>r.length));
+  return [].concat.apply([],results);
+}
+function simFeed(){
+  const now=Date.now(), m=60000;
+  return [
+    {src:'רויטרס·SIM',title:'הפד הותיר את הריבית ללא שינוי — רומז על הפחתה ברבעון הבא',link:'#',desc:'הבנק המרכזי האמריקאי שמר על טווח הריבית והדגיש תלות בנתוני האינפלציה.',at:now-4*m},
+    {src:'בלומברג·SIM',title:'הפד הותיר את הריבית ללא שינוי; השווקים מתמחרים הפחתה קרובה',link:'#',desc:'החלטת הפד עמדה בציפיות; תשואות האג"ח ירדו מעט.',at:now-6*m},
+    {src:'גלובס·SIM',title:'הפד לא שינה את הריבית — וול סטריט הגיבה בעליות',link:'#',desc:'המדדים המובילים עלו לאחר ההודעה; הדולר נחלש.',at:now-8*m},
+    {src:'CoinDesk·SIM',title:'ביטקוין מזנק לשיא חודשי על רקע החלטת הריבית',link:'#',desc:'המטבע הדיגיטלי הגיב בעליה חדה; מחזורי המסחר קפצו.',at:now-3*m},
+    {src:'Cointelegraph·SIM',title:'Bitcoin surges to monthly high after Fed decision',link:'#',desc:'BTC jumped as traders priced in easier policy ahead.',at:now-5*m},
+    {src:'כלכליסט·SIM',title:'ענקיות השבבים מפתיעות בדוחות — תחזית שנתית הועלתה',link:'#',desc:'עונת הדוחות ממשיכה חזקה בסקטור השבבים.',at:now-15*m},
+    {src:'ynet·SIM',title:'גל חום קיצוני צפוי בסוף השבוע — שיא של עשור',link:'#',desc:'השירות המטאורולוגי מזהיר מטמפרטורות חריגות.',at:now-22*m},
+    {src:'וואלה·SIM',title:'שיא חום של עשור: אזהרות חום כבד ברחבי הארץ בסופ"ש',link:'#',desc:'המשרד להגנת הסביבה קורא להיערך מראש.',at:now-25*m},
+  ];
+}
+
+// ---------- cross-reference clustering ----------
+const STOP=new Set(['של','על','עם','את','לא','זה','גם','אבל','או','כי','מה','יש','אין','בין','אחרי','לפני','the','a','to','of','in','on','and','for','as','after','is','are']);
+function tokens(t){
+  return new Set(String(t).toLowerCase().replace(/["'״׳,.:;!?()\-–—]/g,' ').split(/\s+/)
+    .map(w=>w.replace(/^[בלמהוכש]/,'')).filter(w=>w.length>1&&!STOP.has(w)));
+}
+// thresholds by user-selected sensitivity — loose merges more aggressively
+// (more cross-references, some false merges), strict only merges near-twins
+const SENS={loose:[0.2,0.45], normal:[0.28,0.55], strict:[0.38,0.7]};
+function similar(a,b){
+  let inter=0; for(const w of a) if(b.has(w)) inter++;
+  const jac=inter/Math.max(1,(a.size+b.size-inter));
+  const containment=inter/Math.max(1,Math.min(a.size,b.size));
+  // Jaccard alone misses a short headline contained in a longer one — the
+  // containment ratio catches "same story, different verbosity".
+  const [jT,cT]=SENS[octoSettings.clusterSens]||SENS.normal;
+  return jac>=jT || containment>=cT;
+}
+// ============================================================
+//  STORY INTELLIGENCE — a news engine's job is not to list articles, it is
+//  to tell you which STORIES matter and how much to believe them. Every
+//  metric below is computed from the fetched articles themselves:
+//
+//    corroboration — how many INDEPENDENT outlets carry it. Independence is
+//      measured by domain, not by feed name: three RSS feeds from one
+//      publisher are one voice, not three.
+//    reach         — how many different source groups (Israel / world / wire
+//      services / finance / tech) picked it up. A story that crosses
+//      categories is a bigger story than one that stays in its lane.
+//    velocity      — how much of the coverage arrived in the last half hour.
+//      This is what separates "breaking right now" from "big yesterday".
+//    divergence    — whether the outlets disagree in tone. Contradictory
+//      coverage is a signal in itself, and it is the one thing a naive
+//      aggregator will never show you.
+//
+//  Nothing here is scraped, guessed or invented — it is all arithmetic on
+//  the articles the tentacles actually pulled.
+// ============================================================
+function outletOf(a){
+  try{
+    if(/^https?:/.test(a.link)){
+      const h=new URL(a.link).hostname.replace(/^www\./,'');
+      const parts=h.split('.');
+      // co.il / com.au style suffixes need three labels to identify the owner
+      return parts.length>2 && /^(co|com|org|net|gov|ac)$/.test(parts[parts.length-2])
+        ? parts.slice(-3).join('.') : parts.slice(-2).join('.');
+    }
+  }catch(e){}
+  return a.src;
+}
+// which thematic group each source name belongs to — the reach measure
+const SRC_GROUP={};
+ARM_GROUPS.forEach((g,gi)=>g[2].forEach(([name])=>{ SRC_GROUP[name]=gi; }));
+function storyMetrics(grp){
+  const now=Date.now();
+  const outlets=[...new Set(grp.map(outletOf))];
+  const groups=[...new Set(grp.map(a=>SRC_GROUP[a.src]).filter(v=>v!==undefined))];
+  const times=grp.map(a=>a.at).sort((a,b)=>a-b);
+  const firstAt=times[0], lastAt=times[times.length-1];
+  const first=grp.slice().sort((a,b)=>a.at-b.at)[0];
+  const recent30=grp.filter(a=>now-a.at<30*60000).length;
+  const velocity=grp.length? recent30/grp.length : 0;
+  const spanH=Math.max(0.1,(lastAt-firstAt)/3600e3);
+  const perHour=grp.length/spanH;
+  // tone spread across outlets — POS vs NEG headlines on the same story
+  let pos=0,neg=0;
+  grp.forEach(a=>{
+    const s=sentimentOf([a]);
+    if(s==='pos') pos++; else if(s==='neg') neg++;
+  });
+  const divergence=(pos>0&&neg>0)? Math.min(pos,neg)/grp.length : 0;
+  // credibility: independent outlets dominate, cross-group reach adds, and a
+  // single-outlet story is explicitly capped low no matter how loud it is
+  const indep=outlets.length;
+  let cred=Math.min(70,Math.log2(1+indep)*30)+Math.min(20,(groups.length-1)*10)+Math.min(10,grp.length*1.5);
+  if(indep===1) cred=Math.min(cred,32);
+  return {outlets,indep,groups:groups.length,firstAt,lastAt,first,recent30,velocity,perHour,
+    divergence,pos,neg,cred:Math.round(Math.min(100,cred)),
+    hot: recent30>=2 && velocity>=0.5};
+}
+// extractive summary: the sentence across the cluster that covers the most
+// of the story's own high-frequency terms. No model, no API — but it does
+// pick the sentence a human would have picked, most of the time.
+function clusterSummary(grp){
+  const freq={};
+  grp.forEach(a=>{ for(const w of tokens(a.title)) if(w.length>2) freq[w]=(freq[w]||0)+1; });
+  let best='', bestScore=0;
+  grp.forEach(a=>{
+    const text=((octoSettings.translateHe&&a.descHe)?a.descHe:a.desc)||'';
+    text.split(/(?<=[.!?׃])\s+/).forEach(sen=>{
+      const t=sen.trim();
+      if(t.length<45||t.length>240) return;
+      let sc=0; for(const w of tokens(t)) if(freq[w]) sc+=freq[w];
+      sc=sc/Math.sqrt(t.length);
+      if(sc>bestScore){ bestScore=sc; best=t; }
+    });
+  });
+  return best;
+}
+// ============================================================
+//  STORY MEMORY — an aggregator that forgets everything on refresh cannot
+//  tell you that a story has been running for three days, that it is the
+//  fourth time this week the same subject resurfaced, or which outlet keeps
+//  breaking things first. All of that lives here, in localStorage, keyed by
+//  a signature of the story rather than by its headline (headlines change,
+//  stories do not).
+// ============================================================
+const STORY_KEY='octo:stories', SRC_KEY='octo:srcscore', VISIT_KEY='octo:lastvisit';
+let storyMem={}, srcScore={};
+try{ storyMem=JSON.parse(localStorage.getItem(STORY_KEY)||'{}')||{}; }catch(e){ storyMem={}; }
+try{ srcScore=JSON.parse(localStorage.getItem(SRC_KEY)||'{}')||{}; }catch(e){ srcScore={}; }
+let lastVisitAt=0;
+try{ lastVisitAt=+localStorage.getItem(VISIT_KEY)||0; }catch(e){}
+function saveMemory(){
+  try{
+    // keep a fortnight of stories — enough for "this keeps coming back",
+    // small enough to never bloat storage
+    const cut=Date.now()-14*864e5;
+    for(const k of Object.keys(storyMem)) if(storyMem[k].last<cut) delete storyMem[k];
+    localStorage.setItem(STORY_KEY,JSON.stringify(storyMem));
+    localStorage.setItem(SRC_KEY,JSON.stringify(srcScore));
+  }catch(e){}
+}
+// signature = the five most distinctive words of the story, alphabetised.
+// Two headlines about the same event share it; a different event does not.
+function storySig(grp){
+  const freq={};
+  grp.forEach(a=>{ for(const w of tokens(a.title)) if(w.length>3) freq[w]=(freq[w]||0)+1; });
+  return Object.keys(freq)
+    .sort((a,b)=>(freq[b]-freq[a])||(b.length-a.length))
+    .slice(0,5).sort().join('|');
+}
+function srcRec(name){
+  return srcScore[name]||(srcScore[name]={first:0,solo:0,stories:0,reports:0});
+}
+// ── FOLLOWING A STORY. Bookmarks save a story; following it means the app
+// watches it for you and tells you the moment a new outlet picks it up.
+// The count at the time of following is remembered, so the alert can say
+// exactly what changed rather than just "something happened". ──
+const FOLLOW_KEY='octo:follow';
+let follows={};
+try{ follows=JSON.parse(localStorage.getItem(FOLLOW_KEY)||'{}')||{}; }catch(e){ follows={}; }
+function saveFollows(){ try{ localStorage.setItem(FOLLOW_KEY,JSON.stringify(follows)); }catch(e){} }
+function isFollowed(c){ return !!follows[storySig(c.angles)]; }
+function toggleFollow(c){
+  const sig=storySig(c.angles); if(!sig) return;
+  if(follows[sig]){ delete follows[sig]; toast&&null; }
+  else follows[sig]={at:Date.now(),title:dispTitle(c.head),seen:c.angles.length,outlets:c.m.indep};
+  saveFollows(); renderClusters();
+}
+function checkFollows(){
+  for(const c of clusters){
+    const sig=storySig(c.angles), f=follows[sig];
+    if(!f) continue;
+    if(c.m.indep>f.outlets || c.angles.length>f.seen){
+      const dOut=c.m.indep-f.outlets, dRep=c.angles.length-f.seen;
+      f.outlets=c.m.indep; f.seen=c.angles.length; saveFollows();
+      const msg=(dOut>0? dOut+' מקורות עצמאיים חדשים' : dRep+' דיווחים חדשים')+' · '+dispTitle(c.head);
+      // its own channel, not the breaking banner: a follow alert that can be
+      // wiped a second later by an unrelated breaking story is an alert the
+      // reader never actually sees
+      showFollowToast(msg);
+      ensureAC(); beep([[660,0.09],[880,0.11]]);
+      try{
+        if(octoSettings.pushNotify&&typeof Notification!=='undefined'
+          &&Notification.permission==='granted'&&document.visibilityState!=='visible'){
+          new Notification('⭐ אוקטופוס · סיפור במעקב',{body:msg,tag:'octo-follow'});
+        }
+      }catch(e){}
+    }
+  }
+}
+let followToastT=null;
+function showFollowToast(msg){
+  let el=document.getElementById('followToast');
+  if(!el){
+    el=document.createElement('div');
+    el.id='followToast';
+    document.body.appendChild(el);
+  }
+  el.innerHTML='<b>⭐ סיפור במעקב התעדכן</b><span>'+escH(msg)+'</span>';
+  el.classList.add('show');
+  clearTimeout(followToastT);
+  followToastT=setTimeout(()=>el.classList.remove('show'),9000);
+  el.onclick=()=>el.classList.remove('show');
+}
+function trackStory(c){
+  const sig=storySig(c.angles);
+  if(!sig) return null;
+  const now=Date.now();
+  const rec=storyMem[sig]||(storyMem[sig]={sig,first:now,last:now,reports:0,outlets:[],title:dispTitle(c.head),
+    credited:'',days:[]});
+  rec.last=now;
+  rec.title=dispTitle(c.head);
+  rec.outlets=[...new Set(rec.outlets.concat(c.m.outlets))].slice(0,40);
+  rec.reports=Math.max(rec.reports,c.angles.length);
+  const day=new Date().toISOString().slice(0,10);
+  if(!rec.days.includes(day)) rec.days.push(day);
+  // ── source credit. Awarded once per story and never re-counted on
+  // re-render — but sources arrive progressively, so an outlet credited as
+  // "first" can be displaced minutes later by an article with an earlier
+  // timestamp. When that happens the credit MOVES rather than being handed
+  // out twice, otherwise the scorecard slowly drifts into fiction.
+  const firstSrc=c.m.first.src;
+  if(rec.credited!==firstSrc){
+    if(rec.credited){
+      const old=srcRec(rec.credited);
+      old.first=Math.max(0,old.first-1);
+      old.stories=Math.max(0,old.stories-1);
+      if(rec.wasSolo) old.solo=Math.max(0,old.solo-1);
+    }
+    rec.credited=firstSrc;
+    rec.wasSolo=c.m.indep===1;
+    const r=srcRec(firstSrc); r.first++; r.stories++;
+    if(rec.wasSolo) r.solo++;
+  }
+  // per-article report credit, counted exactly once ever — articles keep
+  // arriving for a story long after it is first seen
+  rec.counted=rec.counted||[];
+  c.angles.forEach(a=>{
+    const id=(a.link&&a.link!=='#')? a.link : a.src+'|'+a.title.slice(0,40);
+    if(rec.counted.indexOf(id)<0){ rec.counted.push(id); srcRec(a.src).reports++; }
+  });
+  rec.counted=rec.counted.slice(-60);
+  c.hist={ ageH:(now-rec.first)/3600e3, days:rec.days.length, totalReports:rec.reports,
+    totalOutlets:rec.outlets.length, returning: rec.days.length>1,
+    isNew: rec.first>lastVisitAt && lastVisitAt>0 };
+  return rec;
+}
+function buildClusters(){
+  const list=items.map(it=>({it,tok:tokens(it.title)}));
+  const used=new Array(list.length).fill(false);
+  clusters=[];
+  for(let i=0;i<list.length;i++){
+    if(used[i]) continue;
+    const grp=[list[i].it]; used[i]=true;
+    for(let j=i+1;j<list.length;j++){
+      if(used[j]) continue;
+      if(similar(list[i].tok,list[j].tok)){ grp.push(list[j].it); used[j]=true; }
+    }
+    grp.sort((a,b)=>b.at-a.at);
+    const m=storyMetrics(grp);
+    clusters.push({head:grp[0],angles:grp,topic:classify(grp),sentiment:sentimentOf(grp),at:grp[0].at,
+      m, summary:clusterSummary(grp)});
+  }
+  // ── ranking. Cluster size alone puts a stale six-source story above a
+  // breaking two-source one; this weighs corroboration, how fast it is
+  // moving, and how recent it is, so the top of the page is what a news
+  // desk would actually lead with. ──
+  const now=Date.now();
+  clusters.forEach(c=>{
+    const ageH=(now-c.at)/3600e3;
+    const recency=Math.exp(-ageH/6);                 // half-life about 4 hours
+    c.rank=c.m.cred*0.45 + c.m.velocity*100*0.25 + recency*100*0.22 + Math.min(10,c.m.groups*4);
+  });
+  clusters.forEach(c=>{ try{ trackStory(c); }catch(e){} });
+  saveMemory();
+  try{ checkFollows(); }catch(e){}
+  clusters.sort((a,b)=>b.rank-a.rank);
+  checkBreaking();
+}
+// a story that's crossed 3+ independent sources is treated as "breaking" the
+// first time it reaches that threshold — notifiedBreaking guards against
+// re-alerting on every re-render of the same still-growing cluster
+function checkBreaking(){
+  if(!octoSettings.breakingAlerts) return;
+  clusters.forEach(c=>{
+    const key=c.head.title.slice(0,70);
+    // three articles from one publisher is not corroboration — only
+    // independent outlets can promote a story to "breaking"
+    if(c.m && c.m.indep>=3 && !notifiedBreaking.has(key)){
+      notifiedBreaking.add(key);
+      ensureAC(); beep([[880,0.1],[1108,0.12],[1318,0.16]]);
+      showBreakingBanner(c);
+      try{
+        if(octoSettings.pushNotify&&typeof Notification!=='undefined'
+          &&Notification.permission==='granted'&&document.visibilityState!=='visible'){
+          new Notification('🔥 אוקטופוס · חדשות מתפתחות',{body:dispTitle(c.head)+' ('+c.m.indep+' מקורות עצמאיים)',tag:'octo-breaking'});
+        }
+      }catch{}
+      if(window.__octoBreaking) window.__octoBreaking();
+    }
+  });
+}
+function showBreakingBanner(c){
+  const b=$('breakingBanner'); if(!b) return;
+  $('breakingText').textContent=c.head.title;
+  b.classList.add('show');
+  clearTimeout(showBreakingBanner._t);
+  showBreakingBanner._t=setTimeout(()=>b.classList.remove('show'),6000);
+}
+function classify(grp){
+  const text=grp.map(g=>g.title+' '+(g.desc||'')).join(' ').toLowerCase();
+  let best='כללי', bestN=0;
+  for(const [name,keys] of TOPICS){
+    let n=0; for(const k of keys) if(text.includes(k)) n++;
+    if(n>bestN){ bestN=n; best=name; }
+  }
+  return best;
+}
+
+// ---------- render ----------
+function fmtAgo(at){
+  const m=Math.max(0,Math.round((Date.now()-at)/60000));
+  if(m<60) return 'לפני '+m+' ד׳';
+  const h=Math.round(m/60); if(h<24) return 'לפני '+h+' ש׳';
+  return 'לפני '+Math.round(h/24)+' ימים';
+}
+function renderArms(){
+  const el=$('arms'); el.innerHTML='';
+  let base=0, liveArms=0;
+  ARM_GROUPS.forEach((g,gi)=>{
+    const n=g[2].length, states=armState.slice(base,base+n);
+    const okN=states.filter(s=>s==='ok').length;
+    if(okN>0) liveArms++;
+    const d=document.createElement('span');
+    d.className='arm '+(okN>0?'ok':states.some(s=>s==='sim')?'sim':'');
+    d.title=g[0]+' — '+okN+'/'+n+' מקורות חיים';
+    el.appendChild(d);
+    base+=n;
+  });
+  $('stArms').textContent=liveArms+'/'+ARM_GROUPS.length;
+}
+// front-page ranking — what a human editor would put on top: how many
+// independent sources converged on the story (weight 3 per extra angle),
+// how fresh it is, and a small bonus for a clear (non-neutral) mood.
+function headlineScore(c){
+  const ageMin=Math.max(0,(Date.now()-c.at)/60000);
+  const fresh=ageMin<45?4:ageMin<180?2.5:ageMin<720?1:0;
+  return (c.angles.length-1)*3 + fresh + (c.sentiment!=='neu'?0.5:0);
+}
+function renderHeadlines(){
+  const sec=$('headlines'); if(!sec) return;
+  const top=clusters.slice().sort((a,b)=>headlineScore(b)-headlineScore(a)).slice(0,5);
+  renderHeadlines._top=top; // the voice briefing reads exactly what's shown
+  if(!top.length){ sec.style.display='none'; return; }
+  sec.style.display='block';
+  $('hlList').innerHTML=top.map((c,i)=>
+    '<div class="hl-item'+(i===0?' first':'')+'" data-i="'+i+'">'
+    +'<span class="hl-rank">'+(i+1)+'</span>'
+    +'<span class="hl-t">'+escH(dispTitle(c.head))+trMark(c.head)+'</span>'
+    +'<span class="hl-meta">'+(c.angles.length>1?'<span class="hl-x">⚡'+c.angles.length+'</span> · ':'')+fmtAgo(c.at)+'</span>'
+    +'</div>').join('');
+  sec.querySelectorAll('.hl-item').forEach(el=>{
+    el.onclick=()=>openAnalysis(top[+el.dataset.i]);
+  });
+}
+// hot entities — the most-mentioned meaningful words across every current
+// story, weighted extra when they appear in multi-angle (cross-referenced)
+// clusters. Clicking one drops it into the search box as a live filter.
+// ── ENTITY VELOCITY. A frequency count answers "what is being written about",
+// which is almost never the interesting question — a name that appears 40
+// times every day is background, and a name that appeared twice yesterday and
+// eleven times in the last hour is a story breaking. So every entity's count
+// is stored per hour and each chip shows its RISE against its own recent
+// baseline, not its raw volume. ──
+const ENT_KEY='octo:entity';
+let entHist={};
+try{ entHist=JSON.parse(localStorage.getItem(ENT_KEY)||'{}')||{}; }catch(e){ entHist={}; }
+function entityVelocity(freq){
+  const now=Date.now(), hour=Math.floor(now/3600e3);
+  const out={};
+  for(const w of Object.keys(freq)){
+    const h=entHist[w]||(entHist[w]={});
+    h[hour]=Math.max(h[hour]||0,freq[w]);
+    // baseline = the mean of the previous six hours this word was recorded in
+    const keys=Object.keys(h).map(Number).filter(k=>k<hour).sort((a,b)=>b-a).slice(0,6);
+    const base=keys.length? keys.reduce((a,k)=>a+h[k],0)/keys.length : 0;
+    out[w]={now:freq[w], base, rise: base>0? (freq[w]/base-1)*100 : (keys.length?0:null)};
+    // prune: only the last 24 recorded hours of each word are worth keeping
+    const all=Object.keys(h).map(Number).sort((a,b)=>b-a);
+    all.slice(24).forEach(k=>delete h[k]);
+  }
+  // forget words we have not seen in a day
+  const cut=hour-24;
+  for(const w of Object.keys(entHist)){
+    const ks=Object.keys(entHist[w]).map(Number);
+    if(!ks.length||Math.max(...ks)<cut) delete entHist[w];
+  }
+  try{ localStorage.setItem(ENT_KEY,JSON.stringify(entHist)); }catch(e){}
+  return out;
+}
+function renderHotEntities(){
+  const el=$('hotEntities'); if(!el) return;
+  if(!octoSettings.showEntities){ el.style.display='none'; return; }
+  el.style.display='flex';
+  const freq={};
+  clusters.forEach(c=>{
+    const w8=1+Math.min(3,c.angles.length-1);
+    for(const w of tokens(c.head.title)) if(w.length>2) freq[w]=(freq[w]||0)+w8;
+  });
+  const vel=entityVelocity(freq);
+  // rank by surge first, volume second — that is the difference between a
+  // trend monitor and a word counter
+  const top=Object.keys(freq)
+    .sort((a,b)=>((vel[b].rise||0)-(vel[a].rise||0))||(freq[b]-freq[a]))
+    .slice(0,8);
+  if(!top.length){ el.innerHTML=''; return; }
+  el.innerHTML='<span class="he-lbl">🔥 חם עכשיו:</span>'+top.map(w=>{
+    const v=vel[w];
+    const surge=v.rise!=null&&v.rise>=40;
+    return '<span class="he-chip'+(surge?' surge':'')+'" data-w="'+escH(w)+'"'
+      +' title="'+(v.rise!=null? 'מוזכר '+v.now+' פעמים · ממוצע קודם '+v.base.toFixed(1)+' · שינוי '+(v.rise>=0?'+':'')+v.rise.toFixed(0)+'%' : 'מילה חדשה — אין עדיין בסיס להשוואה')+'">'
+      +escH(w)+'<b>'+freq[w]+'</b>'
+      +(v.rise!=null&&Math.abs(v.rise)>=40? '<i class="he-v '+(v.rise>0?'up':'dn')+'">'+(v.rise>0?'▲':'▼')+Math.abs(v.rise).toFixed(0)+'%</i>'
+        : v.rise==null? '<i class="he-v new">חדש</i>':'')
+      +'</span>';
+  }).join('');
+  el.querySelectorAll('.he-chip').forEach(ch=>{
+    ch.onclick=()=>{
+      const w=ch.dataset.w;
+      const box=$('searchBox');
+      box.value = box.value===w? '' : w;
+      searchQuery=box.value.toLowerCase();
+      renderClusters();
+    };
+  });
+}
+// ── "what happened while you were away" — the one thing a returning reader
+// actually wants, computed from the story memory rather than from whatever
+// happens to be in the pool right now ──
+let sinceFilterOn=false;
+function renderSince(){
+  const bar=$('sinceBar'); if(!bar) return;
+  if(!lastVisitAt || !clusters.length){ bar.style.display='none'; return; }
+  const fresh=clusters.filter(c=>c.hist&&c.hist.isNew);
+  const breaking=fresh.filter(c=>c.m.indep>=3);
+  if(!fresh.length){ bar.style.display='none'; return; }
+  const gapH=(Date.now()-lastVisitAt)/3600e3;
+  const gapTxt=gapH<1? Math.max(1,Math.round(gapH*60))+' דקות' : gapH<24? Math.round(gapH)+' שעות' : Math.round(gapH/24)+' ימים';
+  bar.style.display='flex';
+  bar.innerHTML='<span>👋 מאז הביקור האחרון שלך לפני '+gapTxt+': <b>'+fresh.length+'</b> סיפורים חדשים'
+    +(breaking.length?' · מתוכם <b>'+breaking.length+'</b> עם הצלבה של 3 מקורות עצמאיים ומעלה':'')
+    +'</span><button class="sb-btn'+(sinceFilterOn?' on':'')+'" id="sinceBtn">'+(sinceFilterOn?'✕ הצג הכל':'הצג רק אותם')+'</button>';
+  $('sinceBtn').onclick=()=>{ sinceFilterOn=!sinceFilterOn; renderSince(); renderClusters(); };
+}
+// ── source scorecard. Which outlet actually breaks stories first, and which
+// one is constantly alone on a story nobody else confirms. Both numbers are
+// earned over time on this device — no editorial opinion involved. ──
+function renderScorecard(){
+  const el=$('scList'); if(!el) return;
+  const rows=Object.entries(srcScore)
+    .map(([name,r])=>({name,...r}))
+    .filter(r=>r.stories>0)
+    .sort((a,b)=>(b.first-a.first)||(b.reports-a.reports))
+    .slice(0,14);
+  if(!rows.length){ $('scorecard').style.display='none'; return; }
+  $('scorecard').style.display='block';
+  const max=Math.max(...rows.map(r=>r.first),1);
+  el.innerHTML=rows.map((r,i)=>
+    '<div class="sc-row"><span class="sc-rank">'+(i+1)+'</span>'
+    +'<span class="sc-name">'+escH(r.name)+'</span>'
+    +'<span class="sc-bar"><i style="width:'+(r.first/max*100).toFixed(0)+'%"></i></span>'
+    +'<span class="sc-n">ראשון ב-<b>'+r.first+'</b> סיפורים · '+r.reports+' דיווחים'
+    +(r.solo? ' · <span class="sc-solo">'+r.solo+' בלעדיים ללא הצלבה</span>':'')+'</span></div>').join('');
+}
+function renderSituation(){
+  $('stStories').textContent=items.length;
+  $('stClusters').textContent=clusters.length;
+  $('stCross').textContent=clusters.filter(c=>c.angles.length>1).length;
+  $('updLbl').textContent=lastPull?('עודכן '+fmtAgo(lastPull)):'—';
+  const counts={};
+  clusters.forEach(c=>{ counts[c.topic]=(counts[c.topic]||0)+1; });
+  const tp=$('topics'); tp.innerHTML='';
+  const all=document.createElement('span');
+  all.className='tchip'+(topicFilter===null?' on':'');
+  all.innerHTML='הכל<b>'+clusters.length+'</b>';
+  all.onclick=()=>{ topicFilter=null; renderSituation(); renderClusters(); };
+  tp.appendChild(all);
+  Object.keys(counts).sort((a,b)=>counts[b]-counts[a]).forEach(t=>{
+    const c=document.createElement('span');
+    c.className='tchip'+(topicFilter===t?' on':'');
+    c.innerHTML=t+'<b>'+counts[t]+'</b>';
+    c.onclick=()=>{ topicFilter=topicFilter===t?null:t; renderSituation(); renderClusters(); };
+    tp.appendChild(c);
+  });
+}
+const escH=s=>String(s||'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+const SENT_LABEL={pos:'📈 חיובי',neg:'📉 שלילי',neu:'◦ ניטרלי'};
+function clusterKey(c){ return c.head.title.slice(0,70); }
+function renderClusters(){
+  const el=$('clusters'); el.innerHTML='';
+  let list=clusters.filter(c=>!topicFilter||c.topic===topicFilter);
+  if(timeFilterH) list=list.filter(c=>Date.now()-c.at<timeFilterH*3600e3);
+  if(bookmarkFilterOn) list=list.filter(c=>bookmarks.has(clusterKey(c)));
+  if(sinceFilterOn) list=list.filter(c=>c.hist&&c.hist.isNew);
+  if(searchQuery) list=list.filter(c=>
+    c.head.title.toLowerCase().includes(searchQuery) ||
+    c.angles.some(a=>a.src.toLowerCase().includes(searchQuery)));
+  const words=k=>(octoSettings[k]||'').split(',').map(w=>w.trim().toLowerCase()).filter(Boolean);
+  const cTxt=c=>(dispTitle(c.head)+' '+c.head.title).toLowerCase();
+  const mutes=words('muteWords');
+  if(mutes.length) list=list.filter(c=>!mutes.some(w=>cTxt(c).includes(w)));
+  const watches=words('watchWords');
+  const isWatched=c=>watches.some(w=>cTxt(c).includes(w));
+  if(watches.length) list=[...list.filter(isWatched),...list.filter(c=>!isWatched(c))];
+  if(!list.length){ el.innerHTML='<div class="empty">אין סיפורים בסינון הזה</div>'; return; }
+  if(!renderClusters._animated){ renderClusters._animated=true; el.classList.add('first-load'); setTimeout(()=>el.classList.remove('first-load'),2400); }
+  list.slice(0,40).forEach((c,i)=>{
+    const key=clusterKey(c), starred=bookmarks.has(key), breaking=c.m.indep>=3;
+    const followed=isFollowed(c);
+    const watched=watches.length&&isWatched(c);
+    const d=document.createElement('article');
+    d.className='cluster panel clip'+(breaking?' breaking':'')+(watched?' watched':'');
+    d.innerHTML='<div class="c-top"><span class="c-topic">'+c.topic+'</span>'
+      +(watched?'<span class="c-watch">📌 במעקב</span>':'')
+      +(octoSettings.showSentiment?'<span class="c-sentiment '+c.sentiment+'">'+SENT_LABEL[c.sentiment]+'</span>':'')
+      +(breaking?'<span class="c-breaking">🔥 מתפתח</span>':'')
+      +(isNewCluster(c)?'<span class="c-new">🆕 חדש</span>':'')
+      +(c.angles.length>1?'<span class="c-angles">⚡ '+c.angles.length+' זוויות</span>':'')
+      +'<span class="c-time">'+fmtAgo(c.at)+'</span>'
+      +'<span class="c-star'+(starred?' on':'')+'" title="שמור למועדפים">'+(starred?'★':'☆')+'</span>'
+      +'<span class="c-follow'+(followed?' on':'')+'" title="עקוב — התראה כשמקור נוסף מדווח">'+(followed?'🔔':'🔕')+'</span></div>'
+      +'<h3>'+escH(dispTitle(c.head))+trMark(c.head)+'</h3>'
+      +(c.summary?'<p class="c-sum">'+escH(c.summary.slice(0,190))+(c.summary.length>190?'…':'')+'</p>':'')
+      +'<div class="c-cred">'
+        +'<span class="cred-bar"><i style="width:'+c.m.cred+'%;background:'+(c.m.cred>=70?'#00ffa6':c.m.cred>=45?'#ffd166':'#ff3d6e')+'"></i></span>'
+        +'<span class="cred-n">אמינות '+c.m.cred+'</span>'
+        +'<span class="cred-x">'+c.m.indep+' מקורות עצמאיים'+(c.m.groups>1?' · '+c.m.groups+' תחומים':'')+'</span>'
+        +(c.m.hot?'<span class="cred-hot">⚡ מתפוצץ עכשיו · '+c.m.recent30+' דיווחים בחצי שעה</span>':'')
+        +(c.hist&&c.hist.returning?'<span class="cred-run">📅 רץ '+c.hist.days+' ימים · '+c.hist.totalOutlets+' מוציאים לאור סה״כ</span>':'')
+        +(c.hist&&c.hist.isNew?'<span class="cred-since">🆕 מאז הביקור האחרון</span>':'')
+        +(c.m.divergence>0.15?'<span class="cred-div">⚖️ דיווחים סותרים · '+c.m.pos+' חיובי מול '+c.m.neg+' שלילי</span>':'')
+      +'</div>'
+      +'<div class="c-srcs">'+[...new Set(c.angles.map(a=>a.src))].map(s=>'<span class="src">'+escH(s)+'</span>').join('')+'</div>'
+      +'<div class="c-first">🥇 פורסם ראשון · '+escH(c.m.first.src)+' · '+fmtAgo(c.m.firstAt)
+        +(c.angles.length>1?' · הסיפור רץ '+(Math.max(1,Math.round((c.m.lastAt-c.m.firstAt)/60000)))+' דקות':'')+'</div>'
+      +'<div class="c-hint">👆 הקשה — ניתוח מלא והצלבת הזוויות</div>';
+    d.querySelector('.c-follow').onclick=(e)=>{ e.stopPropagation(); toggleFollow(c); };
+    d.querySelector('.c-star').onclick=(e)=>{
+      e.stopPropagation();
+      if(bookmarks.has(key)) bookmarks.delete(key); else bookmarks.add(key);
+      saveBookmarks(); renderClusters();
+    };
+    d.onclick=()=>openAnalysis(c);
+    el.appendChild(d);
+  });
+}
+
+// ---------- analysis (מנתח כתבות) ----------
+function extractEntities(c){
+  const freq={};
+  c.angles.forEach(a=>{
+    for(const w of tokens(a.title+' '+(a.desc||''))){
+      if(w.length>2) freq[w]=(freq[w]||0)+1;
+    }
+  });
+  return Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,8);
+}
+async function openAnalysis(c){
+  openAnalysis._cur=c; // the read-aloud button speaks whatever is open
+  $('anaWrap').classList.add('open');
+  $('anaTitle').textContent=dispTitle(c.head);
+  $('anaTopic').textContent=c.topic;
+  const renderAngles=()=>{
+    $('anaAngles').innerHTML=c.angles.map(a=>{
+      const href=/^https?:/.test(a.link)?a.link:null;
+      const desc=(octoSettings.translateHe&&a.descHe)? a.descHe : a.desc;
+      const t=escH(dispTitle(a))+trMark(a)+(desc?'<br><span style="color:var(--dim);font-size:11px">'+escH(desc.slice(0,140))+'…</span>':'');
+      return '<div class="a-angle"><span class="src">'+escH(a.src)+'</span>'+(href?'<a href="'+href+'" target="_blank" rel="noopener">'+t+'</a>':t)+'</div>';
+    }).join('');
+  };
+  renderAngles();
+  // article-body translation happens lazily, only for the story actually
+  // being read — headlines are cheap, full descs are not
+  if(octoSettings.translateHe){
+    c.angles.slice(0,6).forEach(a=>{
+      if(a.descHe||!needsHe(a.desc||'')) return;
+      trQueue=trQueue.then(async()=>{
+        if(a.descHe) return;
+        const t=await trOne(a.desc.slice(0,320));
+        if(t){ a.descHe=t; if($('anaWrap').classList.contains('open')) renderAngles(); }
+      });
+    });
+  }
+  // chronological "who reported when" — the earliest report first, so the
+  // spread of a story across outlets is readable at a glance
+  const chrono=c.angles.slice().sort((a,b)=>a.at-b.at);
+  const t0=chrono[0].at;
+  $('anaTimeline').innerHTML=chrono.map((a,i)=>{
+    const lag=Math.round((a.at-t0)/60000);
+    const lagTxt=i===0?'⚡ ראשון לדווח':(lag<1?'באותה דקה':'+'+(lag<60?lag+' ד׳':Math.round(lag/60)+' ש׳'));
+    return '<div class="tl-row"><span class="tl-when num">'+fmtAgo(a.at)+'</span><span class="src">'+escH(a.src)+'</span><span class="tl-lag">'+lagTxt+'</span></div>';
+  }).join('');
+  $('anaEnts').innerHTML=extractEntities(c).map(e=>'<span class="a-ent">'+escH(e)+'</span>').join('');
+  // ── story intelligence block: how much of this is corroborated, by whom,
+  // how fast it is spreading, and whether the outlets actually agree ──
+  {
+    const m=c.m, el=$('anaTimeline');
+    const box=document.createElement('div');
+    box.className='ana-intel';
+    box.innerHTML='<div class="ai-h">🧭 מודיעין הסיפור</div>'
+      +'<div class="ai-grid">'
+      +'<span>אמינות<b style="color:'+(m.cred>=70?'#00ffa6':m.cred>=45?'#ffd166':'#ff3d6e')+'">'+m.cred+'/100</b></span>'
+      +'<span>מקורות עצמאיים<b>'+m.indep+'</b></span>'
+      +'<span>תחומי סיקור<b>'+m.groups+'</b></span>'
+      +'<span>קצב<b>'+m.perHour.toFixed(1)+' דיווחים/ש׳</b></span>'
+      +'<span>בחצי שעה האחרונה<b>'+m.recent30+'</b></span>'
+      +'<span>משך הסיפור<b>'+Math.max(1,Math.round((m.lastAt-m.firstAt)/60000))+' דק׳</b></span>'
+      +'</div>'
+      +'<div class="ai-outlets">'+m.outlets.slice(0,12).map(o=>'<span class="src">'+escH(o)+'</span>').join('')+'</div>'
+      +(m.divergence>0.15
+        ? '<div class="ai-warn">⚖️ הכיסוי סותר את עצמו — '+m.pos+' דיווחים בטון חיובי מול '+m.neg+' שלילי. שווה לקרוא לפחות שתי זוויות לפני שמסיקים משהו.</div>'
+        : '')
+      +(m.indep===1
+        ? '<div class="ai-warn">⚠️ מקור יחיד. אין שום הצלבה עצמאית לסיפור הזה — הציון נחסם בכוונה.</div>'
+        : '')
+      +(c.hist&&c.hist.returning? '<div class="ai-run">📅 הסיפור הזה חי אצלנו '+c.hist.days+' ימים ('+Math.round(c.hist.ageH)+' שעות מאז הדיווח הראשון שראינו), עם '+c.hist.totalReports+' דיווחים מ-'+c.hist.totalOutlets+' מוציאים לאור. לא ידיעה חולפת.</div>':'')
+      +(m.hot? '<div class="ai-hot">⚡ הסיפור מתפוצץ עכשיו — '+m.recent30+' דיווחים חדשים בחצי השעה האחרונה, '+Math.round(m.velocity*100)+'% מכלל הכיסוי.</div>':'');
+    el.parentNode.insertBefore(box, el);
+    const prev=el.parentNode.querySelector('.ana-intel:not(:last-of-type)');
+    if(prev&&prev!==box) prev.remove();
+  }
+  // AI synthesis — with the platform's shared key; local fallback otherwise
+  const body=$('anaAiBody'), note=$('anaNote');
+  const groq=(localStorage.getItem('alpha_groq')||'').trim();
+  const gem=(localStorage.getItem('alpha_key')||'').trim();
+  if(!groq&&!gem){
+    body.textContent=localSynthesis(c);
+    note.textContent='ניתוח מקומי. חיבור מפתח Groq/Gemini בדשבורד אלפא משדרג לניתוח AI מלא.';
+    return;
+  }
+  body.innerHTML='<span class="a-spin">🐙 OCTOPUS מנתח…</span>';
+  note.textContent='';
+  const prompt='אתה OCTOPUS — אנליסט חדשות שמצליב מקורות. לפניך אותו סיפור כפי שדווח בכמה מקורות:\n\n'
+    +c.angles.map((a,i)=>(i+1)+'. ['+a.src+'] '+a.title+(a.desc?' — '+a.desc.slice(0,200):'')).join('\n')
+    +'\n\nכתוב בעברית, בקצרה ובחדות:\n1) התמונה הכוללת (2-3 משפטים).\n2) מה כל זווית מוסיפה או מדגישה אחרת (שורה לזווית, אם יש הבדל אמיתי).\n3) משמעות/השלכות (2 משפטים).\nללא כותרות מנופחות, בלי המצאות — רק מה שנתמך בכותרות.';
+  let out=null;
+  try{
+    if(groq){
+      const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+        method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+groq},
+        body:JSON.stringify({model:'llama-3.3-70b-versatile',temperature:0.3,max_tokens:600,messages:[{role:'user',content:prompt}]})});
+      if(r.ok){ const d=await r.json(); out=d&&d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content; }
+    }
+    if(!out&&gem){
+      const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',{
+        method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':gem},
+        body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})});
+      if(r.ok){ const d=await r.json(); const parts=d&&d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts;
+        out=parts?parts.map(p=>p.text||'').join(''):null; }
+    }
+  }catch(e){}
+  if(out){ body.textContent=out.trim(); note.textContent='נותח ע"י OCTOPUS AI · הוצלבו '+c.angles.length+' זוויות'; }
+  else { body.textContent=localSynthesis(c); note.textContent='ה-AI לא זמין כרגע — מוצג ניתוח מקומי.'; }
+}
+function localSynthesis(c){
+  const srcs=[...new Set(c.angles.map(a=>a.src))];
+  const lines=[];
+  lines.push('הסיפור סוקר ע"י '+srcs.length+' מקורות ('+srcs.join(', ')+') בקטגוריית '+c.topic+'.');
+  if(c.angles.length>1){
+    lines.push('נקודת ההסכמה: '+c.head.title);
+    const extra=c.angles.slice(1).map(a=>{
+      const diff=[...tokens(a.title)].filter(w=>!tokens(c.head.title).has(w)).slice(0,4).join(', ');
+      return diff?('• '+a.src+' מוסיף: '+diff):null;
+    }).filter(Boolean);
+    if(extra.length) lines.push('מה כל זווית מוסיפה:\n'+extra.join('\n'));
+  } else {
+    lines.push('דווח בינתיים ממקור אחד — עוד לא נמצאו הצלבות.');
+  }
+  lines.push('מוקדי הסיפור: '+extractEntities(c).slice(0,5).join(' · ')+'.');
+  return lines.join('\n\n');
+}
+$('anaClose').onclick=()=>$('anaWrap').classList.remove('open');
+$('anaWrap').addEventListener('click',e=>{ if(e.target===$('anaWrap')) $('anaWrap').classList.remove('open'); });
+addEventListener('keydown',e=>{ if(e.key==='Escape') $('anaWrap').classList.remove('open'); });
+
+// ---------- main pull ----------
+function mergeAndRender(){
+  const seen=new Set();
+  items=items.filter(n=>{ const k=n.title.slice(0,70); if(seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a,b)=>b.at-a.at).slice(0,octoSettings.maxStories||160);
+  lastPull=Date.now();
+  buildClusters();
+  renderArms(); renderSituation(); renderSince(); renderScorecard(); renderClusters(); renderHotEntities(); renderHeadlines();
+  translateFeedItems();
+}
+function saveNewsPool(){
+  try{ localStorage.setItem('octo:lastitems',JSON.stringify(items.slice(0,120))); }catch{}
+}
+async function pullAll(){
+  $('refreshBtn').classList.add('spin'); $('refreshBtn').textContent='🐙 שולח זרועות…';
+  // Keep what we already have: a failed refresh must never throw away real
+  // news and drop to the demo feed — that was exactly the "same 7 stories
+  // forever" loop. Fresh items land first so mergeAndRender's dedupe keeps
+  // the newest copy of each story.
+  const prevItems=items.filter(n=>!/·SIM$/.test(n.src));
+  let fresh=[];
+  await Promise.all(ARM_GROUPS.map((_,gi)=>
+    pullGroup(gi).then(got=>{ if(got.length){ fresh=fresh.concat(got); items=fresh.concat(prevItems); mergeAndRender(); } })
+  ));
+  if(fresh.length){
+    items=fresh.concat(prevItems);
+    mergeAndRender(); saveNewsPool();
+  } else if(!prevItems.length){
+    items=simFeed(); armState=armState.map(()=>'sim');
+    if(window.__octoReach) ARM_GROUPS.forEach((_,gi)=>window.__octoReach(gi,false,true));
+    mergeAndRender();
+  }
+  const simActive=!fresh.length&&!prevItems.length;
+  const note=$('simNotice');
+  if(note) note.style.display=simActive?'block':'none';
+  $('refreshBtn').classList.remove('spin'); $('refreshBtn').textContent='🔄 רענן';
+  persistSeen(); // everything currently on screen counts as "seen" from the next visit on
+}
+// ---------- settings panel — schema-driven controls + a dynamic per-arm
+// enable/disable list built straight off ARM_GROUPS ----------
+const OS_SCHEMA=[
+  {sec:'🔄 רענון ועדכון', items:[
+    {key:'autoRefresh', type:'checkbox', label:'רענון אוטומטי', desc:'משיכת חדשות מחדש כל כמה דקות'},
+    {key:'refreshMin', type:'range', label:'תדירות רענון', min:2,max:30,step:1, fmt:v=>v+' דק׳'},
+    {key:'maxStories', type:'range', label:'מקסימום כתבות בזיכרון', desc:'יותר כתבות = יותר הצלבות, אבל עמוד עמוס יותר', min:60,max:400,step:20, fmt:v=>v+''},
+  ]},
+  {sec:'🧠 ניתוח והצלבה', items:[
+    {key:'clusterSens', type:'select', label:'רגישות הצלבה', desc:'כמה דומות צריכות להיות כותרות כדי להתמזג לסיפור אחד',
+      options:[['loose','רחבה — ממזג יותר'],['normal','רגילה'],['strict','קפדנית — רק כמעט-זהות']]},
+    {key:'showSentiment', type:'checkbox', label:'תגית מצב-רוח', desc:'חיובי/שלילי/ניטרלי לפי מילות מפתח'},
+    {key:'showEntities', type:'checkbox', label:'מוקדי שיחה חמים', desc:'שורת המילים הבולטות בכל הסיפורים כרגע'},
+    {key:'translateHe', type:'checkbox', label:'תרגום אוטומטי לעברית', desc:'כותרות וכתבות באנגלית מוצגות בעברית (🌐)'},
+    {key:'watchWords', type:'text', label:'📌 מילים במעקב', desc:'סיפורים שמכילים אותן מוצמדים לראש הרשימה (מופרד בפסיקים)', ph:'ביטקוין, מכבי, נאסא'},
+    {key:'muteWords', type:'text', label:'🔇 מילים מושתקות', desc:'סיפורים שמכילים אותן מוסתרים לגמרי (מופרד בפסיקים)', ph:'ספוילר, ריאליטי'},
+  ]},
+  {sec:'🔔 התראות וצליל', items:[
+    {key:'breakingAlerts', type:'checkbox', label:'התראת חדשות מתפתחות', desc:'כאשר סיפור מצטלב ב-3+ מקורות'},
+    {key:'pushNotify', type:'checkbox', label:'התראות דפדפן', desc:'סיפור מתפתח מקפיץ התראה אמיתית גם כשהטאב ברקע'},
+    {key:'soundOn', type:'checkbox', label:'צליל התראה'},
+  ]},
+  {sec:'🎨 תצוגה', items:[
+    {key:'fontScale', type:'range', label:'גודל כתב', min:0.85,max:1.4,step:0.05, fmt:v=>Math.round(v*100)+'%'},
+    {key:'compactMode', type:'checkbox', label:'מצב קומפקטי', desc:'כרטיסים צפופים — יותר סיפורים על המסך'},
+    {key:'hideStage', type:'checkbox', label:'מצב קריאה — הסתרת התמנון', desc:'מסתיר את במת ה-3D, כל המסך לחדשות'},
+  ]},
+];
+function applyDisplaySettings(){
+  document.documentElement.style.fontSize=(octoSettings.fontScale*100)+'%';
+  document.body.classList.toggle('compact',!!octoSettings.compactMode);
+  const he=$('hotEntities'); if(he) he.style.display=octoSettings.showEntities?'flex':'none';
+  const st=$('octoStage'); if(st&&octoSettings.hideStage) st.style.display='none';
+}
+function onOctoSettingChanged(key){
+  saveOctoSettings();
+  if(key==='fontScale'||key==='compactMode'||key==='showEntities') applyDisplaySettings();
+  if(key==='clusterSens'||key==='maxStories'){ buildClusters(); renderSituation(); renderClusters(); renderHotEntities(); }
+  if(key==='translateHe'){ renderClusters(); renderHeadlines(); if(octoSettings.translateHe) translateFeedItems(); }
+  if(key==='muteWords'||key==='watchWords'){ renderClusters(); renderHeadlines(); }
+  if(key==='hideStage'){ const st=$('octoStage'); if(st) st.style.display=octoSettings.hideStage?'none':''; }
+  if(key==='pushNotify'&&octoSettings.pushNotify&&typeof Notification!=='undefined'&&Notification.permission==='default'){
+    Notification.requestPermission().then(p=>{ if(p!=='granted'){ octoSettings.pushNotify=false; saveOctoSettings(); } });
+  }
+}
+function buildSettingsPanel(){
+  const body=$('osBody'); if(!body) return;
+  body.innerHTML=OS_SCHEMA.map(group=>
+    '<div class="os-sec"><div class="os-h">'+group.sec+'</div>'+
+    group.items.map(it=>{
+      const descHtml=it.desc?'<span class="os-desc">'+it.desc+'</span>':'';
+      let ctrl='';
+      if(it.type==='checkbox') ctrl='<input type="checkbox" data-key="'+it.key+'" '+(octoSettings[it.key]?'checked':'')+'>';
+      else if(it.type==='select') ctrl='<select data-key="'+it.key+'">'+it.options.map(([v,l])=>'<option value="'+v+'"'+(octoSettings[it.key]===v?' selected':'')+'>'+l+'</option>').join('')+'</select>';
+      else if(it.type==='range') ctrl='<input type="range" data-key="'+it.key+'" min="'+it.min+'" max="'+it.max+'" step="'+it.step+'" value="'+octoSettings[it.key]+'">'+
+        '<span class="os-val" data-valfor="'+it.key+'">'+(it.fmt?it.fmt(octoSettings[it.key]):octoSettings[it.key])+'</span>';
+      else if(it.type==='text') ctrl='<input type="text" data-key="'+it.key+'" data-txt="1" value="'+escH(octoSettings[it.key]||'')+'" placeholder="'+(it.ph||'')+'" style="flex:1;min-width:150px;background:rgba(6,12,26,.6);border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:6px 9px;font-size:12px;font-family:inherit">';
+      return '<div class="os-row"><label>'+it.label+descHtml+'</label>'+ctrl+'</div>';
+    }).join('')+'</div>'
+  ).join('') + '<div class="os-sec"><div class="os-h">🐙 זרועות פעילות</div>'
+    + ARM_GROUPS.map((g,gi)=>'<div class="os-arm"><input type="checkbox" data-arm="'+gi+'" '
+      +(octoSettings.disabledArms.includes(gi)?'':'checked')+'><span>'+g[1][0]+' '+g[0]+'</span></div>').join('')
+    + '</div>'
+    + '<div class="os-sec"><div class="os-h">🧰 פעולות</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + '<button id="osMarkRead" class="os-act">✓ סמן הכל כנקרא</button>'
+    + '<button id="osExportMarks" class="os-act">⬇ ייצוא מועדפים</button>'
+    + '</div></div>'
+    // live per-arm health — sums of the per-source pull counters this session
+    + '<div class="os-sec"><div class="os-h">📊 בריאות מקורות (הסשן הנוכחי)</div>'
+    + (()=>{ let base=0; return ARM_GROUPS.map(g=>{
+        const n=g[2].length, sl=srcStats.slice(base,base+n); base+=n;
+        const ok=sl.reduce((s,x)=>s+x.ok,0), fail=sl.reduce((s,x)=>s+x.fail,0);
+        const lastAt=Math.max.apply(null,sl.map(x=>x.last));
+        const lastTxt=lastAt>0? fmtAgo(lastAt) : 'טרם נמשך';
+        const okCol=ok>0?'var(--up)':fail>0?'var(--down)':'var(--dim)';
+        return '<div class="os-arm"><span style="color:'+okCol+'">●</span><span>'+g[1][0]+' '+g[0]
+          +'</span><span style="margin-inline-start:auto;color:var(--dim);font-size:11px">✓'+ok+' · ✗'+fail+' · '+lastTxt+'</span></div>';
+      }).join(''); })()
+    + '</div>';
+  const schemaByKey={}; OS_SCHEMA.forEach(g=>g.items.forEach(it=>schemaByKey[it.key]=it));
+  body.querySelectorAll('[data-key]').forEach(el=>{
+    const key=el.dataset.key, it=schemaByKey[key];
+    const handler=()=>{
+      if(el.type==='checkbox') octoSettings[key]=el.checked;
+      else if(el.tagName==='SELECT'||el.dataset.txt) octoSettings[key]=el.value;
+      else{ octoSettings[key]=parseFloat(el.value);
+        const vEl=body.querySelector('[data-valfor="'+key+'"]');
+        if(vEl) vEl.textContent=it.fmt?it.fmt(octoSettings[key]):octoSettings[key];
+      }
+      onOctoSettingChanged(key);
+    };
+    el.addEventListener(el.type==='range'||el.dataset.txt?'input':'change',handler);
+  });
+  body.querySelectorAll('[data-arm]').forEach(el=>{
+    el.addEventListener('change',()=>{
+      const gi=parseInt(el.dataset.arm,10);
+      octoSettings.disabledArms = el.checked
+        ? octoSettings.disabledArms.filter(x=>x!==gi)
+        : [...new Set([...octoSettings.disabledArms,gi])];
+      saveOctoSettings();
+    });
+  });
+  const mk=$('osMarkRead');
+  if(mk) mk.onclick=()=>{
+    clusters.forEach(c=>prevSeen.add(seenKey(c.head.title)));
+    persistSeen(); renderClusters();
+    mk.textContent='✓ סומן!'; setTimeout(()=>{ mk.textContent='✓ סמן הכל כנקרא'; },1500);
+  };
+  const ex=$('osExportMarks');
+  if(ex) ex.onclick=()=>{
+    const marked=clusters.filter(c=>bookmarks.has(clusterKey(c)))
+      .map(c=>({title:dispTitle(c.head),original:c.head.title,sources:[...new Set(c.angles.map(a=>a.src))],link:c.head.link||'',at:new Date(c.at).toISOString()}));
+    const a=document.createElement('a');
+    a.download='octopus-bookmarks.json';
+    a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(marked,null,2));
+    a.click();
+  };
+}
+function setSettingsPanel(on){ $('octoSettingsPanel').style.display=on?'block':'none'; $('settingsBtn').classList.toggle('on',on); }
+$('settingsBtn').onclick=()=>setSettingsPanel($('octoSettingsPanel').style.display!=='block');
+$('osClose').onclick=()=>setSettingsPanel(false);
+
+// ---------- search + bookmarks ----------
+$('searchBox').addEventListener('input',e=>{ searchQuery=e.target.value.trim().toLowerCase(); renderClusters(); });
+$('bookmarkFilter').onclick=()=>{ bookmarkFilterOn=!bookmarkFilterOn; $('bookmarkFilter').classList.toggle('on',bookmarkFilterOn); renderClusters(); };
+document.querySelectorAll('#timeRow .tf').forEach(el=>{
+  el.onclick=()=>{
+    timeFilterH=+el.dataset.h;
+    document.querySelectorAll('#timeRow .tf').forEach(x=>x.classList.toggle('on',x===el));
+    renderClusters();
+  };
+});
+$('hlVoice').onclick=()=>{
+  const top=renderHeadlines._top||[];
+  if(!top.length) return;
+  const text='מהדורת הכותרות של אוקטופוס. '
+    +top.map((c,i)=>'כותרת '+(i+1)+': '+dispTitle(c.head)
+      +(c.angles.length>1?'. דווח ב-'+c.angles.length+' מקורות.':'.')).join(' ')
+    +' עד כאן המהדורה.';
+  octoSpeak(text,$('hlVoice'));
+};
+$('anaVoice').onclick=()=>{
+  const c=openAnalysis._cur; if(!c) return;
+  const body=$('anaAiBody').textContent||'';
+  octoSpeak(dispTitle(c.head)+'. '+body,$('anaVoice'));
+};
+
+$('refreshBtn').onclick=pullAll;
+setInterval(()=>{ if(octoSettings.autoRefresh && Date.now()-lastPull>octoSettings.refreshMin*60000) pullAll(); },60000);
+renderArms();
+$('octoSub').textContent='מנוע חדשות עתידני · '+ARM_GROUPS.length+' זרועות · '+ARMS.length+' מקורות מכל העולם · מצליב · מגבש תמונה · מנתח';
+buildSettingsPanel();
+applyDisplaySettings();
+// boot with the last real news pool instantly (and as a safety net when every
+// relay is down), then pull fresh on top of it
+try{
+  const savedPool=JSON.parse(localStorage.getItem('octo:lastitems')||'[]');
+  if(Array.isArray(savedPool)&&savedPool.length){ items=savedPool; mergeAndRender(); }
+}catch{}
+pullAll();
+// the visit stamp is written once, a moment after boot: the "since your last
+// visit" set must stay stable for this whole session, not empty itself the
+// instant the page renders
+setTimeout(()=>{ try{ localStorage.setItem(VISIT_KEY,String(Date.now())); }catch(e){} },4000);
+window.__octoMem={stories:()=>storyMem,sources:()=>srcScore,lastVisit:()=>lastVisitAt,
+  setVisit:(t)=>{ lastVisitAt=t; }};
+</script>
+</body>
+</html>

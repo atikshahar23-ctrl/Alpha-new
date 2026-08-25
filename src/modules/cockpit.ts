@@ -12,9 +12,12 @@ import {
 } from '../brain/memory';
 import { route } from '../brain/router';
 import { loadPriceAlerts, savePriceAlerts, type PriceAlert } from './proactive';
+import { sim, isSimConfigured, getSimUrl, setSimUrl, type BinanceData } from './simulatorBridge';
+import { openSamsonixWizard, loadSamsonixForms, deleteSamsonixForm, printSamsonixForm } from './samsonixWizard';
 import {
-  addEvent, loadEvents, addTask, loadTasks, toggleTask, removeTask,
+  addEvent, loadEvents, addTask, loadTasks, toggleTask, removeTask, loadState,
 } from '../assistant/state';
+import { askVision } from '../assistant/gemini';
 import {
   loadLeads, addLead, updateLead, removeLead, advanceLead,
   loadQuotes, setQuoteStatus, removeQuote,
@@ -481,6 +484,76 @@ function renderBusiness(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   drawInvoices();
   root.appendChild(inv);
 
+  // ── Samsonix DVR Contract (interactive wizard + saved list) ──
+  const sxCard = card(L('טופס מנוי DVR – Samsonix', 'Samsonix DVR Subscription Form'), L('אשף מילוי לקוח מאובטח · חתימה דיגיטלית · שמירה + הדפסה', 'Secure client wizard · digital signature · save & print'));
+
+  const sxOpenBtn = btn(L('🚀 פתח אשף מילוי לקוח חדש', '🚀 New Client Wizard'), true);
+  const sxList = el('div', 'cp-list');
+
+  function drawSxForms() {
+    sxList.innerHTML = '';
+    const forms = loadSamsonixForms();
+    if (!forms.length) {
+      sxList.appendChild(el('div', 'cp-empty', L('אין טפסים שמורים עדיין.', 'No saved forms yet.')));
+      return;
+    }
+    const PLAN_SHORT: Record<string,string> = { '2gb':'2GB–39₪', '4gb':'4GB–49₪', '10gb':'10GB–59₪' };
+    forms.forEach(f => {
+      const d = new Date(f.savedAt).toLocaleDateString('he-IL');
+      const masked = f.cardNum ? `****${f.cardNum.slice(-4)}` : '';
+      const r = el('div', 'cp-row');
+      r.style.cssText = 'flex-direction:column;align-items:stretch;gap:5px;padding:10px 12px';
+      r.innerHTML =
+        `<div style="display:flex;justify-content:space-between;align-items:center">` +
+          `<span style="font-weight:700;font-size:13px">${esc(f.fullName)}</span>` +
+          `<span style="font-size:11px;color:var(--dim)">${d}</span>` +
+        `</div>` +
+        `<div style="font-size:12px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap">` +
+          `<span>${PLAN_SHORT[f.plan]}</span>` +
+          (f.bsd ? `<span>· BSD ₪4,500</span>` : '') +
+          (f.veh1 ? `<span>· ${esc(f.veh1)}</span>` : '') +
+          (masked ? `<span>· ${masked}</span>` : '') +
+        `</div>` +
+        `<div style="display:flex;gap:6px;margin-top:4px">`;
+      const actRow = r.querySelector('div:last-child')!;
+      const reprnt = el('button', 'cp-x', L('🖨 הדפס','🖨 Print'));
+      (reprnt as HTMLButtonElement).onclick = () => printSamsonixForm(f);
+      actRow.appendChild(reprnt);
+      const del = el('button', 'cp-x', '✕');
+      (del as HTMLButtonElement).onclick = () => {
+        if (confirm(L(`למחוק את הטופס של ${f.fullName}?`, `Delete form for ${f.fullName}?`))) {
+          deleteSamsonixForm(f.id); drawSxForms();
+        }
+      };
+      actRow.appendChild(del);
+      sxList.appendChild(r);
+    });
+  }
+
+  sxOpenBtn.onclick = () => openSamsonixWizard(() => drawSxForms());
+  sxCard.appendChild(sxOpenBtn);
+
+  // Send the client a link to the self-sign form via WhatsApp (pre-written msg).
+  const sxSendBtn = btn(L('📲 שלח ללקוח לחתימה בוואטסאפ', '📲 Send to client to sign (WhatsApp)'), false);
+  sxSendBtn.onclick = () => {
+    const raw = prompt(L('מספר וואטסאפ של הלקוח (05X...):', 'Client WhatsApp number (05X...):'));
+    if (!raw) return;
+    let ph = raw.replace(/\D/g, '');
+    if (ph.startsWith('0')) ph = '972' + ph.slice(1);
+    const base = (import.meta as any).env.BASE_URL || '/';
+    const link = location.origin + base + 'sign.html?client=1';
+    const msg = L(
+      `שלום! לחתימה מהירה על טופס המנוי ל-DVR של Samsonix — היכנס/י לקישור, מלא/י פרטים וחתום/חתמי:\n${link}\nתודה 🙏`,
+      `Hi! To quickly sign the Samsonix DVR subscription form, open this link, fill in your details and sign:\n${link}\nThanks 🙏`
+    );
+    window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+  sxCard.appendChild(sxSendBtn);
+
+  sxCard.appendChild(sxList);
+  drawSxForms();
+  root.appendChild(sxCard);
+
   // ── Marketing engine ──
   const mk = card(L('מנוע שיווק', 'Marketing Engine'), L('תוכן ויראלי AI לטיקטוק / פייסבוק', 'AI viral content for TikTok / Facebook'));
   const topic = input(L('נושא — למשל התקנת מצלמה 360° על סקאניה', 'Topic — e.g. 360° camera install on a Scania'));
@@ -746,6 +819,41 @@ function renderTrading(root: HTMLElement, hooks: CockpitHooks, close: () => void
   tk.appendChild(price);
   tk.appendChild(row);
   root.appendChild(tk);
+
+  // ── HeavyGuard Simulator — the same live backend connection used by the
+  // Agents area's Simulator tab (agents/SimulatorPanel.jsx), reached here
+  // through the same simulatorBridge client instead of a second one. ──
+  const hg = card(L('סימולטור מסחר · HeavyGuard', 'HeavyGuard Trading Simulator'), L('אותו חיבור שיש באזור הסוכנים', 'Same connection as the Agents area'));
+  if (!isSimConfigured()) setSimUrl('https://heavt-guard-simulator-1.onrender.com/');
+  const hgUrl = el('div', 'cp-note', esc(getSimUrl()));
+  const hgStatus = el('div', 'cp-note', L('לא נבדק', 'Not checked yet'));
+  const hgPrices = el('div', 'cp-list');
+  const hgRefresh = btn(L('רענון ⟳', 'Refresh ⟳'), true);
+  const drawHg = async () => {
+    hgStatus.textContent = L('בודק…', 'Checking…');
+    try {
+      const prices = await sim.getBinanceMulti();
+      hgStatus.innerHTML = `<span class="cp-chg up">● ${L('חי', 'Live')}</span>`;
+      hgPrices.innerHTML = '';
+      prices.slice(0, 4).forEach((d: BinanceData) => {
+        const r = el('div', 'cp-row');
+        const chg = parseFloat(d.lastFundingRate) * 100;
+        r.innerHTML = `<span class="cp-row-main">${esc(d.symbol.replace('USDT', ''))}</span><span class="cp-row-sub">$${parseFloat(d.markPrice).toLocaleString()} · funding ${chg.toFixed(3)}%</span>`;
+        hgPrices.appendChild(r);
+      });
+    } catch (e) {
+      hgStatus.innerHTML = `<span class="cp-chg down">● ${L('לא זמין', 'Offline')}</span>`;
+      hgPrices.innerHTML = '';
+    }
+  };
+  hgRefresh.onclick = drawHg;
+  hg.appendChild(hgUrl);
+  hg.appendChild(hgStatus);
+  hg.appendChild(el('div', 'cp-card-sub', L('מחירים', 'Prices')));
+  hg.appendChild(hgPrices);
+  hg.appendChild(hgRefresh);
+  root.appendChild(hg);
+  drawHg();
 
   // ── Price alerts ──
   const al = card(L('התראות מחיר', 'Price Alerts'), L('התראות אוטומטיות בחציית סף', 'Proactive notifications on threshold cross'));
@@ -1617,15 +1725,18 @@ function renderAdvanced(root: HTMLElement, hooks: CockpitHooks, close: () => voi
   };
   analyze.onclick = async () => {
     if (!dataUrl) { vOut.textContent = L('בחר תמונה קודם.', 'Choose an image first.'); return; }
-    const puter = (window as any).puter;
-    if (!puter?.ai?.chat) { vOut.textContent = 'Vision needs the Puter engine (default). Open settings and ensure provider = Puter.'; return; }
-    vOut.textContent = 'Analyzing…';
+    const st = loadState();
+    if (!st.groqKey && !st.key && !st.openaiKey) {
+      vOut.textContent = L('הראייה צריכה מפתח AI. פתח הגדרות והדבק מפתח Groq חינמי.', 'Vision needs an AI key. Open settings and paste a free Groq key.');
+      return;
+    }
+    vOut.textContent = L('מנתח…', 'Analyzing…');
     try {
-      const r = await puter.ai.chat(q.value.trim() || 'Describe this image and give actionable insights.', dataUrl);
-      const text = typeof r === 'string' ? r : (r?.message?.content || r?.text || JSON.stringify(r));
-      hooks.addMsgSys('👁 ' + (text || 'No description returned.'));
+      const text = await askVision(st, q.value.trim() || 'Describe this image and give actionable insights.', dataUrl);
+      if (!text) { vOut.textContent = L('הניתוח נכשל.', 'Vision request failed.'); return; }
+      hooks.addMsgSys('👁 ' + text);
       close();
-    } catch { vOut.textContent = 'Vision request failed.'; }
+    } catch { vOut.textContent = L('הניתוח נכשל.', 'Vision request failed.'); }
   };
   vz.appendChild(field(L('תמונה', 'Image'), imgInput));
   vz.appendChild(preview);

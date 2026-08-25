@@ -1,16 +1,30 @@
-import { mountOrb, type OrbHandle } from '../orb/OrbScene';
+import type { OrbHandle } from '../orb/OrbScene';
 import { mountFlowLines } from '../bg/flowLines';
-import { loadState, saveState, addEvent, addTask, saveNote, loadEvents, loadTasks, removeEvent, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang } from '../assistant/state';
-import { askAI, runTags } from '../assistant/gemini';
+import { loadState, saveState, addEvent, addTask, scheduleTask, saveNote, loadEvents, loadTasks, removeEvent, loadHgBacklog, scheduleHgTask, loadWallet, saveWallet, loadWalletHistory, addWalletExpense, removeWalletExpense, EXPENSE_CATEGORIES, updateEventTitle, getJournalEntry, saveJournalEntry, type AppState, type TextLang, type AIProvider, type VoiceGender, type UILang, type CalEvent } from '../assistant/state';
+import { askAIStream, askOnce, askVision, runTags, lmsConfigured } from '../assistant/gemini';
+import { GEN1 } from '../data/gen1';
+import type * as THREE from 'three';
+// Three.js is 707 KB and the dashboard's job is to render a grid of tiles.
+// Importing it for value at module scope meant the browser had to download and
+// parse all of it before ANY tile appeared — measured at 9.4s to first useful
+// paint on a throttled phone, which is the "loads very very slowly" report.
+// It is now fetched only by the features that actually draw 3D.
+let THREE_RT: typeof import('three') | null = null;
 import { tryLocalCommand } from '../assistant/local';
 import { VoiceEngine } from '../assistant/voice';
 import { AudioEngine, type AmbientPreset } from '../assistant/audio';
-import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile } from '../brain';
-import { type CockpitHandle } from '../modules/cockpit';
+import { orchestrate, refreshSummary, moduleById, loadMemory, updateProfile, prepareRecall } from '../brain';
+import type { CockpitHandle } from '../modules/cockpit';
 import { runProactive } from '../modules/proactive';
 import { processRecurring } from '../modules/recurring';
 import * as driveSync from '../modules/driveSync';
-import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback } from '../assistant/pikaVoice';
+// Cloud sync is Google Drive ONLY (Puter removed). The binding keeps the old
+// name so every existing call-site routes through the Drive-backed façade with
+// no other change; login is exclusively the owner's Google account.
+import * as puterSync from '../modules/cloudSync';
+import { setPikaVolume, setPikaPitch, setPikaEnabled, pikaSpeak, setChirpCallback, unlockAudio } from '../assistant/pikaVoice';
+import { setActiveCharacter, playCharacterCry, stopCharacterVoice, setCharacterVolume, unlockCharacterAudio, setCharacterVoiceEnabled } from '../assistant/characterVoice';
+import { throwPokeball } from '../effects/pokeballFx';
 import { universalSearch, TYPE_ICONS, addRecentSearch, recentSearches, quickSuggestions } from '../modules/search';
 import { registerShortcut, initShortcuts, shortcutsHTML } from '../modules/shortcuts';
 import { dailyBriefing } from '../modules/analytics';
@@ -20,10 +34,15 @@ import { trackSentiment, averageSentiment } from '../modules/sentiment';
 import { calculateScore, scoreLabel } from '../modules/scoring';
 import { toastInfo } from '../modules/toast';
 import { checkIntegrity, repairCorrupted } from '../modules/dataIntegrity';
+import { readAutotraderState, readPortfolioPositions } from '../modules/tradingBridge';
+import { BOOKS_BY_KEY, BOOKS_LAST_KEY, cumulativeIncome } from '../modules/books';
 
 const UI_STRINGS: Record<string, Record<UILang, string>> = {
   appTitle: { he: 'אלפא עוזר אישי', en: 'ALPHA ASSISTANT' },
   settings: { he: 'הגדרות', en: 'SETTINGS' },
+  comfortMode: { he: 'מצב חסכוני', en: 'COMFORT MODE' },
+  driveMode: { he: 'מצב נהיגה', en: 'DRIVE MODE' },
+  declutter: { he: 'מסך נקי', en: 'CLEAN SCREEN' },
   newChat: { he: 'חדש', en: 'NEW' },
   system: { he: 'מערכת', en: 'SYSTEM' },
   online: { he: '● מחובר', en: '● ONLINE' },
@@ -44,13 +63,14 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   music: { he: 'מוזיקה', en: 'Music' },
   search: { he: 'חיפוש', en: 'Search' },
   calendar: { he: 'יומן', en: 'Calendar' },
+  wallet: { he: 'ארנק אישי', en: 'Personal Wallet' },
   joke: { he: 'בדיחה', en: 'Joke' },
   video: { he: 'וידאו', en: 'Video' },
   translate: { he: 'תרגום', en: 'Translate' },
   detect: { he: 'זיהוי', en: 'Detect' },
   heavyguard: { he: 'הביגארד', en: 'HeavyGuard' },
   trading: { he: 'מסחר', en: 'Trading' },
-  inputPlaceholder: { he: 'הקלד או דבר עם אלפא…', en: 'Type or speak to Alpha…' },
+  inputPlaceholder: { he: 'דבר אלי…', en: 'Talk to me…' },
   searchPlaceholder: { he: 'חפש הכל…', en: 'Search everything…' },
   quickActions: { he: 'פעולות מהירות', en: 'Quick Actions' },
   quickTask: { he: '✓ משימה מהירה', en: '✓ Quick Task' },
@@ -59,11 +79,18 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   briefing: { he: '📊 תדריך', en: '📊 Briefing' },
   fabSearch: { he: '🔍 חיפוש', en: '🔍 Search' },
   settingsTitle: { he: 'אלפא עוזר אישי', en: 'Alpha Assistant' },
-  settingsDesc: { he: 'עובד בחינם מהקופסה דרך Puter — לא צריך מפתח API.', en: 'Works free out of the box via Puter — no API key required.' },
+  settingsDesc: { he: 'מופעל ע"י Groq — חינמי ומהיר. הוצא מפתח חינם ב-console.groq.com.', en: 'Powered by Groq — free and fast. Get a free key at console.groq.com.' },
   general: { he: 'כללי', en: 'GENERAL' },
+  moodColor: { he: 'צבע ומצב רוח', en: 'Color & mood' },
   assistantName: { he: 'שם העוזר', en: 'Assistant name' },
   soundEffects: { he: 'אפקטי סאונד', en: 'Sound effects' },
   haptic: { he: 'משוב רטט', en: 'Haptic feedback' },
+  fastMode: { he: '⚡ מצב מהיר (ביצועים)', en: '⚡ Fast mode (performance)' },
+  displayMode: { he: 'מצב תצוגה', en: 'Display mode' },
+  dmAuto: { he: 'אוטומטי (לפי המכשיר)', en: 'Automatic (by device)' },
+  dmMobile: { he: '📱 מצב נייד (קל ומהיר)', en: '📱 Mobile (light & fast)' },
+  dmDesktop: { he: '🖥️ מצב מחשב (איכות מלאה)', en: '🖥️ Desktop (full quality)' },
+  displayModeDesc: { he: 'בחר מצב נייד אם המערכת איטית באייפד/טאבלט. הדף ייטען מחדש לאחר שינוי.', en: 'Choose Mobile if the app runs slow on iPad/tablet. The page reloads after changing.' },
   voiceLang: { he: 'קול ושפה', en: 'VOICE & LANGUAGE' },
   micLang: { he: 'שפת מיקרופון', en: 'Mic language' },
   voiceLangLabel: { he: 'שפת דיבור', en: 'Voice language' },
@@ -83,10 +110,10 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   volume: { he: 'עוצמה', en: 'Volume' },
   aiEngineTitle: { he: 'מנוע AI', en: 'AI ENGINE' },
   aiProvider: { he: 'ספק AI', en: 'AI Provider' },
-  puterFree: { he: 'Puter — חינם, בלי מפתח', en: 'Puter — Free, no key' },
-  puterModel: { he: 'מודל Puter (חינם)', en: 'Puter model (free)' },
-  puterDesc: { he: 'Puter בחינם — חלון התחברות חד-פעמי יופיע בשימוש ראשון. מפתחות למטה הם אופציונליים.', en: 'Puter is free — a one-time sign-in popup appears on first use. Keys below are optional fallbacks.' },
+  groqFree: { he: 'Groq — חינם ומהיר (Llama)', en: 'Groq — Free & fast (Llama)' },
+  groqDesc: { he: 'Groq חינמי ומהיר (Llama 3.3). הוצא מפתח חינם ב-console.groq.com והדבק כאן — בלי כרטיס אשראי ובלי חיוב. שאר המפתחות למטה אופציונליים.', en: 'Groq is free & fast (Llama 3.3). Get a free key at console.groq.com and paste it here — no credit card, no billing. Other keys below are optional fallbacks.' },
   geminiKey: { he: 'מפתח Gemini API', en: 'Gemini API key' },
+  groqKey: { he: 'מפתח Groq API (חינם)', en: 'Groq API key (free)' },
   grokKey: { he: 'מפתח Grok API', en: 'Grok API key' },
   openaiKey: { he: 'מפתח OpenAI API', en: 'OpenAI API key' },
   cloudSync: { he: 'סנכרון ענן', en: 'CLOUD SYNC' },
@@ -105,7 +132,7 @@ const UI_STRINGS: Record<string, Record<UILang, string>> = {
   initCamera: { he: 'מאתחל מצלמה…', en: 'Initializing camera…' },
   uiLanguage: { he: 'שפת מערכת', en: 'System language' },
   pikachuVoice: { he: 'פיקאצ\'ו', en: 'PIKACHU' },
-  pikaVoiceOn: { he: 'קול פיקאצ\'ו', en: 'Pikachu voice' },
+  pikaVoiceOn: { he: 'קולות הדמויות', en: 'Character voices' },
   pikaVolume: { he: 'עוצמת קול פיקאצ\'ו', en: 'Pikachu volume' },
   pikaPitch: { he: 'גובה קול פיקאצ\'ו', en: 'Pikachu pitch' },
   pikaSpeakNow: { he: 'פיקה פיקה!', en: 'Pika Pika!' },
@@ -167,16 +194,312 @@ function t(key: string, lang: UILang): string {
 export function mountApp(root: HTMLElement) {
   root.innerHTML = `
     <div class="app">
-      <div class="chrome topL"><img class="brand-logo" src="${import.meta.env.BASE_URL}heavyguard-logo.png" alt="HeavyGuard" /><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v8 ⚡</div></div></div>
+      <div class="char-ambient" id="charAmbient"></div>
+      <div class="chrome topL"><div class="topL-txt"><div class="wm" data-i18n="appTitle">אלפא עוזר אישי</div><div class="wm-hg">HEAVY GUARD OS</div><div class="clk" id="clock">--:--</div><div class="build-ver" id="buildVer">v462 ⚡</div></div></div>
       <div class="chrome topR">
+        <button class="chip apps-chip" id="appsBtn" title="האפליקציות שלי" aria-label="האפליקציות שלי">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
+          <span>אפליקציות</span>
+        </button>
+        <button class="chip ghost" id="panelsToggleBtn" title="הסתר/הצג פנלים" aria-label="הסתר פנלים">
+          <svg class="pt-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="pt-show" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-7-11-7a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 7 11 7a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
+        <button class="chip ghost" id="charSwapBtn" title="החלף דמות ראשית" aria-label="החלף דמות">
+          <span class="csb-ball" aria-hidden="true"></span>
+        </button>
+        <button class="chip ghost" id="charPoseBtn" title="כיוון דמות" aria-label="כיוון דמות" style="font-size:11px;padding:0 5px;">⚙</button>
         <button class="chip ghost" id="searchBtn" aria-label="Search (Ctrl+K)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
         <button class="chip ghost" id="muteBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
+        <button class="chip ghost" id="comfortModeBtn" title="מצב חסכוני — למחשבים חלשים/ישנים, מונע קיפאון של הסימולציה התלת-ממדית">🐢 <span data-i18n="comfortMode">מצב חסכוני</span></button>
+        <button class="chip ghost" id="driveModeBtn" title="מצב נהיגה — כיבוי מלא של התלת-ממד לחיסכון בסוללה, מסך שחור עם ויזואליזציית קול והפעלה קולית בלבד">🚗 <span data-i18n="driveMode">מצב נהיגה</span></button>
+        <button class="chip ghost" id="declutterBtn" title="הסרת האנימציה המרכזית וצמצום מהיר של אפקטי הרקע — למסך נקי ומהיר יותר">🌑 <span data-i18n="declutter">מסך נקי</span></button>
         <button class="chip" id="settingsBtn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> <span data-i18n="settings">הגדרות</span></button>
         <button class="chip ghost" id="newChat"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> <span data-i18n="newChat">חדש</span></button>
       </div>
       <div class="stage" id="stage"></div>
 
+      <!-- Slide-out app drawer — quick links to all the owner's programs,
+           reachable from the clean phone view (the FAB/HUD shortcuts are
+           hidden there). Opened by #appsBtn in the top bar. -->
+      <div class="app-drawer-scrim" id="appDrawerScrim"></div>
+      <aside class="app-drawer" id="appDrawer" aria-hidden="true" aria-label="האפליקציות שלי">
+        <div class="ad-head">
+          <span>🚀 האפליקציות שלי <em class="ad-count" id="adCount"></em></span>
+          <button class="ad-close" id="appDrawerClose" aria-label="סגור">✕</button>
+        </div>
+        <input class="ad-search" id="adSearch" type="search" placeholder="חיפוש אפליקציה…" autocomplete="off" aria-label="חיפוש אפליקציה">
+        <div class="ad-recent" id="adRecent" hidden></div>
+        <div class="ad-grid" id="adGrid">
+          <a class="ad-item" data-cat="trade" href="https://heavt-guard-simulator-1.onrender.com/" target="_blank" rel="noopener">
+            <span class="ad-ic" style="--c:#F7C948"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
+            <b>מערכת מסחר</b><em>Trading · חי</em>
+          </a>
+          <a class="ad-item" data-cat="biz" href="${import.meta.env.BASE_URL}heavyguard.html">
+            <span class="ad-ic" style="--c:#4FD1C5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
+            <b>Heavy Guard</b><em>CRM · ניהול צי</em>
+          </a>
+          <a class="ad-item" data-cat="biz" href="${import.meta.env.BASE_URL}agents.html">
+            <span class="ad-ic" style="--c:#B794F4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.5 10.5 6.5 7.5M14.5 10.5l3-3M9.5 13.5l-3 3M14.5 13.5l3 3"/></svg></span>
+            <b>מרכז הסוכנים</b><em>Agents · המשרד החי</em>
+          </a>
+          <a class="ad-item" data-cat="biz" href="${import.meta.env.BASE_URL}heavyguard.html#marketing">
+            <span class="ad-ic" style="--c:#F687B3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg></span>
+            <b>שיווק</b><em>TikTok · Facebook</em>
+          </a>
+          <a class="ad-item" data-cat="biz" href="${import.meta.env.BASE_URL}gps.html">
+            <span class="ad-ic" style="--c:#63B3ED"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+            <b>GPS Tracker</b><em>מעקב נסיעות</em>
+          </a>
+          <a class="ad-item" data-cat="biz" href="${import.meta.env.BASE_URL}agent.html">
+            <span class="ad-ic" style="--c:#68D391"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>
+            <b>עוזר CRM</b><em>הצעות מחיר · לקוחות</em>
+          </a>
+          <a class="ad-item" data-cat="media" href="${import.meta.env.BASE_URL}lyrics.html">
+            <span class="ad-ic" style="--c:#00E5FF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
+            <b>מילים בתרגום חי</b><em>Spotify · Lyrics Translator</em>
+          </a>
+          <a class="ad-item" data-cat="trade" href="${import.meta.env.BASE_URL}markets.html">
+            <span class="ad-ic" style="--c:#00E5A0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 12L18 6"/><circle cx="12" cy="12" r="4.5" opacity=".5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg></span>
+            <b>ראדאר שווקים</b><em>Binance Futures · מומלצים · אופק זמן</em>
+          </a>
+          <a class="ad-item" data-cat="trade" href="${import.meta.env.BASE_URL}arena.html">
+            <span class="ad-ic" style="--c:#FF2FD6"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l3 5 5.5.8-4 3.9.9 5.6L12 14.8 6.6 17.3l.9-5.6-4-3.9L9 7z"/></svg></span>
+            <b>NEXUS·ARENA</b><em>עולם מסחר תלת-ממדי · קריפטו חי</em>
+          </a>
+          <a class="ad-item" data-cat="media" href="${import.meta.env.BASE_URL}octopus.html">
+            <span class="ad-ic" style="--c:#B794F4"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="9" r="5"/><path d="M7 13c-2 2-3 5-2 8M17 13c2 2 3 5 2 8M9.5 14.5C8 17 8 20 9 22M14.5 14.5C16 17 16 20 15 22"/><circle cx="10" cy="8.5" r=".8" fill="currentColor"/><circle cx="14" cy="8.5" r=".8" fill="currentColor"/></svg></span>
+            <b>OCTOPUS</b><em>מנוע חדשות · הצלבת מקורות · ניתוח AI</em>
+          </a>
+          <a class="ad-item" data-cat="media" href="${import.meta.env.BASE_URL}doggy.html">
+            <span class="ad-ic" style="--c:#D98E32"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="4" cy="8" r="2"/><path d="M11 22c-3.9 0-6-2.4-6-5 0-3 2.7-4.5 6-4.5s6 1.5 6 4.5c0 2.6-2.1 5-6 5z"/></svg></span>
+            <b>DoggyLife</b><em>ניהול חיות מחמד · טיפולים · אילוף · קהילה</em>
+          </a>
+          <a class="ad-item" data-cat="media" href="${import.meta.env.BASE_URL}neuro.html">
+            <span class="ad-ic" style="--c:#22d3ee"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9.5 2a3.5 3.5 0 0 0-3.4 4.3A3.5 3.5 0 0 0 4 9.5c0 .8.3 1.6.8 2.2A3.5 3.5 0 0 0 4 14a3.5 3.5 0 0 0 3.5 3.5h.1A3.5 3.5 0 0 0 11 21V5.5A3.5 3.5 0 0 0 9.5 2z"/><path d="M14.5 2a3.5 3.5 0 0 1 3.4 4.3A3.5 3.5 0 0 1 20 9.5c0 .8-.3 1.6-.8 2.2.5.6.8 1.4.8 2.3a3.5 3.5 0 0 1-3.5 3.5h-.1A3.5 3.5 0 0 1 13 21V5.5A3.5 3.5 0 0 1 14.5 2z"/></svg></span>
+            <b>מנוע סומטי</b><em>שדה חלקיקים נוירו-סומטי · מפגשי מיקוד · אמביינט</em>
+          </a>
+          <a class="ad-item" data-cat="media" href="${import.meta.env.BASE_URL}aurashield/">
+            <span class="ad-ic" style="--c:#39ff14"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5z"/><path d="M8.5 12l2.3 2.3L15.5 9.5"/></svg></span>
+            <b>AuraShield Pro</b><em>קונסולת שדה סייברפאנק · חיישנים אמיתיים · סימולציה גלויה</em>
+          </a>
+          <a class="ad-item" data-cat="media" href="#" id="sportsHubBtn">
+            <span class="ad-ic" style="--c:#43A1D5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 7l4.2 3-1.6 5h-5.2L7.8 10z"/><path d="M12 2v5M20.5 8.5 16.2 10M19 19.5 14.6 15M9.4 15 5 19.5M3.5 8.5 7.8 10"/></svg></span>
+            <b>Sports Hub</b><em>חפש כל קבוצה בעולם · לוח משחקים חי</em>
+          </a>
+        </div>
+      </aside>
+      <canvas id="bgfx" class="bgfx" aria-hidden="true"></canvas>
+      <canvas id="charSwapFx" class="char-swap-fx"></canvas>
+      <canvas id="attackFx" class="attack-fx"></canvas>
+
+      <!-- ════════ HOLOGRAPHIC HUD (gold/white) — main display ════════ -->
+      <div class="hud" id="hud">
+        <!-- Central core — placeholder until a live 3D figure is imported.
+             (The alien appears only in the opening intro, not here.) -->
+        <div class="hud-core" id="hudCore">
+          <div class="hud-core-glow"></div>
+          <svg class="hud-core-ring" viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="92" fill="none" stroke="rgba(228,188,99,.5)" stroke-width="1" stroke-dasharray="4 6"/><circle cx="100" cy="100" r="78" fill="none" stroke="rgba(247,232,192,.25)" stroke-width="1"/></svg>
+          <div class="hud-core-tag">ALPHA CORE · ONLINE</div>
+        </div>
+
+        <!-- Orbital radial menu — the six quick-access destinations orbiting
+             the robot (built in JS from the hud-rail, so the two menus can
+             never drift apart). Desktop only; the rail serves mobile. -->
+        <div class="orb-menu" id="orbMenu"></div>
+
+        <!-- Holographic data anchor: live BTC beside the robot with a
+             fiber-optic leader line pointing at the core. -->
+        <div class="holo-tag" id="holoBtc" hidden><i></i><b>BTC · LIVE</b><span id="holoBtcVal">—</span></div>
+
+        <!-- Wrapper: transparent on desktop (display:contents → columns keep their
+             side positions); on mobile it becomes a clean bottom-anchored flex
+             stack so the panels never overlap regardless of card height. -->
+        <div class="hud-cols">
+        <!-- Left column — Heavy Guard data -->
+        <div class="hud-col left">
+          <section class="hud-card" id="hudOps">
+            <div class="hud-card-h"><span>GLOBAL OPERATIONS</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudPipe">
+            <div class="hud-card-h"><span>CONTRACTOR PIPELINE</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudTeamPanel">
+            <div class="hud-card-h"><span>הסוכנים עכשיו</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <!-- The owner's actual car (Chery Tiggo 7 PHEV 2025 Noble) as a live
+               3D turntable, with the real fleet numbers right beneath it. -->
+          <section class="hud-card" id="hudFleetPanel">
+            <div class="hud-card-h"><span>הרכב שלי · TIGGO 7 PHEV</span><i></i></div>
+            <div class="hud-car3d" id="hudCar3d"></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudAgenda">
+            <div class="hud-card-h"><span>היום ביומן</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudTasksPanel">
+            <div class="hud-card-h"><span>משימות פתוחות</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+        </div>
+
+        <!-- Right column — live markets + Israel news -->
+        <div class="hud-col right">
+          <section class="hud-card" id="hudMarkets">
+            <div class="hud-card-h"><span>MARKETS · שוק</span><i></i></div>
+            <div class="hud-card-body">טוען שווקים…</div>
+          </section>
+          <section class="hud-card" id="hudNews">
+            <div class="hud-card-h"><span>חדשות · ישראל</span><i></i></div>
+            <div class="hud-card-body">טוען חדשות…</div>
+          </section>
+          <section class="hud-card" id="hudWeather">
+            <div class="hud-card-h"><span>מזג אוויר</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+          <section class="hud-card" id="hudOnThisDay">
+            <div class="hud-card-h"><span>קרה היום בעבר</span><i></i></div>
+            <div class="hud-card-body">טוען…</div>
+          </section>
+        </div>
+
+        <!-- (fleet card moved into the left column above, with the 3D car) -->
+        </div>
+
+        <!-- Heavy Guard shortcut rail -->
+        <div class="hud-rail" id="hudRail">
+          <button class="hud-sc" id="hudHg" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+            <span>HEAVY GUARD OS</span>
+          </button>
+          <a class="hud-sc" id="hudTrade" href="https://heavt-guard-simulator-1.onrender.com/" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+            <span>מערכת מסחר · TRADE</span>
+          </a>
+          <a class="hud-sc" id="hudAgent" href="${import.meta.env.BASE_URL}agent.html">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M17 11l2 2 4-4"/></svg>
+            <span>CRM מכירות · איתי</span>
+          </a>
+          <a class="hud-sc" id="hudMarketing" href="${import.meta.env.BASE_URL}heavyguard.html#marketing">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
+            <span>שיווק TikTok · Facebook</span>
+          </a>
+          <a class="hud-sc hud-sc-agents" id="hudAgents" href="${import.meta.env.BASE_URL}agents.html">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.5 10.5 6.5 7.5M14.5 10.5l3-3M9.5 13.5l-3 3M14.5 13.5l3 3"/></svg>
+            <span>מרכז הסוכנים · AGENTS</span>
+          </a>
+          <button class="hud-sc" id="hudFleet" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 17h13v-5l-2-4H3z"/><circle cx="7" cy="17.5" r="1.6"/><circle cx="17.5" cy="17.5" r="1.6"/><path d="M16 11h3l2 3v2.5h-3"/></svg>
+            <span>צי ומבצעים · CONTROL</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="charRotPanel" class="char-rot-panel" hidden>
+        <div class="crp-title" id="crpTitle">כיוון דמות</div>
+        <div class="crp-section-label">סיבוב</div>
+        <label class="crp-row">X <input type="range" id="crpX" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpXv">0°</span></label>
+        <label class="crp-row">Y <input type="range" id="crpY" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpYv">0°</span></label>
+        <label class="crp-row">Z <input type="range" id="crpZ" min="-180" max="180" step="1" value="0"><span class="crp-val" id="crpZv">0°</span></label>
+        <div class="crp-section-label">גודל</div>
+        <label class="crp-row">⊕ <input type="range" id="crpS" min="5" max="600" step="1" value="100"><span class="crp-val" id="crpSv">1.00×</span></label>
+        <div class="crp-section-label">מיקום (תנועה חופשית במרחב)</div>
+        <label class="crp-row">↔ <input type="range" id="crpPX" min="-500" max="500" step="1" value="0"><span class="crp-val" id="crpPXv">0</span></label>
+        <label class="crp-row">↕ <input type="range" id="crpPY" min="-500" max="500" step="1" value="0"><span class="crp-val" id="crpPYv">0</span></label>
+        <label class="crp-row">⊙ <input type="range" id="crpPZ" min="-500" max="500" step="1" value="0"><span class="crp-val" id="crpPZv">0</span></label>
+        <button class="crp-auto" id="crpAuto">⊹ מרכז אוטומטי</button>
+        <div class="crp-pin-row">
+          <button class="crp-pin" id="crpPin">שמור ככיוון ברירת מחדל</button>
+          <button class="crp-reset" id="crpReset">איפוס</button>
+        </div>
+        <div class="crp-pin-badge" id="crpPinBadge" hidden>✓ כיוון נשמר</div>
+      </div>
+
+      <div id="pokemonMenu" class="pokemon-menu" hidden></div>
+
+      <!-- Gesture detection chip (top bar status) -->
+      <div id="gesturePanel" class="gesture-indicator" hidden>
+        <div class="gp-camera-hidden" aria-hidden="true">
+          <video id="gestureVideo" autoplay playsinline muted></video>
+          <canvas id="gestureCanvas"></canvas>
+        </div>
+        <span class="gi-dot"></span>
+        <span class="gi-text" id="gestureStatus">זיהוי פעיל</span>
+      </div>
+      <!-- Always-visible diagnostic readout while detecting on a phone — lets
+           us see exactly where the pipeline is stuck (camera / model load /
+           zero hands found / low confidence) instead of a silent "doesn't
+           work" report with no way to tell what actually failed. -->
+      <div id="gestureDebug" class="gesture-debug" hidden></div>
+
+      <!-- Open-camera mode: full-screen selfie video with skeleton on top -->
+      <video id="gestureLiveVideo" class="gesture-live-video" autoplay playsinline muted hidden></video>
+
+      <!-- Full-screen skeleton overlay (always above everything) -->
+      <canvas id="handOverlay" class="hand-overlay" hidden></canvas>
+
+      <!-- Mode chooser: shown when detect button clicked while gesture is off -->
+      <div id="gestureModeChooser" class="gesture-mode-chooser" hidden>
+        <div class="gmc-card">
+          <div class="gmc-title">🖐️ בחר מצב זיהוי ידיים</div>
+          <button class="gmc-opt" id="gmcHidden">
+            <span class="gmc-ic">👁️‍🗨️</span>
+            <div><b>מצלמה נסתרת</b><small>רק שלד הידיים מוצג — המצלמה לא גלויה</small></div>
+          </button>
+          <button class="gmc-opt" id="gmcOpen">
+            <span class="gmc-ic">📷</span>
+            <div><b>מצלמה פתוחה</b><small>רואים אותך עם השלד הדיגיטלי</small></div>
+          </button>
+          <button class="gmc-cancel" id="gmcCancel">ביטול</button>
+        </div>
+      </div>
+
+      <!-- Gesture cheat-sheet — shown when detection starts, auto-hides after 7s. -->
+      <div id="gestureHelp" class="gesture-help" hidden>
+        <div class="gh-title">🖐️ שליטה בידיים</div>
+        <ul>
+          <li><span>✊</span><b>אגרוף</b> — החזק רגע כדי לזמן פוקימון</li>
+          <li><span>👎</span><b>אגודל למטה</b> — החזק רגע כדי להעלים</li>
+          <li><span>🖐️</span><b>כף יד פתוחה</b> — חופשי לשחק עם הפוקימון</li>
+          <li><span>☝️</span><b>הצבעה</b> — סמן נע עם האצבע; החזק על כפתור = לחיצה</li>
+          <li><span>🤏</span><b>צביטה</b> — אחיזה וסיבוב הדמות</li>
+        </ul>
+      </div>
+
+      <!-- Finger-pointing laser cursor — follows the index finger; dwelling on a
+           target for 2s selects (clicks) it. -->
+      <div id="laserCursor" class="laser-cursor" hidden>
+        <div class="lc-ring"></div>
+        <div class="lc-dot"></div>
+      </div>
+
+      <!-- Summon dock — macOS-style row of Pokéballs (image above, name below).
+           Opens on summon; the mic listens and the user picks a Pokémon by name. -->
+      <!-- Spinning pokéball shown in the screen centre while the user is choosing
+           (by voice or tap) which Pokémon to summon. -->
+      <div id="summonOrb" class="summon-orb" hidden>
+        <div class="so-inner">
+          <div class="so-aura"></div>
+          <canvas id="summonOrbCanvas" class="so-canvas"></canvas>
+        </div>
+      </div>
+      <div id="dockWild" hidden></div>
+      <div id="dockBackdrop" class="dock-backdrop" hidden></div>
+      <div id="summonDock" class="summon-dock" hidden>
+        <div class="sd-hint" id="summonDockHint"><span class="sd-mic">🎙️</span> אמור שם של פוקימון…</div>
+        <div class="sd-row-wrap">
+          <div class="sd-row" id="summonDockRow"></div>
+        </div>
+      </div>
+
       <aside class="left-panel" id="leftPanel">
+        <div class="lp-brand">
+          <img class="brand-logo" src="${import.meta.env.BASE_URL}heavyguard-logo.png" alt="HeavyGuard" />
+        </div>
         <div class="lp-head">
           <span class="lp-title" data-i18n="system">מערכת</span>
           <span class="lp-status" id="lpStatus" data-i18n="online">● מחובר</span>
@@ -209,7 +532,7 @@ export function mountApp(root: HTMLElement) {
           <div class="lp-label" data-i18n="aiEngine">מנוע AI</div>
           <div class="ai-status">
             <div class="ai-model" id="aiModelDisplay">GPT-4O MINI</div>
-            <div class="ai-provider" id="aiProviderDisplay">דרך PUTER</div>
+            <div class="ai-provider" id="aiProviderDisplay">VIA GROQ</div>
             <div class="ai-latency">
               <span class="latency-dot"></span>
               <span id="aiLatency" data-i18n="ready">מוכן</span>
@@ -247,7 +570,10 @@ export function mountApp(root: HTMLElement) {
       </aside>
 
       <div class="dock">
-        <div class="state" id="state" data-i18n="standby">המתנה</div>
+        <div class="state-row">
+          <div class="voice-eq" id="voiceEq" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <div class="state" id="state" data-i18n="standby">המתנה</div>
+        </div>
         <div class="mac-dock" id="macDock">
           <button class="dock-item" data-q="What's the weather today?">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
@@ -269,6 +595,10 @@ export function mountApp(root: HTMLElement) {
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
             <span class="dl" data-i18n="calendar">יומן</span>
             <span class="cal-badge" id="calBadge"></span>
+          </button>
+          <button class="dock-item" id="walletBtn">
+            <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7a2 2 0 012-2h13a1 1 0 011 1v3M3 7v11a2 2 0 002 2h14a2 2 0 002-2V10a1 1 0 00-1-1H5a2 2 0 01-2-2z"/><circle cx="16" cy="14" r="1.4"/></svg></span>
+            <span class="dl" data-i18n="wallet">ארנק אישי</span>
           </button>
           <button class="dock-item" data-q="Tell me a joke">
             <span class="di"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></span>
@@ -301,10 +631,22 @@ export function mountApp(root: HTMLElement) {
             </svg>
             <span data-i18n="trading">מסחר</span>
           </a>
+          <a class="hg-fab mkt-fab" id="mktBtn" href="${import.meta.env.BASE_URL}heavyguard.html#marketing" title="שיווק TikTok · Facebook">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22">
+              <path d="M3 11l19-9-9 19-2-8-8-2z"/>
+            </svg>
+            <span>שיווק</span>
+          </a>
+          <a class="hg-fab agents-fab" id="agentsBtn" href="${import.meta.env.BASE_URL}agents.html" title="מרכז הסוכנים · Agents Command">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22">
+              <circle cx="12" cy="12" r="3.2"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M9.5 10.5 6.5 7.5M14.5 10.5l3-3M9.5 13.5l-3 3M14.5 13.5l3 3"/>
+            </svg>
+            <span>סוכנים</span>
+          </a>
         </div>
         <div class="bar">
           <button class="ic mic" id="micBtn" title="Hey Alpha"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
-          <div class="pill"><input id="input" type="text" placeholder="הקלד או דבר עם אלפא…" /></div>
+          <div class="pill"><input id="input" type="text" placeholder="דבר אלי…" name="alpha-message" autocomplete="off" autocorrect="off" autocapitalize="sentences" data-lpignore="true" data-form-type="other" /></div>
           <button class="ic send" id="sendBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
         </div>
       </div>
@@ -315,6 +657,18 @@ export function mountApp(root: HTMLElement) {
       <div class="overlay" id="overlay"><div class="card">
         <h2 data-i18n="settingsTitle">אלפא עוזר אישי</h2>
         <p data-i18n="settingsDesc">עובד בחינם מהקופסה דרך Puter — לא צריך מפתח API.</p>
+
+        <div class="settings-section">
+          <div class="ss-title" data-i18n="moodColor">צבע ומצב רוח</div>
+          <div class="mood-grid" id="moodGrid">
+            <button class="mood-opt" data-mood="gold"><span class="mood-dot" style="background:#daa520"></span>זהב</button>
+            <button class="mood-opt" data-mood="ocean"><span class="mood-dot" style="background:#3FB4E0"></span>אוקיינוס</button>
+            <button class="mood-opt" data-mood="emerald"><span class="mood-dot" style="background:#36D399"></span>אמרלד</button>
+            <button class="mood-opt" data-mood="royal"><span class="mood-dot" style="background:#A78BFA"></span>מלכותי</button>
+            <button class="mood-opt" data-mood="crimson"><span class="mood-dot" style="background:#FF6B6B"></span>אש</button>
+            <button class="mood-opt" data-mood="goat"><span class="mood-dot" style="background:linear-gradient(90deg,#43A1D5 33%,#fff 33%,#fff 67%,#43A1D5 67%)"></span>⚽ GOAT</button>
+          </div>
+        </div>
 
         <div class="settings-section">
           <div class="ss-title" data-i18n="general">כללי</div>
@@ -332,6 +686,21 @@ export function mountApp(root: HTMLElement) {
             <label data-i18n="haptic">משוב רטט</label>
             <label class="toggle"><input type="checkbox" id="hapticsCheck" /><span class="toggle-slider"></span></label>
           </div>
+          <div class="setting-row">
+            <label>🖐️ שלד דיגיטלי בזיהוי ידיים</label>
+            <label class="toggle"><input type="checkbox" id="handSkeletonCheck" /><span class="toggle-slider"></span></label>
+          </div>
+          <div class="setting-row">
+            <label data-i18n="fastMode">⚡ מצב מהיר (ביצועים)</label>
+            <label class="toggle"><input type="checkbox" id="fastModeCheck" /><span class="toggle-slider"></span></label>
+          </div>
+          <label data-i18n="displayMode">מצב תצוגה</label>
+          <select id="displayModeSel">
+            <option value="auto" data-i18n="dmAuto">אוטומטי (לפי המכשיר)</option>
+            <option value="mobile" data-i18n="dmMobile">📱 מצב נייד (קל ומהיר)</option>
+            <option value="desktop" data-i18n="dmDesktop">🖥️ מצב מחשב (איכות מלאה)</option>
+          </select>
+          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)" data-i18n="displayModeDesc">בחר מצב נייד אם המערכת איטית באייפד/טאבלט. הדף ייטען מחדש לאחר שינוי.</p>
         </div>
 
         <div class="settings-section">
@@ -425,7 +794,7 @@ export function mountApp(root: HTMLElement) {
         <div class="settings-section">
           <div class="ss-title" data-i18n="pikachuVoice">פיקאצ'ו</div>
           <div class="setting-row">
-            <label data-i18n="pikaVoiceOn">קול פיקאצ'ו</label>
+            <label data-i18n="pikaVoiceOn">קולות הדמויות</label>
             <label class="toggle"><input type="checkbox" id="pikaVoiceCheck" checked /><span class="toggle-slider"></span></label>
           </div>
           <label><span data-i18n="pikaVolume">עוצמת קול פיקאצ'ו</span> <span id="pikaVolVal" class="range-val">60%</span></label>
@@ -439,43 +808,79 @@ export function mountApp(root: HTMLElement) {
           <div class="ss-title" data-i18n="aiEngineTitle">מנוע AI</div>
           <label data-i18n="aiProvider">ספק AI</label>
           <select id="providerSel">
-            <option value="puter" data-i18n="puterFree">Puter — חינם, בלי מפתח</option>
+            <option value="groq" data-i18n="groqFree">Groq — חינם ומהיר (Llama)</option>
             <option value="gemini">Gemini (Google)</option>
             <option value="grok">Grok (xAI)</option>
             <option value="openai">ChatGPT (OpenAI)</option>
           </select>
-          <label data-i18n="puterModel">מודל Puter (חינם)</label>
-          <select id="puterModelSel">
-            <option value="gpt-4o-mini">GPT-4o mini (fast)</option>
-            <option value="gpt-4o">GPT-4o (smartest)</option>
-            <option value="o4-mini">o4-mini (reasoning)</option>
-            <option value="claude-sonnet-4">Claude Sonnet 4</option>
-            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-          </select>
-          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)" data-i18n="puterDesc">Puter בחינם — חלון התחברות חד-פעמי יופיע בשימוש ראשון. מפתחות למטה הם אופציונליים.</p>
-          <label data-i18n="geminiKey">מפתח Gemini API</label><input id="keyInput" type="password" placeholder="AIza..." />
-          <label data-i18n="grokKey">מפתח Grok API</label><input id="grokKeyInput" type="password" placeholder="xai-..." />
-          <label data-i18n="openaiKey">מפתח OpenAI API</label><input id="openaiKeyInput" type="password" placeholder="sk-..." />
+          <label data-i18n="groqKey">מפתח Groq API (חינם)</label><input id="groqKeyInput" type="text" class="masked-field" placeholder="gsk_..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
+          <p style="margin:2px 0 10px;font-size:11px;color:var(--dim)" data-i18n="groqDesc">Groq חינמי ומהיר (Llama 3.3). הוצא מפתח חינם ב-console.groq.com והדבק כאן — בלי כרטיס אשראי ובלי חיוב. שאר המפתחות למטה אופציונליים.</p>
+          <label data-i18n="geminiKey">מפתח Gemini API</label><input id="keyInput" type="text" class="masked-field" placeholder="AIza..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
+          <label data-i18n="grokKey">מפתח Grok API</label><input id="grokKeyInput" type="text" class="masked-field" placeholder="xai-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
+          <label data-i18n="openaiKey">מפתח OpenAI API</label><input id="openaiKeyInput" type="text" class="masked-field" placeholder="sk-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" />
         </div>
 
         <div class="settings-section">
           <div class="ss-title" data-i18n="cloudSync">סנכרון ענן</div>
-          <p style="margin:0 0 10px;font-size:11px;color:var(--dim);line-height:1.5">סנכרן את כל הנתונים ל-Google Drive. דורש Google OAuth Client ID מ-<a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--gold)">Google Cloud Console</a>.</p>
-          <label>Google OAuth Client ID</label>
-          <input id="driveClientId" type="text" placeholder="xxxx.apps.googleusercontent.com" style="font-size:11px" />
-          <div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap">
-            <button class="cloud-btn" id="driveConnectBtn" data-i18n="connectDrive">חבר Google Drive</button>
-            <button class="cloud-btn" id="driveUploadBtn" disabled data-i18n="backupDrive">גיבוי ל-Drive</button>
-            <button class="cloud-btn" id="driveDownloadBtn" disabled data-i18n="restoreDrive">שחזור מ-Drive</button>
-          </div>
-          <div class="cloud-status" id="driveStatus"></div>
-          <div style="border-top:1px solid rgba(218,165,32,.08);margin:12px 0;padding-top:10px">
-            <p style="font-size:11px;color:var(--dim);margin-bottom:8px" data-i18n="noGoogle">אין חשבון Google? ייצא/ייבא קובץ גיבוי ישירות:</p>
-            <div style="display:flex;gap:8px">
-              <button class="cloud-btn" id="localExportBtn" data-i18n="exportJson">ייצוא JSON</button>
-              <button class="cloud-btn" id="localImportBtn" data-i18n="importJson">ייבוא JSON</button>
+
+          <!-- ── Google Drive sign-in (primary, zero-setup) — Puter removed ── -->
+          <div id="puterSyncBox" style="background:rgba(218,165,32,.06);border:1px solid rgba(218,165,32,.18);border-radius:10px;padding:14px;margin-bottom:14px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+              <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              <span style="font-weight:600;font-size:13px">סנכרון אוטומטי עם Google</span>
+            </div>
+            <p style="font-size:11px;color:var(--dim);margin:0 0 12px;line-height:1.6">התחבר עם חשבון Google שלך — הנתונים יישמרו בענן ויסתנכרנו בין הטלפון, המחשב והאייפד שלך אוטומטית.</p>
+            <div id="puterSignedOut" style="display:flex;flex-direction:column;gap:8px">
+              <button id="puterSignInBtn" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;color:#333;border:1px solid #ddd;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:500;cursor:pointer;width:100%">
+                <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84z"/></svg>
+                התחבר עם Google
+              </button>
+            </div>
+            <div id="puterSignedIn" style="display:none;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+                <span style="width:8px;height:8px;background:#34A853;border-radius:50%;display:inline-block;flex-shrink:0"></span>
+                <span id="puterUserLabel" style="color:#34A853;font-weight:500">מחובר</span>
+              </div>
+              <div class="cloud-status" id="puterStatus"></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="cloud-btn" id="puterSyncNowBtn">סנכרן עכשיו ☁️</button>
+                <button class="cloud-btn" id="puterRestoreBtn">שחזר מהענן ⬇️</button>
+                <button class="cloud-btn" id="puterSignOutBtn" style="background:rgba(255,60,60,.12);border-color:rgba(255,60,60,.3);color:#f87;">התנתק</button>
+              </div>
+              <div style="margin-top:8px">
+                <label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">תפקיד מכשיר זה בסנכרון:</label>
+                <select id="syncRoleSel" style="font-size:12px;width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(218,165,32,.2);border-radius:6px;color:var(--ink);padding:6px 8px">
+                  <option value="primary">📱 ראשי — הטלפון (תמיד מעלה, לא מוריד)</option>
+                  <option value="secondary">💻 משני — מחשב / אייפד (תמיד מוריד מהטלפון)</option>
+                  <option value="auto">🔄 אוטומטי (לפי זמן)</option>
+                </select>
+              </div>
             </div>
           </div>
+
+          <!-- ── Fallback: local JSON export/import ── -->
+          <details style="margin-top:4px">
+            <summary style="font-size:11px;color:var(--dim);cursor:pointer;user-select:none">אפשרויות גיבוי ידניות</summary>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;gap:8px">
+                <button class="cloud-btn" id="localExportBtn" data-i18n="exportJson">ייצוא JSON</button>
+                <button class="cloud-btn" id="localImportBtn" data-i18n="importJson">ייבוא JSON</button>
+              </div>
+              <details style="margin-top:4px">
+                <summary style="font-size:10px;color:var(--dim);cursor:pointer">חיבור Google Drive ישיר (מתקדם)</summary>
+                <div style="margin-top:8px">
+                  <label style="font-size:11px">Google OAuth Client ID</label>
+                  <input id="driveClientId" type="text" placeholder="xxxx.apps.googleusercontent.com" style="font-size:11px;margin-top:4px" />
+                  <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">
+                    <button class="cloud-btn" id="driveConnectBtn">חבר Drive</button>
+                    <button class="cloud-btn" id="driveUploadBtn" disabled>גיבוי</button>
+                    <button class="cloud-btn" id="driveDownloadBtn" disabled>שחזור</button>
+                  </div>
+                  <div class="cloud-status" id="driveStatus"></div>
+                </div>
+              </details>
+            </div>
+          </details>
         </div>
 
         <div class="settings-section">
@@ -569,6 +974,7 @@ export function mountApp(root: HTMLElement) {
             <canvas id="arCanvas"></canvas>
             <canvas id="arFxCanvas"></canvas>
             <canvas id="arObjCanvas"></canvas>
+            <canvas id="arCharCanvas"></canvas>
             <div class="ar-hud" id="arHud">
               <div class="ar-status" id="arStatus">מאתחל מצלמה…</div>
               <div class="ar-hand-indicator" id="arHandIndicator"></div>
@@ -594,14 +1000,92 @@ export function mountApp(root: HTMLElement) {
 
   setPikaVolume(state.pikaVolume);
   setPikaPitch(state.pikaPitch);
-  setPikaEnabled(state.pikaVoiceOn);
+  // The orb is the other half of the Three.js cost, and it is decoration: the
+  // tiles are what the user came for. It is mounted AFTER first paint, and the
+  // 40-odd `orb.*` calls scattered through this file keep working because a
+  // proxy queues anything said before the module lands and replays it on
+  // arrival. Nothing downstream has to know the orb was late.
+  let realOrb: OrbHandle | null = null;
+  const orbQueue: Array<(o: OrbHandle) => void> = [];
+  const orb = new Proxy({} as OrbHandle, {
+    get(_t, prop: string | symbol) {
+      return (...args: unknown[]) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const call = (o: OrbHandle) => (o as any)[prop]?.(...args);
+        if (realOrb) return call(realOrb);
+        orbQueue.push(call);
+        return undefined;
+      };
+    },
+  });
 
-  let orb: OrbHandle;
+  // setCryEnabled is a module-level toggle, not an orb method, so it needs its
+  // own holding pen for the same reason.
+  let setCryReal: ((on: boolean) => void) | null = null;
+  let cryPending: boolean | null = null;
+  const setCryEnabled = (on: boolean): void => {
+    if (setCryReal) setCryReal(on); else cryPending = on;
+  };
+
+  // Start the DOWNLOAD immediately — it is async and blocks nothing, so there
+  // is no reason to make the network wait for an idle callback. Only the
+  // expensive part (building the scene) is deferred, which is what was
+  // actually competing with first paint.
+  const orbModule = import('../orb/OrbScene');
+  const loadOrb = (): void => {
+    void orbModule.then((m) => {
+      setCryReal = m.setCryEnabled;
+      if (cryPending !== null) m.setCryEnabled(cryPending);
+      realOrb = m.mountOrb($('stage'));
+      orbQueue.splice(0).forEach((fn) => fn(realOrb as OrbHandle));
+    }).catch(() => { /* tiles still work without the decoration */ });
+  };
+
+
+  setPikaEnabled(state.pikaVoiceOn);
+  setCharacterVoiceEnabled(state.pikaVoiceOn);   // gate all character cries on startup
+  setCryEnabled(state.pikaVoiceOn);
+
+  // ── Minimal-scene mode (default ON) — "only the orb is active". The full
+  // stack used to run THREE whole-screen animation systems every frame (the
+  // WebGL orb scene + the #bgfx aurora/constellation canvas + the flowLines
+  // cinematic canvas, both 2D canvases on the main thread) — that stack is
+  // why the orb never felt as smooth as single-orb assistants. In minimal
+  // mode the two 2D canvases never even start, and the orb scene itself
+  // hides its decorative layers (see OrbScene's orbMinimal sweeps).
+  // Escape hatch: localStorage alpha:orb_minimal = '0'.
+  const ORB_MINIMAL = (() => { try { return localStorage.getItem('alpha:orb_minimal') !== '0'; } catch { return true; } })();
+
   try {
-    orb = mountOrb($('stage'));
+    // requestIdleCallback where available, so the download never competes with
+    // the first paint it exists to stay out of the way of.
+    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void }).requestIdleCallback;
+    if (ric) ric(loadOrb, { timeout: 800 }); else setTimeout(loadOrb, 120);
+    buildOrbitalMenu();
+    startBgFx(); // always: in minimal mode it runs flow-only (see FLOW_ONLY)
+    runBootSequence();
+    startParallax();
+    // JARVIS focus mode: while the user grabs the 3D stage (rotating or
+    // playing with the robot) the side panels fade way down; they glide
+    // back a moment after release, keeping the focus on the scene.
+    {
+      let dimT: number | undefined;
+      $('stage').addEventListener('pointerdown', () => {
+        if (dimT) clearTimeout(dimT);
+        document.body.classList.add('ui-dim');
+      });
+      window.addEventListener('pointerup', () => {
+        if (dimT) clearTimeout(dimT);
+        dimT = window.setTimeout(() => document.body.classList.remove('ui-dim'), 900);
+      });
+    }
   } catch {
-    orb = { setEnergy() {}, pikaEmote() {}, dispose() {}, startBodyDetection() {}, stopBodyDetection() {} };
+    // The proxy already absorbs every call when the orb never arrives, so
+    // there is nothing to substitute here — the tiles simply render undecorated.
   }
+
+  // Apply the saved performance preference (Fast mode) on startup.
+  try { if (localStorage.getItem('alpha_fast_mode') === '1') orb.setPerfMode(true); } catch {}
 
   // When Pikachu chirps, trigger a brief energy burst in the 3D orb
   setChirpCallback(() => {
@@ -609,7 +1093,11 @@ export function mountApp(root: HTMLElement) {
     setTimeout(() => orb.setEnergy(0.06), 900);
   });
 
-  mountFlowLines(root.querySelector('.app')!);
+  // Unlock Web Audio on first user interaction (iOS/Chrome autoplay policy)
+  const _unlockOnce = () => { unlockAudio(); document.removeEventListener('pointerdown', _unlockOnce); };
+  document.addEventListener('pointerdown', _unlockOnce);
+
+  if (!ORB_MINIMAL) mountFlowLines(root.querySelector('.app')!);
 
   function applyUILang(lang: UILang) {
     root.querySelectorAll<HTMLElement>('[data-i18n]').forEach(el => {
@@ -675,8 +1163,12 @@ export function mountApp(root: HTMLElement) {
         const el = document.querySelector(sel);
         return el && el.classList.contains('show');
       });
-      document.body.classList.toggle('bg-paused', anyOpen || document.hidden);
+      document.body.classList.toggle('bg-paused',
+        anyOpen || document.hidden || document.body.classList.contains('drive-mode'));
     };
+    // Drive mode toggles fire this instead of mutating one of the watched
+    // overlays — same pause path, different trigger.
+    window.addEventListener('alpha:drivemode', update);
     const obs = new MutationObserver(update);
     overlaySelectors.forEach(sel => {
       const el = document.querySelector(sel);
@@ -702,19 +1194,29 @@ export function mountApp(root: HTMLElement) {
   const topR = root.querySelector('.topR');
   if (topR) topR.insertBefore(moduleChip, topR.firstChild);
 
+  let lastAgentId = '';
   function updateModuleIndicator(moduleId: string) {
     const mod = moduleById(moduleId as any);
     const label = moduleChip.querySelector('.mc-label') as HTMLElement;
     const dot = moduleChip.querySelector('.mc-dot') as HTMLElement;
     if (mod) {
-      label.textContent = mod.label.toUpperCase();
+      label.textContent = `${mod.emoji} ${mod.label.toUpperCase()}`;
       dot.style.background = `hsl(${mod.hue}, 70%, 55%)`;
       dot.style.boxShadow = `0 0 8px hsla(${mod.hue}, 70%, 55%, .6)`;
+      moduleChip.style.setProperty('--agent-hue', String(mod.hue));
       moduleChip.classList.add('active');
     } else {
-      label.textContent = state.uiLang === 'he' ? 'מוח' : 'BRAIN';
+      label.textContent = state.uiLang === 'he' ? '🧠 מוח' : '🧠 BRAIN';
       dot.style.background = 'var(--gold)';
       dot.style.boxShadow = '0 0 8px rgba(218,165,32,.5)';
+      moduleChip.classList.remove('active');
+    }
+    // Pulse the chip whenever the active agent changes (visible handoff).
+    if (moduleId !== lastAgentId) {
+      lastAgentId = moduleId;
+      moduleChip.classList.remove('agent-switch');
+      void moduleChip.offsetWidth;          // restart the animation
+      moduleChip.classList.add('agent-switch');
     }
   }
 
@@ -826,10 +1328,53 @@ export function mountApp(root: HTMLElement) {
   function setStatus(s: 'armed' | 'listening' | 'thinking' | 'speaking' | '') {
     const label = { armed: t('armed', state.uiLang), listening: t('listening', state.uiLang), thinking: t('thinking', state.uiLang), speaking: t('speaking', state.uiLang), '': t('standby', state.uiLang) }[s];
     $('state').textContent = label;
+    $('voiceEq').classList.toggle('on', s === 'speaking');
     orb.setEnergy(s === 'speaking' ? 0.95 : s === 'listening' ? 0.5 : s === 'armed' ? 0.2 : 0.06);
+    if (s === 'listening') orb.pikaEmote('curious');
+    // Hologram reading mode: while the assistant is actively talking, the
+    // small output panel was too cramped to read comfortably. Hide the 3D
+    // figure and blow the response up into a large centered holographic
+    // overlay instead — reverts the moment it's done speaking.
+    document.body.classList.toggle('ac-hologram', s === 'speaking' || s === 'thinking');
+    // Keep the mic button's visual "on" state in sync with what the voice
+    // engine actually did — previously this class was only ever set at
+    // click time. When recognition dies on its own (mic permission denied
+    // or revoked, browser blocks it, "service-not-allowed") VoiceEngine
+    // calls onStateChange('') to flip itself off internally, but the
+    // button stayed lit "on" with nothing actually listening — exactly the
+    // "the assistant isn't listening, isn't answering" symptom, with no
+    // visible sign anything had gone wrong.
+    $('micBtn').classList.toggle('on', s !== '' && voice.wakeOn);
+    // Drive-mode visualizer mirrors the same state machine — one source of
+    // truth, no second listener chain to fall out of sync.
+    const dv = document.getElementById('driveOverlay');
+    if (dv) {
+      dv.dataset.vstate = s || 'idle';
+      const dl = document.getElementById('drvState'); if (dl) dl.textContent = label;
+      document.getElementById('drvMic')?.classList.toggle('on', s !== '' && voice.wakeOn);
+    }
   }
 
-  const voice = new VoiceEngine(state, (text) => { addMsg(text, 'me'); ask(text); }, setStatus);
+  const voice = new VoiceEngine(state, (text) => { clearInterim(); addMsg(text, 'me'); ask(text); }, setStatus);
+  // A permission-blocked mic used to switch wake off with no feedback at all —
+  // to the user it looked like "the assistant just doesn't listen". Say it.
+  voice.onMicBlocked = () => {
+    $('micBtn').classList.remove('on');
+    addMsg(state.uiLang === 'he'
+      ? 'הדפדפן חוסם את המיקרופון שלי 🎤 — לחץ על סמל המנעול/ההרשאות בשורת הכתובת, אשר גישה למיקרופון, ונסה שוב.'
+      : 'The browser is blocking my microphone 🎤 — click the lock/permissions icon in the address bar, allow microphone access, and try again.', 'sys');
+  };
+  // Recognition erroring repeatedly with no speech ever heard — name the
+  // actual error so the owner (and we) can see WHY the mic "hears nothing".
+  voice.onMicIssue = (err) => {
+    addMsg(state.uiLang === 'he'
+      ? `זיהוי הדיבור נכשל שוב ושוב (שגיאה: ${err}) 🎤 — אם זו network, שירות הדיבור של גוגל חסום/איטי ברשת הזו; נסה רשת אחרת או הקלד בינתיים.`
+      : `Speech recognition keeps failing (error: ${err}) 🎤 — if it's "network", Google's speech service is blocked/slow on this connection; try another network or type instead.`, 'sys');
+  };
+  voice.onInterim = (text) => showInterim(text);
+  // Feed the plasma core a real per-frame mic level so it ripples to the user's
+  // actual voice while listening (Phase 2 — true AnalyserNode reactivity).
+  orb.attachAudioLevel?.(() => voice.getMicLevel());
 
   function updateCalBadge() {
     const events = loadEvents();
@@ -861,7 +1406,153 @@ export function mountApp(root: HTMLElement) {
       .replace(/\n/g, '<br>');
   }
 
+  // ── Self-correction / reflection ──────────────────────────────────────────
+  // Free, instant, client-side: after the assistant answers, validate the syntax
+  // of any code it produced (no extra LLM call). JSON is checked with JSON.parse;
+  // plain JS is parsed with new Function (compiles, never executes). Module/top-
+  // await snippets are skipped to avoid false positives.
+  const JS_LANGS = ['js', 'javascript', 'jsx', 'mjs', 'cjs'];
+  const CHECK_LANGS = ['json', 'xml', 'svg', 'css', ...JS_LANGS];
+  function extractCodeBlocks(text: string): { lang: string; code: string }[] {
+    const out: { lang: string; code: string }[] = [];
+    const re = /```(\w+)?\n([\s\S]*?)```/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) out.push({ lang: (m[1] || '').toLowerCase(), code: m[2] });
+    return out;
+  }
+  function validateCode(lang: string, code: string): string | null {
+    try {
+      if (lang === 'json') { JSON.parse(code); return null; }
+      if (JS_LANGS.includes(lang)) {
+        if (/\b(import|export)\b/.test(code) || /^\s*await\b/m.test(code)) return null; // skip modules/top-await
+        // eslint-disable-next-line no-new-func
+        new Function(code);   // parses + throws on syntax error; does NOT run
+        return null;
+      }
+      if (lang === 'xml' || lang === 'svg') {
+        const doc = new DOMParser().parseFromString(code, 'application/xml');
+        const err = doc.querySelector('parsererror');
+        return err ? (err.textContent || 'XML parse error').replace(/\s+/g, ' ').trim().slice(0, 140) : null;
+      }
+      if (lang === 'css') {
+        // Brace balance — valid CSS is always balanced; catches the common break
+        // without false-positives on well-formed stylesheets.
+        let depth = 0;
+        for (const ch of code) { if (ch === '{') depth++; else if (ch === '}') { if (--depth < 0) return 'unbalanced "}" in CSS'; } }
+        return depth !== 0 ? 'unbalanced "{ }" in CSS' : null;
+      }
+    } catch (e: any) { return e?.message || 'syntax error'; }
+    return null; // unknown language → no claim
+  }
+  function reflectOnReply(text: string) {
+    const blocks = extractCodeBlocks(text).filter(b => CHECK_LANGS.includes(b.lang));
+    if (!blocks.length) return;
+    const bad = blocks.map(b => ({ b, err: validateCode(b.lang, b.code) })).filter(x => x.err);
+    if (bad.length) {
+      addMsg(`⚠️ בדיקה עצמית: שגיאת תחביר ב-${bad[0].b.lang} — ${bad[0].err}`, 'sys');
+      void autoFixCode(bad[0].b);   // background, non-blocking self-correction
+    } else {
+      const langs = [...new Set(blocks.map(b => b.lang))].join(', ');
+      addMsg(`✓ בדיקה עצמית: התחביר של הקוד (${langs}) תקין`, 'sys');
+    }
+  }
+
+  // Self-correction: one focused LLM call to repair a broken code block. The fix
+  // is only shown if it actually parses clean — otherwise we stay silent and the
+  // ⚠ note remains. Runs in the background; never blocks the original reply.
+  let autoFixing = false;
+  async function autoFixCode(block: { lang: string; code: string }) {
+    if (autoFixing) return;
+    autoFixing = true;
+    try {
+      const sys = 'You are a precise code fixer. Fix ONLY syntax errors. Reply with a single corrected code block and nothing else — no explanation.';
+      const user = `Fix the syntax error in this ${block.lang} code. Return only the corrected code inside one \`\`\`${block.lang} fenced block:\n\n\`\`\`${block.lang}\n${block.code}\n\`\`\``;
+      const out = await askOnce(state, sys, user);
+      if (!out) return;
+      const fixed = extractCodeBlocks(out).find(b => {
+        const lang = b.lang || block.lang;
+        return b.code.trim() && validateCode(lang, b.code) === null;
+      });
+      if (fixed) {
+        addMsg(`🔧 תיקון אוטומטי (${block.lang}):\n\`\`\`${block.lang}\n${fixed.code.trim()}\n\`\`\``, 'al');
+      }
+    } catch {} finally { autoFixing = false; }
+  }
+
+  // ── Live screen vision ─────────────────────────────────────────────────────
+  // Capture one frame of the user's screen (getDisplayMedia) and ask a vision
+  // model about it. Free + client-side. The capture stops immediately (single
+  // snapshot), and the frame is downscaled to keep the payload small.
+  function isScreenVisionIntent(text: string): boolean {
+    const s = text.toLowerCase();
+    return /(מה.*(על|ב).*מסך|תראה.*מסך|ראה.*(את ה)?מסך|צלם.*מסך|המסך שלי|מסתכל.*מסך)/.test(s)
+      || /(see|look at|read|analyze|check).{0,12}(my )?screen|screen ?vision|share.{0,6}screen|what'?s on (my )?screen/.test(s);
+  }
+  async function captureScreenFrame(): Promise<string | null> {
+    try {
+      const stream = await (navigator.mediaDevices as any).getDisplayMedia({ video: { frameRate: 1 }, audio: false });
+      const video = document.createElement('video');
+      video.srcObject = stream; video.muted = true;
+      await video.play().catch(() => {});
+      await new Promise(r => setTimeout(r, 350));   // let a real frame arrive
+      const w = video.videoWidth || 1280, h = video.videoHeight || 720;
+      const scale = Math.min(1, 1280 / w);
+      const cw = Math.round(w * scale), ch = Math.round(h * scale);
+      const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
+      canvas.getContext('2d')!.drawImage(video, 0, 0, cw, ch);
+      stream.getTracks().forEach((t: MediaStreamTrack) => t.stop());
+      video.srcObject = null;
+      return canvas.toDataURL('image/jpeg', 0.7);
+    } catch { return null; }
+  }
+  async function runScreenVision(text: string) {
+    if (asking) return;
+    asking = true;
+    setStatus('thinking');
+    addMsg('👁️ בקש שיתוף מסך כדי שאוכל לראות…', 'sys');
+    try {
+      const img = await captureScreenFrame();
+      if (!img) { addMsg('לא הצלחתי לגשת למסך (השיתוף בוטל או נדחה).', 'sys'); return; }
+      showTypingIndicator();
+      const q = text.trim() || 'מה אתה רואה על המסך? עזור לי בהקשר.';
+      const reply = await askVision(state, `${q}\n\nReply in the user's language, concise and actionable.`, img);
+      removeTypingIndicator();
+      if (reply) { addMsg(reply, 'al'); voice.speak(reply); }
+      else addMsg('המודל לא החזיר תיאור של המסך. נסה שוב או בדוק שספק ה-AI תומך בתמונות.', 'sys');
+    } catch (e: any) {
+      removeTypingIndicator();
+      addMsg('שגיאה בראיית המסך: ' + (e?.message || ''), 'sys');
+    } finally {
+      asking = false;
+      setStatus('');
+    }
+  }
+  (window as any).runScreenVision = runScreenVision;
+
   let typingTurn: HTMLElement | null = null;
+
+  // Live interim transcript — a provisional "me" bubble that updates in real
+  // time as the mic hears words, then is replaced by the finalized message.
+  // Kills the old ~2s dead air where nothing appeared until the endpoint flush.
+  let liveUserTurn: HTMLElement | null = null;
+  function showInterim(text: string) {
+    if (!text) return;
+    const chatEl = $('chat');
+    if (!chatEl) return;
+    if (!liveUserTurn) {
+      liveUserTurn = document.createElement('div');
+      liveUserTurn.className = 'turn me interim-turn';
+      liveUserTurn.style.opacity = '0.55';
+      liveUserTurn.innerHTML = `<span class="who">${t('you', state.uiLang)}</span><div class="txt"></div>`;
+      chatEl.appendChild(liveUserTurn);
+    }
+    const txt = liveUserTurn.querySelector<HTMLElement>('.txt');
+    if (txt) txt.textContent = text;
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+  function clearInterim() {
+    if (liveUserTurn) { liveUserTurn.remove(); liveUserTurn = null; }
+  }
 
   function showTypingIndicator() {
     const chatEl = $('chat');
@@ -931,8 +1622,69 @@ export function mountApp(root: HTMLElement) {
     if (who === 'me') trackSentiment(text);
   }
 
+  // Hide action tags from the live display: remove complete [[TAG:…]] blocks
+  // and any trailing half-streamed "[[" so the user never sees raw tags.
+  function stripTagsForDisplay(s: string): string {
+    return s.replace(/\[\[[^\]]*\]\]/g, '').replace(/\[\[[^\]]*$/, '');
+  }
+
+  // Create an empty assistant bubble (chat + right panel) that updates live as
+  // streamed tokens arrive — no fake typewriter, real time-to-first-token.
+  function beginStreamMsg() {
+    removeTypingIndicator();
+    const label = state.name;
+    const chatEl = $('chat');
+    const div = document.createElement('div');
+    div.className = 'turn al streaming';
+    div.innerHTML = `<span class="who">${label}</span><div class="txt"></div>`;
+    chatEl?.appendChild(div);
+    const txt = div.querySelector<HTMLElement>('.txt')!;
+
+    const rp = $('rpBody');
+    const rpDiv = document.createElement('div');
+    rpDiv.className = 'rp-msg al streaming';
+    const time = new Date();
+    const ts = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
+    rpDiv.innerHTML = `<div class="rp-meta"><span class="rp-who">${label}</span><span class="rp-time">${ts}</span></div><div class="rp-text"></div>`;
+    rp?.appendChild(rpDiv);
+    const rpTxt = rpDiv.querySelector<HTMLElement>('.rp-text')!;
+
+    // Coalesce updates to one paint per frame (backpressure for chatty streams).
+    let pending = '';
+    let scheduled = false;
+    const flush = () => {
+      scheduled = false;
+      const html = renderMarkdown(pending);
+      txt.innerHTML = html;
+      rpTxt.innerHTML = html;
+      if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+      if (rp) rp.scrollTop = rp.scrollHeight;
+    };
+    return {
+      update(displayText: string) {
+        pending = displayText;
+        if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
+      },
+      finalize(finalText: string) {
+        pending = finalText;
+        flush();
+        div.classList.remove('streaming');
+        rpDiv.classList.remove('streaming');
+        lpMsgCount++;
+        const mcEl = document.getElementById('msgCount');
+        if (mcEl) mcEl.textContent = String(lpMsgCount);
+        const words = finalText.split(/\s+/).filter(w => w.length > 0).length;
+        lpTokenCount += Math.round(words * 1.3);
+        const tcEl = document.getElementById('tokenCount');
+        if (tcEl) tcEl.textContent = String(lpTokenCount);
+        saveChatMessage(finalText, 'al');
+      },
+    };
+  }
+
+  let winCleanup: (() => void) | null = null;   // teardown for live content (maps, animations)
   function openWin(title: string) { $('winTitle').textContent = title; $('win').classList.add('show'); audio.open(); }
-  $('winClose').onclick = () => { $('win').classList.remove('show'); $('winBody').innerHTML = ''; };
+  $('winClose').onclick = () => { try { winCleanup?.(); } catch {} winCleanup = null; $('win').classList.remove('show'); $('winBody').innerHTML = ''; };
 
   function openVideo(q: string) {
     openWin('Video · ' + q);
@@ -1018,43 +1770,459 @@ export function mountApp(root: HTMLElement) {
     } catch { $('winBody').innerHTML = '<div class="pad" style="color:var(--dim)">שגיאת חיפוש.</div>'; }
   }
 
-  function renderCalendar() {
-    const ev = loadEvents();
-    let html = '<div class="pad"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">' +
-      '<input id="evT" placeholder="Title" style="flex:1;min-width:140px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<input type="date" id="evD" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<input type="time" id="evTime" style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:10px;padding:10px;color:var(--ink)">' +
-      '<button id="evAdd" style="background:linear-gradient(135deg,var(--gold),#fff);border:none;border-radius:10px;padding:10px 18px;cursor:pointer;color:#0a0806;font-weight:600">Add</button></div>';
-    if (!ev.length) html += '<div style="color:var(--dim);font-style:italic">היומן ריק.</div>';
-    for (const e of ev) {
-      const isHg = e.id.startsWith('hg:');
-      const badge = isHg ? '<span style="font-size:9px;letter-spacing:1px;color:var(--gold);background:rgba(255,194,77,.1);padding:2px 6px;border-radius:4px;margin-left:6px">HG</span>' : '';
-      html += `<div style="display:flex;gap:12px;align-items:center;padding:12px;background:rgba(255,255,255,.03);border:1px solid ${isHg ? 'rgba(255,194,77,.15)' : 'var(--line)'};border-radius:12px;margin-bottom:8px"><span style="color:var(--cyan);min-width:100px;font-size:13px">${e.date}${e.time ? ' · ' + e.time : ''}</span><span style="flex:1">${e.title}${badge}</span><button data-id="${e.id}" class="del" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px">✕</button></div>`;
+  let calViewYear = new Date().getFullYear();
+  let calViewMonth = new Date().getMonth();
+
+  let calJournalTimer: ReturnType<typeof setTimeout> | undefined;
+  function renderCalendar(selectedDate?: string) {
+    const allEvents = loadEvents();
+    const today = new Date().toISOString().slice(0, 10);
+    const year = calViewYear;
+    const month = calViewMonth;
+    const isHe = state.uiLang === 'he';
+    const monthNames = isHe
+      ? ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר']
+      : ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const dayNames = isHe ? ['א','ב','ג','ד','ה','ו','ש'] : ['Su','Mo','Tu','We','Th','Fr','Sa'];
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const esc = (s: string) => s.replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!));
+
+    // Group events by date — loadEvents() already merges in every logged
+    // Heavy Guard installation (loadInstallEvents, id-prefixed 'hginst:') as
+    // a real, titled entry on its actual day.
+    const eventDates = new Map<string, CalEvent[]>();
+    for (const e of allEvents) {
+      if (!eventDates.has(e.date)) eventDates.set(e.date, []);
+      eventDates.get(e.date)!.push(e);
     }
+    const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const monthEventCount = allEvents.filter(e => e.date.startsWith(monthPrefix)).length;
+    const openTaskCount = loadTasks().filter(t => !t.done).length + loadHgBacklog().length;
+
+    let html = `<div class="cal-app">
+      <div class="cal-toolbar">
+        <div class="cal-nav">
+          <button id="calPrev" title="${isHe ? 'חודש קודם' : 'Previous month'}">‹</button>
+          <span class="cal-title">${monthNames[month]} ${year}</span>
+          <button id="calNext" title="${isHe ? 'חודש הבא' : 'Next month'}">›</button>
+          <button id="calToday" class="cal-today-btn">${isHe ? 'היום' : 'Today'}</button>
+        </div>
+        <div class="cal-stats">
+          <span>${isHe ? 'אירועים החודש' : 'Events this month'} <b>${monthEventCount}</b></span>
+          <span>${isHe ? 'משימות פתוחות' : 'Open tasks'} <b>${openTaskCount}</b></span>
+        </div>
+      </div>
+      <div class="cal-weekdays">${dayNames.map((d, i) => `<span class="${i >= 5 ? 'weekend' : ''}">${d}</span>`).join('')}</div>
+      <div class="cal-grid">
+        ${Array(firstDay).fill('<div class="cal-day empty"></div>').join('')}`;
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${monthPrefix}-${String(d).padStart(2, '0')}`;
+      const isToday = iso === today;
+      const isSelected = iso === selectedDate;
+      const dow = new Date(year, month, d).getDay();
+      const dayEvents = eventDates.get(iso) || [];
+      const cls = ['cal-day'];
+      if (dow >= 5) cls.push('weekend');
+      if (isToday) cls.push('today');
+      if (isSelected) cls.push('selected');
+      const shown = dayEvents.slice(0, 2);
+      const extra = dayEvents.length - shown.length;
+      html += `<button type="button" class="${cls.join(' ')}" data-date="${iso}">
+        <span class="cal-daynum">${d}</span>
+        ${shown.map(e => `<span class="cal-chip${e.id.startsWith('hg:') || e.id.startsWith('hginst:') ? ' hg' : ''}">${esc(e.title)}</span>`).join('')}
+        ${extra > 0 ? `<span class="cal-chip-more">+${extra}</span>` : ''}
+      </button>`;
+    }
+    html += `</div>`;
+
+    // Selected-day agenda: events (time-sorted, inline-editable), quick add
+    // for both events and tasks, and a free-text day journal entry.
+    if (selectedDate) {
+      const dayEvents = (eventDates.get(selectedDate) || []).slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+      const dowNames = isHe
+        ? ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת']
+        : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const dowLabel = dowNames[new Date(selectedDate + 'T00:00:00').getDay()];
+
+      html += `<div class="cal-daypanel">
+        <div class="cal-daypanel-head">
+          <span class="cal-daypanel-date">${dowLabel}, ${selectedDate}</span>
+          <span class="cal-daypanel-sub">${dayEvents.length ? (isHe ? `${dayEvents.length} אירועים` : `${dayEvents.length} events`) : (isHe ? 'יום פנוי' : 'Free day')}</span>
+        </div>`;
+
+      if (dayEvents.length === 0) {
+        html += `<div style="color:var(--dim);font-style:italic;font-size:13px;margin-bottom:8px">${isHe ? 'אין אירועים ביום זה' : 'No events scheduled'}</div>`;
+      } else {
+        for (const e of dayEvents) {
+          const isHg = e.id.startsWith('hg:');
+          const isInstall = e.id.startsWith('hginst:');
+          if (isInstall) {
+            // Read-only: this is Heavy Guard's own operational log reflected
+            // here, not an Alpha-side event — no edit/delete round-trip exists
+            // for hg2:index (unlike hg:-tasks), so don't offer controls that
+            // would silently no-op.
+            html += `<div class="cal-agenda-item hg">
+              <span class="cal-agenda-dot" style="background:var(--cyan)"></span>
+              <span class="cal-agenda-title">${esc(e.title)}</span>
+            </div>`;
+            continue;
+          }
+          html += `<div class="cal-agenda-item${isHg ? ' hg' : ''}">
+            <span class="cal-agenda-dot" style="background:${isHg ? 'var(--cyan)' : 'var(--gold)'}"></span>
+            ${e.time ? `<span class="cal-agenda-time">${e.time}</span>` : ''}
+            <input class="cal-agenda-title" data-edit="${e.id}" value="${esc(e.title)}">
+            <button data-id="${e.id}" class="cal-agenda-del" title="${isHe ? 'מחק' : 'Delete'}">✕</button>
+          </div>`;
+        }
+      }
+
+      html += `<div class="cal-quickrow">
+          <input type="text" id="evTitle" placeholder="${isHe ? 'הוסף אירוע…' : 'Add event…'}">
+          <input type="time" id="evTime">
+          <button id="evAdd">+ ${isHe ? 'אירוע' : 'Event'}</button>
+        </div>
+        <div class="cal-quickrow">
+          <input type="text" id="taskTitle" placeholder="${isHe ? 'הוסף משימה…' : 'Add task…'}">
+          <select id="taskPriority">
+            <option value="low">${isHe ? 'נמוכה' : 'Low'}</option>
+            <option value="med" selected>${isHe ? 'רגילה' : 'Medium'}</option>
+            <option value="high">${isHe ? 'גבוהה' : 'High'}</option>
+          </select>
+          <button id="taskAdd">+ ${isHe ? 'משימה' : 'Task'}</button>
+        </div>
+        <div class="cal-section-label"><span class="ic">✎</span> ${isHe ? 'יומן היום' : "Day's journal"}</div>
+        <textarea class="cal-journal" id="calJournal" placeholder="${isHe ? 'רשמו כאן מחשבות, סיכום היום, תובנות…' : 'Jot down thoughts, a day summary, insights…'}">${esc(getJournalEntry(selectedDate))}</textarea>
+        <div class="cal-journal-saved" id="calJournalSaved">${isHe ? 'נשמר ✓' : 'Saved ✓'}</div>
+      </div>`;
+    }
+
+    // ── Unscheduled tasks panel ──────────────────────────────────────────
+    // Tasks added without a date live here, beside the calendar. Tap a task (or
+    // its 📅 button) while a day is selected to schedule it onto that day.
+    // Merges Alpha's own backlog with Heavy Guard's undated hg2:tasks —
+    // previously HG backlog items had no representation here at all.
+    const unscheduled = loadTasks().filter(tk => !tk.done && !tk.due);
+    const hgBacklog = loadHgBacklog();
+    const totalUnscheduled = unscheduled.length + hgBacklog.length;
+    html += `<div class="cal-section-label"><span class="ic">◷</span> ${isHe ? 'משימות ללא שיבוץ' : 'Unscheduled tasks'}${totalUnscheduled ? ` (${totalUnscheduled})` : ''}</div>`;
+    if (totalUnscheduled === 0) {
+      html += `<div style="color:var(--dim);font-style:italic;font-size:13px">${isHe ? 'אין משימות ממתינות לשיבוץ' : 'No tasks waiting to be scheduled'}</div>`;
+    } else {
+      const schedTitle = selectedDate ? (isHe ? 'שבץ לתאריך הנבחר' : 'Schedule to selected day') : (isHe ? 'בחר יום בלוח תחילה' : 'Pick a day first');
+      const schedBg = selectedDate ? 'rgba(218,165,32,.14)' : 'rgba(255,255,255,.03)';
+      const schedColor = selectedDate ? 'var(--gold)' : 'var(--dim)';
+      const schedCursor = selectedDate ? 'pointer' : 'default';
+      for (const tk of unscheduled) {
+        const pColor = tk.priority === 'high' ? '#c0432e' : tk.priority === 'low' ? '#5a8a50' : 'var(--gold)';
+        html += `<div class="cal-agenda-item">
+          <span class="cal-agenda-dot" style="background:${pColor}"></span>
+          <span style="flex:1;font-size:13.5px">${esc(tk.text)}</span>
+          <button data-sched="${tk.id}" title="${schedTitle}" ${selectedDate ? '' : 'disabled'} style="background:${schedBg};border:1px solid var(--line);border-radius:8px;color:${schedColor};cursor:${schedCursor};font-size:13px;padding:5px 9px">📅</button>
+        </div>`;
+      }
+      for (const tk of hgBacklog) {
+        html += `<div class="cal-agenda-item hg">
+          <span class="cal-agenda-dot" style="background:var(--cyan)" title="Heavy Guard"></span>
+          <span style="flex:1;font-size:13.5px">${esc(tk.title)}</span>
+          <button data-sched-hg="${tk.id}" title="${schedTitle}" ${selectedDate ? '' : 'disabled'} style="background:${schedBg};border:1px solid var(--line);border-radius:8px;color:${schedColor};cursor:${schedCursor};font-size:13px;padding:5px 9px">📅</button>
+        </div>`;
+      }
+    }
+
     html += '</div>';
     $('winBody').innerHTML = html;
-    $('evAdd').onclick = () => { const t = $<HTMLInputElement>('evT').value.trim(), d = $<HTMLInputElement>('evD').value; if (!t || !d) return; addEvent(t, d, $<HTMLInputElement>('evTime').value); renderCalendar(); updateCalBadge(); };
-    $('winBody').querySelectorAll<HTMLButtonElement>('.del').forEach(b => b.onclick = () => { removeEvent(b.dataset.id!); renderCalendar(); updateCalBadge(); });
+
+    $('winBody').querySelectorAll<HTMLButtonElement>('[data-sched]').forEach(b => {
+      b.onclick = () => {
+        if (!selectedDate) return;
+        scheduleTask(b.dataset.sched!, selectedDate);
+        updateCalBadge();
+        renderCalendar(selectedDate);
+      };
+    });
+    $('winBody').querySelectorAll<HTMLButtonElement>('[data-sched-hg]').forEach(b => {
+      b.onclick = () => {
+        if (!selectedDate) return;
+        scheduleHgTask(b.dataset.schedHg!, selectedDate);
+        updateCalBadge();
+        renderCalendar(selectedDate);
+      };
+    });
+
+    $('calPrev').onclick = () => {
+      if (calViewMonth === 0) { calViewMonth = 11; calViewYear--; } else calViewMonth--;
+      renderCalendar(selectedDate);
+    };
+    $('calNext').onclick = () => {
+      if (calViewMonth === 11) { calViewMonth = 0; calViewYear++; } else calViewMonth++;
+      renderCalendar(selectedDate);
+    };
+    $('calToday').onclick = () => {
+      calViewYear = new Date().getFullYear();
+      calViewMonth = new Date().getMonth();
+      renderCalendar(new Date().toISOString().slice(0, 10));
+    };
+    $('winBody').querySelectorAll<HTMLButtonElement>('[data-date]').forEach(btn => {
+      btn.onclick = () => renderCalendar(btn.dataset.date!);
+    });
+    const evAdd = document.getElementById('evAdd');
+    if (evAdd) evAdd.onclick = () => {
+      const title = ($('evTitle') as HTMLInputElement).value.trim();
+      const time = ($('evTime') as HTMLInputElement).value;
+      if (!title || !selectedDate) return;
+      addEvent(title, selectedDate, time);
+      updateCalBadge();
+      renderCalendar(selectedDate);
+    };
+    const taskAdd = document.getElementById('taskAdd');
+    if (taskAdd) taskAdd.onclick = () => {
+      const text = ($('taskTitle') as HTMLInputElement).value.trim();
+      const priority = ($('taskPriority') as HTMLSelectElement).value as 'low' | 'med' | 'high';
+      if (!text || !selectedDate) return;
+      addTask(text, priority, selectedDate);
+      updateCalBadge();
+      renderCalendar(selectedDate);
+    };
+    $('winBody').querySelectorAll<HTMLButtonElement>('.cal-agenda-del').forEach(b => {
+      b.onclick = () => { removeEvent(b.dataset.id!); updateCalBadge(); renderCalendar(selectedDate); };
+    });
+    $('winBody').querySelectorAll<HTMLInputElement>('[data-edit]').forEach(inp => {
+      inp.onblur = () => {
+        const v = inp.value.trim();
+        if (v) updateEventTitle(inp.dataset.edit!, v);
+        renderCalendar(selectedDate);
+      };
+      inp.onkeydown = (ev) => { if (ev.key === 'Enter') inp.blur(); };
+    });
+    const journalEl = document.getElementById('calJournal') as HTMLTextAreaElement | null;
+    if (journalEl && selectedDate) {
+      journalEl.oninput = () => {
+        clearTimeout(calJournalTimer);
+        const date = selectedDate;
+        calJournalTimer = setTimeout(() => {
+          saveJournalEntry(date, journalEl.value);
+          const saved = document.getElementById('calJournalSaved');
+          if (saved) { saved.classList.add('show'); setTimeout(() => saved.classList.remove('show'), 1500); }
+        }, 500);
+      };
+    }
   }
-  function openCalendar() { openWin('Calendar'); renderCalendar(); }
+  function openCalendar() {
+    calViewYear = new Date().getFullYear();
+    calViewMonth = new Date().getMonth();
+    openWin(state.uiLang === 'he' ? 'לוח שנה' : 'Calendar');
+    renderCalendar(new Date().toISOString().slice(0, 10));
+  }
+  (window as any).openCalendar = openCalendar;
+
+  // ── Personal wallet — the owner's own finances (cash/bank/investments/
+  // debts), entirely separate from HeavyGuard's business revenue/pipeline
+  // numbers shown elsewhere. Yehuda (the CEO agent persona) gives the
+  // analysis/recommendations on request, through the same chat pipeline
+  // every other question already goes through — no separate AI wiring.
+  function openWallet() {
+    openWin('ארנק אישי · שחר 💰');
+    renderWallet();
+  }
+  (window as any).openWallet = openWallet;
+  function renderWallet() {
+    const body = $('winBody');
+    const w = loadWallet();
+    const money = (n: number) => '₪' + Math.round(n || 0).toLocaleString('he-IL');
+    const assets = w.cash + w.bank + w.investments + w.realEstate + w.otherAssets;
+    const netWorth = assets - w.debts;
+    const surplus = w.monthlyIncome - w.monthlyExpenses;
+    const field = (id: string, label: string, val: number, icon: string) =>
+      `<label class="wallet-field"><span>${icon} ${label}</span><input type="number" id="${id}" value="${val || ''}" placeholder="0" /></label>`;
+
+    // Asset allocation bar — proportional colored segments + legend.
+    const ALLOC = [
+      { key: 'cash', label: 'מזומן', val: w.cash, color: 'var(--gold)' },
+      { key: 'bank', label: 'עו"ש', val: w.bank, color: '#4fc3dc' },
+      { key: 'investments', label: 'השקעות', val: w.investments, color: '#a78bfa' },
+      { key: 'realEstate', label: 'נדל"ן', val: w.realEstate, color: '#5a8a50' },
+      { key: 'otherAssets', label: 'אחר', val: w.otherAssets, color: 'var(--dim)' },
+    ].filter(a => a.val > 0);
+    const allocBar = assets > 0
+      ? `<div class="wallet-alloc-bar">${ALLOC.map(a => `<span class="wallet-alloc-seg" style="width:${(a.val / assets * 100).toFixed(2)}%;background:${a.color}"></span>`).join('')}</div>
+         <div class="wallet-alloc-legend">${ALLOC.map(a => `<span><span class="dot" style="background:${a.color}"></span>${a.label} ${Math.round(a.val / assets * 100)}%</span>`).join('')}</div>`
+      : '<div class="ops-empty">הוסיפו נכסים כדי לראות פילוח</div>';
+
+    // Net-worth trend — sparkline SVG from the last saved snapshots + delta vs the previous save.
+    const hist = loadWalletHistory();
+    let sparkline = '';
+    let deltaHtml = '';
+    if (hist.length >= 2) {
+      const vals = hist.map(h => h.netWorth);
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const span = max - min || 1;
+      const pts = vals.map((v, i) => `${(i / (vals.length - 1) * 100).toFixed(1)},${(28 - ((v - min) / span) * 26).toFixed(1)}`).join(' ');
+      sparkline = `<svg class="wallet-spark" viewBox="0 0 100 28" preserveAspectRatio="none" width="100%" height="28">
+        <polyline points="${pts}" fill="none" stroke="var(--gold)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+      </svg>`;
+      const delta = vals[vals.length - 1] - vals[vals.length - 2];
+      const cls = delta >= 0 ? 'wallet-delta-up' : 'wallet-delta-down';
+      const arrow = delta >= 0 ? '▲' : '▼';
+      deltaHtml = `<span class="${cls}">${arrow} ${money(Math.abs(delta))}</span>`;
+    }
+
+    // Extra financial ratios a "serious" wallet view should surface.
+    const debtToAssetPct = assets > 0 ? Math.round(w.debts / assets * 100) : 0;
+    const savingsRatePct = w.monthlyIncome > 0 ? Math.round(surplus / w.monthlyIncome * 100) : 0;
+    const cashRunway = w.monthlyExpenses > 0 ? ((w.cash + w.bank) / w.monthlyExpenses).toFixed(1) : '∞';
+
+    // Expense breakdown by category — same allocation-bar visual language as
+    // the asset split above, so the two read as a matched pair.
+    const EXP_COLORS: Record<string, string> = {
+      'דיור': 'var(--gold)', 'מזון': '#4fc3dc', 'תחבורה': '#a78bfa',
+      'ביטוח': '#c0432e', 'מנויים': '#e07b39', 'פנאי': '#5a8a50', 'אחר': 'var(--dim)',
+    };
+    const byCat = new Map<string, number>();
+    for (const e of w.expenses) byCat.set(e.category, (byCat.get(e.category) || 0) + e.amount);
+    const expBreakdown = w.monthlyExpenses > 0
+      ? `<div class="wallet-alloc-bar">${[...byCat].map(([cat, val]) => `<span class="wallet-alloc-seg" style="width:${(val / w.monthlyExpenses * 100).toFixed(2)}%;background:${EXP_COLORS[cat] || 'var(--dim)'}"></span>`).join('')}</div>
+         <div class="wallet-alloc-legend">${[...byCat].map(([cat, val]) => `<span><span class="dot" style="background:${EXP_COLORS[cat] || 'var(--dim)'}"></span>${cat} ${Math.round(val / w.monthlyExpenses * 100)}%</span>`).join('')}</div>`
+      : '<div class="ops-empty">הוסיפו הוצאות כדי לראות פילוח</div>';
+
+    body.innerHTML = `<div class="pad ops-center">
+      <div class="ops-grid">
+        <section class="ops-panel ops-span2">
+          <div class="wallet-pro-section">
+            <div class="wallet-pro-h">💎 נכסים</div>
+            <div class="wallet-form">
+              ${field('wCash', 'מזומן', w.cash, '💵')}
+              ${field('wBank', 'עו"ש בנק', w.bank, '🏦')}
+              ${field('wInvest', 'השקעות', w.investments, '📈')}
+              ${field('wRe', 'נדל"ן', w.realEstate, '🏠')}
+              ${field('wOther', 'נכסים אחרים', w.otherAssets, '💠')}
+            </div>
+          </div>
+          <div class="wallet-pro-section">
+            <div class="wallet-pro-h">📉 התחייבויות</div>
+            <div class="wallet-form">${field('wDebts', 'חובות/הלוואות', w.debts, '⚠️')}</div>
+          </div>
+          <div class="wallet-pro-section">
+            <div class="wallet-pro-h">🔁 תזרים חודשי</div>
+            <div class="wallet-form">${field('wIncome', 'הכנסה חודשית', w.monthlyIncome, '⬆️')}</div>
+          </div>
+          <div class="wallet-pro-section">
+            <div class="wallet-pro-h">⬇️ הוצאות חודשיות · פירוט מלא (${money(w.monthlyExpenses)})</div>
+            ${w.expenses.length === 0
+              ? '<div class="ops-empty">אין עדיין הוצאות רשומות — הוסיפו למטה</div>'
+              : w.expenses.map((e) => `<div class="wallet-exp-row">
+                  <span class="wallet-exp-cat">${escHtml(e.category)}</span>
+                  <span class="wallet-exp-label">${escHtml(e.label)}</span>
+                  <span class="wallet-exp-amt">${money(e.amount)}</span>
+                  <button data-exp-del="${e.id}" class="wallet-exp-del" title="מחק">✕</button>
+                </div>`).join('')}
+            <div class="wallet-quickrow">
+              <input type="text" id="wExpLabel" placeholder="שם ההוצאה (למשל: שכירות)" />
+              <input type="number" id="wExpAmount" placeholder="סכום" />
+              <select id="wExpCategory">${EXPENSE_CATEGORIES.map((c) => `<option value="${c}">${c}</option>`).join('')}</select>
+              <button class="ops-cta" id="wExpAdd">+ הוסף הוצאה</button>
+            </div>
+          </div>
+          <textarea id="wNotes" class="wallet-notes" placeholder="הערות (למשל: יעדים, תוכניות חיסכון)...">${escHtml(w.notes || '')}</textarea>
+          <div class="ops-foot" style="display:flex;gap:10px;margin-top:10px">
+            <button class="ops-cta" id="wSave">💾 שמור</button>
+            <button class="ops-cta" id="wAsk">🧭 נתח עם יהודה</button>
+          </div>
+        </section>
+        <section class="ops-panel">
+          <div class="wallet-pro-h">📊 סיכום</div>
+          <div class="hud-stat"><span>סה"כ נכסים</span><b>${money(assets)}</b></div>
+          <div class="hud-stat"><span>שווי נקי</span><b>${money(netWorth)}</b> ${deltaHtml}</div>
+          <div class="hud-stat"><span>עודף חודשי</span><b>${money(surplus)}</b></div>
+          ${sparkline}
+          <div class="wallet-pro-h" style="margin-top:12px">📐 יחסים</div>
+          <div class="wallet-ratio-row"><span>יחס חוב לנכסים</span><b>${debtToAssetPct}%</b></div>
+          <div class="wallet-ratio-row"><span>קצב חיסכון</span><b>${savingsRatePct}%</b></div>
+          <div class="wallet-ratio-row"><span>מסלול מזומן (חודשים)</span><b>${cashRunway}</b></div>
+          <div class="wallet-pro-h" style="margin-top:12px">🥧 פילוח נכסים</div>
+          ${allocBar}
+          <div class="wallet-pro-h" style="margin-top:12px">🧾 פילוח הוצאות לפי קטגוריה</div>
+          ${expBreakdown}
+          ${w.updated ? `<div class="ops-foot">עודכן ${new Date(w.updated).toLocaleString('he-IL')}</div>` : '<div class="ops-empty">עדיין לא נשמרו נתונים</div>'}
+        </section>
+      </div>
+    </div>`;
+    const num = (id: string) => parseFloat((document.getElementById(id) as HTMLInputElement).value) || 0;
+    $('wSave').onclick = () => {
+      saveWallet({
+        cash: num('wCash'), bank: num('wBank'), investments: num('wInvest'), realEstate: num('wRe'),
+        otherAssets: num('wOther'), debts: num('wDebts'), monthlyIncome: num('wIncome'), expenses: loadWallet().expenses,
+        notes: (document.getElementById('wNotes') as HTMLTextAreaElement).value,
+      });
+      renderWallet();
+    };
+    $('wExpAdd').onclick = () => {
+      const label = (document.getElementById('wExpLabel') as HTMLInputElement).value.trim();
+      const amount = parseFloat((document.getElementById('wExpAmount') as HTMLInputElement).value) || 0;
+      const category = (document.getElementById('wExpCategory') as HTMLSelectElement).value;
+      if (!label || amount <= 0) return;
+      addWalletExpense(label, amount, category);
+      renderWallet();
+    };
+    $('winBody').querySelectorAll<HTMLButtonElement>('[data-exp-del]').forEach((b) => {
+      b.onclick = () => { removeWalletExpense(b.dataset.expDel!); renderWallet(); };
+    });
+    $('wAsk').onclick = () => {
+      const cur = loadWallet();
+      const curAssets = cur.cash + cur.bank + cur.investments + cur.realEstate + cur.otherAssets;
+      const expLines = cur.expenses.map((e) => `${e.label} (${e.category}): ${money(e.amount)}`).join(', ');
+      const prompt = `אתה יהודה, מנכ"ל המערכת. נתח את הארנק האישי שלי ותן המלצות פיננסיות קונקרטיות: מזומן ${money(cur.cash)}, עו"ש ${money(cur.bank)}, השקעות ${money(cur.investments)}, נדל"ן ${money(cur.realEstate)}, נכסים אחרים ${money(cur.otherAssets)}, חובות ${money(cur.debts)}, הכנסה חודשית ${money(cur.monthlyIncome)}, הוצאה חודשית ${money(cur.monthlyExpenses)} (פירוט: ${expLines || 'אין'}). סה"כ נכסים ${money(curAssets)}, שווי נקי ${money(curAssets - cur.debts)}, עודף חודשי ${money(cur.monthlyIncome - cur.monthlyExpenses)}, יחס חוב לנכסים ${curAssets > 0 ? Math.round(cur.debts / curAssets * 100) : 0}%, קצב חיסכון ${cur.monthlyIncome > 0 ? Math.round((cur.monthlyIncome - cur.monthlyExpenses) / cur.monthlyIncome * 100) : 0}%.`;
+      addMsg(prompt, 'me');
+      ask(prompt);
+    };
+  }
+  (window as any).renderWallet = renderWallet;
 
   let asking = false;
   async function ask(text: string) {
+    // AR Pokemon voice control (switch / dispel) — handled instantly, offline.
+    const arReply = tryArVoiceCommand(text);
+    if (arReply) {
+      audio.receive();
+      orb.pikaEmote('excited');
+      addMsg(arReply, 'al');
+      voice.speak(arReply);
+      return;
+    }
     const localReply = tryLocalCommand(text);
     if (localReply) {
       audio.receive();
+      orb.pikaEmote('excited');
       addMsg(localReply, 'al');
       voice.speak(localReply);
       return;
     }
-    const puterReady = typeof (window as any).puter !== 'undefined';
-    const canAI = puterReady || state.key || state.grokKey || state.openaiKey;
-    if (!canAI) { openSetup(); return; }
+    // Live screen vision — capture the screen and let the model see it.
+    if (isScreenVisionIntent(text)) { await runScreenVision(text); return; }
+    // LM Studio counts as a connected engine — the same local brain the
+    // agents center uses (shared settings), no cloud key required.
+    const canAI = state.groqKey || state.key || state.grokKey || state.openaiKey || lmsConfigured();
+    if (!canAI) {
+      // Never answer with pure silence — before this, a question with no AI
+      // key configured just popped the setup panel with no explanation, which
+      // over voice felt like the assistant simply ignoring you.
+      const noKeyMsg = state.uiLang === 'he'
+        ? 'כדי לענות על שאלות חופשיות אני צריך מנוע AI מחובר — פתחתי לך את ההגדרות, הדבק שם מפתח (Groq חינמי) ונמשיך.'
+        : 'To answer open questions I need an AI engine connected — I opened the settings, paste a key (Groq is free) and we\'ll continue.';
+      addMsg(noKeyMsg, 'al');
+      voice.speak(noKeyMsg);
+      openSetup();
+      return;
+    }
     if (asking) return;
     asking = true;
     setStatus('thinking');
     showTypingIndicator();
     // Master Brain: route intent, activate module, inject long-term memory.
+    // Compute the on-device query embedding first (free, falls back silently)
+    // so recall() can score memory semantically; never blocks the AI call long.
+    try { await prepareRecall(text); } catch {}
     try {
       const r = orchestrate(text);
       updateModuleIndicator(r.module);
@@ -1069,8 +2237,34 @@ export function mountApp(root: HTMLElement) {
         toastInfo(state.uiLang === 'he' ? '💾 נשמר בזיכרון' : '💾 Saved to memory', c);
       }
     } catch {}
+    // Early TTS: start SPEAKING each sentence the moment it's complete in the
+    // stream, instead of waiting for the whole reply — the assistant is heard
+    // from its first sentence. Created lazily on the first real sentence so a
+    // request that errors before any output never strands a speaker; hoisted
+    // here so the catch can still close it. spokenLen tracks queued chars.
+    let speaker: ReturnType<typeof voice.beginSpeak> | null = null;
+    let spokenLen = 0;
     try {
-      const reply = await askAI(state, text);
+      // Stream tokens into a live bubble (real TTFT). runTags runs on the full
+      // reply at the end for side-effects; tags are hidden during streaming.
+      const stream = beginStreamMsg();
+      const speakReady = (disp: string) => {
+        const rest = disp.slice(spokenLen);
+        // Match complete sentences (end punctuation, incl. Hebrew/EN, or newline).
+        const re = /[\s\S]*?[.!?…\n]+(?=\s|$)/g;
+        let m: RegExpExecArray | null, consumed = 0;
+        while ((m = re.exec(rest)) !== null) {
+          const s = m[0].trim();
+          if (s) { if (!speaker) speaker = voice.beginSpeak(); speaker.push(s); }
+          consumed = re.lastIndex;
+        }
+        spokenLen += consumed;
+      };
+      const reply = await askAIStream(state, text, (full) => {
+        const disp = stripTagsForDisplay(full);
+        stream.update(disp);
+        speakReady(disp);
+      });
       const clean = runTags(reply, {
         onVideo: openVideo, onSearch: openWebSearch, onCalendar: openCalendar,
         onEvent: addEvent, onSpotify: openSpotify,
@@ -1078,9 +2272,10 @@ export function mountApp(root: HTMLElement) {
           const tasks = await hgLoad('hg2:tasks');
           const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
           tasks.unshift({ id, title, date, done: false, ts: Date.now() });
-          const storage = (window as any).storage || (window as any).puter?.kv;
-          if (storage) { try { await storage.set('hg2:tasks', JSON.stringify(tasks)); } catch {} }
-          localStorage.setItem('hg2:tasks', JSON.stringify(tasks));
+          const saved = await hgPersist('hg2:tasks', tasks);
+          if (!saved) addMsg('⚠️ המשימה לא נשמרה — האחסון במכשיר מלא.', 'sys');
+          puterSync.markDirty();
+          puterSync.scheduleSync(() => updateCloudIndicator());
         },
         onHgSearch: hgSearchLicense,
         onHgEarnings: hgShowEarnings,
@@ -1099,16 +2294,30 @@ export function mountApp(root: HTMLElement) {
           };
           const index = await hgLoad('hg2:index');
           index.unshift(record);
-          const storage = (window as any).storage || (window as any).puter?.kv;
-          if (storage) { try { await storage.set('hg2:index', JSON.stringify(index)); } catch {} }
-          localStorage.setItem('hg2:index', JSON.stringify(index));
+          const saved = await hgPersist('hg2:index', index);
+          puterSync.markDirty();
           const timeStr = new Date(record.reportedAt).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
-          addMsg(`✅ התקנה נשמרה — ${record.idNumber || 'ללא מספר'} · דווח ב-${timeStr}`, 'sys');
+          addMsg(saved
+            ? `✅ התקנה נשמרה — ${record.idNumber || 'ללא מספר'} · דווח ב-${timeStr}`
+            : `⚠️ הדיווח לא נשמר — האחסון במכשיר מלא. פנו מקום (נקו נתוני אתרים ישנים) ודווחו שוב.`, 'sys');
+          puterSync.scheduleSync(() => updateCloudIndicator());
         },
         onArCamera: openArCamera,
         onGDoc: openGDoc,
-        onTask: (text: string, priority: string) => {
-          if (text) { addTask(text, (priority as 'low' | 'med' | 'high') || 'med'); addMsg(`✅ ${t('taskAdded', state.uiLang)}: "${text}"`, 'sys'); }
+        onTask: (text: string, priority: string, due?: string) => {
+          if (!text) return;
+          addTask(text, (priority as 'low' | 'med' | 'high') || 'med', due);
+          updateCalBadge();
+          // Push to the cloud right away so the home-screen widget (a separate
+          // storage context) sees the new task without waiting for the next sync.
+          puterSync.markDirty();
+          puterSync.scheduleSync(() => updateCloudIndicator());
+          if (due) {
+            addMsg(`✅ ${t('taskAdded', state.uiLang)}: "${text}" — 📅 ${due}`, 'sys');
+          } else {
+            const note = state.uiLang === 'he' ? ' (ללא שיבוץ ביומן)' : ' (unscheduled)';
+            addMsg(`✅ ${t('taskAdded', state.uiLang)}: "${text}"${note}`, 'sys');
+          }
         },
         onNote: (text: string) => {
           if (text) { saveNote(text); addMsg(`📝 ${t('noteSaved', state.uiLang)}`, 'sys'); }
@@ -1123,14 +2332,33 @@ export function mountApp(root: HTMLElement) {
         },
       }) || 'Done.';
       audio.receive();
-      addMsg(clean, 'al');
-      voice.speak(clean);
+      orb.pikaEmote(Math.random() < 0.65 ? 'happy' : 'excited');
+      stream.finalize(clean || 'Done.');
+      // Speak any trailing sentence the stream loop didn't reach (no terminal
+      // punctuation), then close the streaming speaker so the mic re-arms. If
+      // nothing streamed at all (empty reply), fall back to speaking 'Done.'.
+      const finalDisp = stripTagsForDisplay(reply);
+      const tail = finalDisp.slice(spokenLen).trim();
+      if (tail) { if (!speaker) speaker = voice.beginSpeak(); speaker.push(tail); }
+      else if (spokenLen === 0) { speaker = voice.beginSpeak(); speaker.push(clean || 'Done.'); }
+      if (speaker) speaker.end(); else voice.speak(clean || 'Done.');
+      try { reflectOnReply(clean); } catch {}   // self-check any code it produced
       try { refreshSummary(state.history); } catch {}
     } catch (err: any) {
       removeTypingIndicator();
+      try { speaker?.end(); } catch {}   // close any streaming speaker so it can't strand the mic
+      orb.pikaEmote('sad');
       if (voice.wakeOn) setTimeout(() => voice.setWake(true), 500);
       else setStatus('');
-      addMsg(err.message || t('connectionError', state.uiLang), 'sys');
+      // "All providers exhausted" in English told the owner nothing — say
+      // what actually happened and what to check, in the UI language.
+      const raw = String(err?.message || '');
+      const friendly = /exhausted/i.test(raw)
+        ? (state.uiLang === 'he'
+          ? 'לא הצלחתי להגיע לאף מנוע AI כרגע 🔌 — אם המוח המקומי (LM Studio) כבוי או שהמנהרה סגורה, הדלק אותם; או חבר מפתח Groq חינמי בהגדרות ⚙ ונמשיך.'
+          : 'I could not reach any AI engine 🔌 — if the local brain (LM Studio) is off or the tunnel is down, start them; or add a free Groq key in settings ⚙.')
+        : (raw || t('connectionError', state.uiLang));
+      addMsg(friendly, 'sys');
     } finally {
       asking = false;
     }
@@ -1141,6 +2369,7 @@ export function mountApp(root: HTMLElement) {
     const t = input.value.trim();
     if (!t) return;
     input.value = '';
+    voice.stopSpeaking();   // barge-in: silence any current speech immediately
     audio.send();
     addMsg(t, 'me');
     ask(t);
@@ -1154,20 +2383,1817 @@ export function mountApp(root: HTMLElement) {
     }
     audio.ensure();
     const turningOn = !voice.wakeOn;
+    if (turningOn) voice.stopSpeaking();   // barge-in: stop talking when the user starts to listen/speak
     voice.setWake(turningOn);
     $('micBtn').classList.toggle('on', turningOn);
     if (turningOn) audio.micOn(); else audio.micOff();
+    if (turningOn) { try { orb.pulseGlitch?.(0.14); } catch {} }
   };
   $('muteBtn').onclick = () => { audio.toggleMute(); };
+  // מצב חסכוני — a persistent flag the office 3D sim (agents.html) reads
+  // BEFORE its own heavy one-time mount (HDRI download+prefilter, shadow
+  // maps, SSAO) even starts, so it's a real fix for a sim that locks up on
+  // load — not just a lighter runtime toggle to find after the freeze
+  // already happened. Set here, on the main screen, so it's ready the next
+  // time the office is opened.
+  const comfortModeBtn = $('comfortModeBtn');
+  const syncComfortModeBtn = () => {
+    const on = localStorage.getItem('alpha:comfortMode') === '1';
+    comfortModeBtn.classList.toggle('on', on);
+  };
+  syncComfortModeBtn();
+  comfortModeBtn.onclick = () => {
+    const on = localStorage.getItem('alpha:comfortMode') === '1';
+    localStorage.setItem('alpha:comfortMode', on ? '0' : '1');
+    syncComfortModeBtn();
+    addMsg(on ? '🐢 מצב חסכוני כובה — הסימולציה תחזור לאיכות מלאה בפעם הבאה שתיפתח.' : '🐢 מצב חסכוני הופעל — בפעם הבאה שתיפתח את הסימולציה התלת-ממדית היא תיטען קלה משמעותית (בלי HDRI/צללים/SSAO), מותאם למחשבים חלשים או ישנים.', 'sys');
+  };
   $('newChat').onclick = () => { state.history = []; $('rpBody').innerHTML = ''; $('chat').innerHTML = ''; clearChatHistory(); addMsg(state.name + ' ' + t('readyMsg', state.uiLang), 'al'); };
 
-  // Detect button
-  let detecting = false;
-  $('detectBtn').onclick = () => {
-    detecting = !detecting;
-    if (detecting) { orb.startBodyDetection(); $('detectBtn').classList.add('active'); }
-    else { orb.stopBodyDetection(); $('detectBtn').classList.remove('active'); }
+  // ── מצב נהיגה (Drive Mode) — battery-first hands-free view for the car /
+  // field. The WebGL orb + flow-lines stop completely (the same `bg-paused`
+  // early-return every fullscreen overlay uses) and #stage is display:none,
+  // replaced by a pure-CSS black voice visualizer that pulses off the same
+  // setStatus state machine as the header equalizer — zero GPU, zero Web
+  // Audio. Screen Wake Lock keeps the display on for navigation/talking.
+  (function setupDriveMode() {
+    const ov = document.createElement('div');
+    ov.id = 'driveOverlay';
+    ov.dir = 'rtl';
+    ov.dataset.vstate = 'idle';
+    ov.innerHTML = `
+      <div class="drv-clock" id="drvClock">--:--</div>
+      <div class="drv-viz" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="drv-state" id="drvState">${t('standby', state.uiLang)}</div>
+      <div class="drv-hint">אמור "אלפא" או "System" כדי לדבר</div>
+      <div class="drv-row">
+        <button class="drv-btn" id="drvMic" title="מיקרופון">🎤</button>
+        <button class="drv-btn exit" id="drvExit">✕ יציאה ממצב נהיגה</button>
+      </div>`;
+    document.body.appendChild(ov);
+
+    let wakeLock: { release(): Promise<void> } | null = null;
+    const acquireWakeLock = async () => {
+      try { wakeLock = await (navigator as any).wakeLock?.request('screen') ?? null; } catch {}
+    };
+    const releaseWakeLock = () => { try { wakeLock?.release(); } catch {} wakeLock = null; };
+    // The OS silently drops the lock when the tab backgrounds — re-acquire
+    // when it comes back while drive mode is still on.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && document.body.classList.contains('drive-mode')) acquireWakeLock();
+    });
+
+    let clockTimer = 0;
+    const tickClock = () => {
+      const d = new Date();
+      $('drvClock').textContent = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+
+    const driveModeBtn = $('driveModeBtn');
+    const setDrive = (on: boolean, autoArm: boolean) => {
+      document.body.classList.toggle('drive-mode', on);
+      localStorage.setItem('alpha:driveMode', on ? '1' : '0');
+      driveModeBtn.classList.toggle('on', on);
+      window.dispatchEvent(new Event('alpha:drivemode'));
+      if (on) {
+        acquireWakeLock();
+        tickClock();
+        clockTimer = window.setInterval(tickClock, 5000);
+        // Hands-free means hands-free: arm the wake word on manual entry so
+        // "אלפא…" works without another tap. Mic-permission failures surface
+        // through the existing onMicBlocked feedback.
+        if (autoArm && !voice.wakeOn) $('micBtn').click();
+      } else {
+        releaseWakeLock();
+        clearInterval(clockTimer);
+      }
+    };
+    driveModeBtn.onclick = () => setDrive(!document.body.classList.contains('drive-mode'), true);
+    $('drvExit').onclick = () => setDrive(false, false);
+    $('drvMic').onclick = () => $('micBtn').click();
+    // Mid-drive reloads (car dock, tunnel hiccup) come back straight into the
+    // black screen instead of burning battery on the 3D boot. Wake-word
+    // restore is handled by the existing voice-state boot path, not here.
+    if (localStorage.getItem('alpha:driveMode') === '1') setDrive(true, false);
+  })();
+
+  // ── Hide / show all panels — leaves only the top bar + the central orb ──
+  // State persists so a "clean view" survives reloads. The toggle button lives
+  // in the top bar so it stays reachable even when everything else is hidden.
+  const appEl = root.querySelector('.app') as HTMLElement;
+  const applyPanelsHidden = (hidden: boolean) => {
+    appEl.classList.toggle('panels-hidden', hidden);
+    const btn = $('panelsToggleBtn');
+    btn.title = hidden ? 'הצג פנלים' : 'הסתר פנלים';
+    btn.setAttribute('aria-label', hidden ? 'הצג פנלים' : 'הסתר פנלים');
+    btn.classList.toggle('active', hidden);
   };
+  // Owner-specified per-device default, applied on EVERY open: desktop opens
+  // WITH the panels, the phone opens clean (orb + top bar + dock only). The
+  // top-bar toggle is a per-visit override — it is deliberately NOT persisted
+  // anymore, so the next open always lands back on the device default.
+  {
+    try { localStorage.removeItem('alpha_panels_hidden'); } catch {} // retire the old saved choice
+    applyPanelsHidden(matchMedia('(max-width: 768px)').matches);
+  }
+  $('panelsToggleBtn').onclick = () => {
+    applyPanelsHidden(!appEl.classList.contains('panels-hidden'));
+    try { navigator.vibrate?.(state.haptics ? 15 : 0); } catch {}
+  };
+
+  // App drawer — slide-out launcher for the owner's programs.
+  {
+    const drawer = $('appDrawer');
+    const scrim = $('appDrawerScrim');
+    const grid = $('adGrid');
+    const search = $('adSearch') as HTMLInputElement;
+    const recentRow = $('adRecent');
+    const items = Array.from(drawer.querySelectorAll<HTMLAnchorElement>('.ad-item'));
+
+    // Everything below ENHANCES the static markup instead of re-rendering it:
+    // sportsHubBtn (and the close-on-pick wiring) carry listeners attached
+    // elsewhere by id, and a re-render would silently orphan them.
+    const CAT_LABELS: Record<string, string> = { fav: '⭐ מועדפים', trade: '📈 מסחר וכספים', biz: '🧭 ניהול ועסקים', media: '🎧 מדיה וחוויה' };
+    const CAT_BASE: Record<string, number> = { fav: 0, trade: 100, biz: 200, media: 300 };
+    const keyOf = (a: HTMLAnchorElement) => (a.id || a.getAttribute('href') || '').replace(/^.*\//, '') || 'app';
+    let favs = new Set<string>();
+    try { favs = new Set(JSON.parse(localStorage.getItem('alpha_apps_favs') || '[]')); } catch {}
+    const saveFavs = () => { try { localStorage.setItem('alpha_apps_favs', JSON.stringify([...favs])); } catch {} };
+    let recents: Array<{ k: string; name: string; href: string }> = [];
+    try { recents = JSON.parse(localStorage.getItem('alpha_apps_recent') || '[]') || []; } catch {}
+    const saveRecents = () => { try { localStorage.setItem('alpha_apps_recent', JSON.stringify(recents.slice(0, 4))); } catch {} };
+
+    // one section header per category, positioned among the items by flex order
+    const headers: Record<string, HTMLDivElement> = {};
+    for (const cat of ['fav', 'trade', 'biz', 'media']) {
+      const h = document.createElement('div');
+      h.className = 'ad-cat';
+      h.textContent = CAT_LABELS[cat];
+      h.style.order = String(CAT_BASE[cat]);
+      grid.appendChild(h);
+      headers[cat] = h;
+    }
+    // a star on every item; stopPropagation so starring never navigates
+    for (const a of items) {
+      const star = document.createElement('button');
+      star.className = 'ad-star';
+      star.type = 'button';
+      star.setAttribute('aria-label', 'הוסף למועדפים');
+      star.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const k = keyOf(a);
+        if (favs.has(k)) favs.delete(k); else favs.add(k);
+        saveFavs(); layout();
+      });
+      a.appendChild(star);
+    }
+
+    function layout() {
+      const q = search.value.trim().toLowerCase();
+      const seen: Record<string, number> = { fav: 0, trade: 0, biz: 0, media: 0 };
+      for (const a of items) {
+        const k = keyOf(a);
+        const fav = favs.has(k);
+        const cat = fav ? 'fav' : (a.dataset.cat || 'media');
+        const text = (a.textContent || '').toLowerCase();
+        const hit = !q || text.includes(q);
+        a.style.display = hit ? '' : 'none';
+        // ties keep source order within a group, which is all we need
+        a.style.order = String(CAT_BASE[cat] + 1);
+        a.classList.toggle('faved', fav);
+        const star = a.querySelector('.ad-star');
+        if (star) { star.textContent = fav ? '★' : '☆'; star.classList.toggle('on', fav); }
+        if (hit) seen[cat]++;
+      }
+      // headers vanish with their group (and entirely during a search — a
+      // filtered list reads better flat)
+      for (const cat of Object.keys(headers)) headers[cat].style.display = (!q && seen[cat] > 0) ? '' : 'none';
+      $('adCount').textContent = String(items.filter((a) => a.style.display !== 'none').length);
+      renderRecents();
+    }
+    function renderRecents() {
+      if (!recents.length || search.value.trim()) { recentRow.hidden = true; return; }
+      recentRow.hidden = false;
+      recentRow.innerHTML = '🕘 ' + recents.slice(0, 4).map((r) =>
+        `<a class="ad-rchip" href="${r.href}">${r.name}</a>`).join('');
+    }
+    const openDrawer = () => {
+      appEl.classList.add('drawer-open');
+      drawer.setAttribute('aria-hidden', 'false');
+      layout();
+      // focus the search only where a keyboard is already attached — on touch
+      // it would pop the on-screen keyboard over the list you came to read
+      if (!('ontouchstart' in window)) setTimeout(() => search.focus(), 180);
+      try { navigator.vibrate?.(state.haptics ? 12 : 0); } catch {}
+    };
+    const closeDrawer = () => {
+      appEl.classList.remove('drawer-open');
+      drawer.setAttribute('aria-hidden', 'true');
+      search.value = '';
+    };
+    $('appsBtn').onclick = openDrawer;
+    $('appDrawerClose').onclick = closeDrawer;
+    scrim.onclick = closeDrawer;
+    search.addEventListener('input', layout);
+    search.addEventListener('keydown', (e) => {
+      // Enter launches the first visible result — type, Enter, gone
+      if (e.key === 'Enter') {
+        const first = items.find((a) => a.style.display !== 'none');
+        if (first) first.click();
+      }
+    });
+    // Close after picking an app, remember it as recent, and Escape closes.
+    drawer.querySelectorAll<HTMLAnchorElement>('.ad-item').forEach((a) => a.addEventListener('click', () => {
+      const href = a.getAttribute('href') || '';
+      if (href && href !== '#') {
+        const name = a.querySelector('b')?.textContent || 'אפליקציה';
+        recents = [{ k: keyOf(a), name, href }, ...recents.filter((r) => r.k !== keyOf(a))].slice(0, 4);
+        saveRecents();
+      }
+      setTimeout(closeDrawer, 120);
+    }));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+    // swipe right (toward the edge it lives on) closes — the gesture a phone
+    // user tries first, before hunting for the ✕
+    let tx0 = 0;
+    drawer.addEventListener('touchstart', (e) => { tx0 = e.touches[0].clientX; }, { passive: true });
+    drawer.addEventListener('touchend', (e) => {
+      if ((e.changedTouches[0].clientX - tx0) > 70) closeDrawer();
+    }, { passive: true });
+    layout();
+  }
+
+  // "מסך נקי" — one click removes the central orb/character animation and
+  // the animated backgrounds (flow-lines canvas, bgfx aurora, ambient
+  // particles) entirely, rather than just lowering their quality like the
+  // existing alpha_fast_mode setting does. Hiding the elements stops their
+  // paint/composite cost immediately; the orb's own render loop is also
+  // dropped to its light path via setPerfMode so it isn't still doing full
+  // work off-screen. Turning it back off restores whatever fast-mode
+  // preference the user already had, rather than assuming full quality.
+  const declutterBtn = $('declutterBtn');
+  const applyDeclutter = (on: boolean) => {
+    appEl.classList.toggle('declutter', on);
+    declutterBtn.classList.toggle('on', on);
+    try { orb.setPerfMode(on || localStorage.getItem('alpha_fast_mode') === '1'); } catch {}
+  };
+  applyDeclutter(localStorage.getItem('alpha:declutter') === '1');
+  declutterBtn.onclick = () => {
+    const on = !appEl.classList.contains('declutter');
+    localStorage.setItem('alpha:declutter', on ? '1' : '0');
+    // turning it OFF by hand is a veto: auto-lite must never fight the user
+    if (!on) localStorage.setItem('alpha:auto_lite', '0');
+    applyDeclutter(on);
+    try { navigator.vibrate?.(state.haptics ? 15 : 0); } catch {}
+  };
+
+  // ── Auto-lite: the page notices it is heavy instead of waiting to be told ──
+  // "It feels loaded" on a weak device is the aurora canvas, the flow lines
+  // and the full orb all running under 45fps. The user already has the 🌑
+  // button that fixes it — this measures the real frame rate for six seconds
+  // after boot and presses that button for them when the device clearly
+  // needs it. An explicit OFF click is a permanent veto.
+  {
+    const vetoed = localStorage.getItem('alpha:auto_lite') === '0';
+    if (!vetoed && !appEl.classList.contains('declutter')) {
+      const start = () => {
+        let frames = 0;
+        const t0 = performance.now();
+        const probe = () => {
+          if (document.hidden) { requestAnimationFrame(probe); return; } // a hidden tab throttles rAF to 0-1fps; that is not the device being slow
+          frames++;
+          const el = performance.now() - t0;
+          if (el < 6000) { requestAnimationFrame(probe); return; }
+          const fps = frames / (el / 1000);
+          if (fps < 42 && !appEl.classList.contains('declutter')) {
+            localStorage.setItem('alpha:declutter', '1');
+            localStorage.setItem('alpha:auto_lite', '1');
+            applyDeclutter(true);
+            toastInfo('🌑 מצב קליל הופעל אוטומטית', 'המכשיר התקשה עם האנימציות — אפשר להחזיר אותן בכפתור 🌑 למעלה');
+          }
+        };
+        requestAnimationFrame(probe);
+      };
+      // start after the boot veil drops, so the measurement is of the real
+      // dashboard and not of the intro animation
+      setTimeout(start, 3000);
+    }
+  }
+
+  // ── Mood color themes — recolor the whole UI via a data-theme attribute ──
+  // 'goat' is the GOAT Protocol (Argentina/Messi): besides the CSS palette it
+  // live-recolors the 3D core (the office sim + assistant prompts read the
+  // same persisted alpha_mood key on their own).
+  const applyMood = (mood: string) => {
+    document.documentElement.setAttribute('data-theme', mood);
+    localStorage.setItem('alpha_mood', mood);
+    document.querySelectorAll('#moodGrid .mood-opt').forEach(b =>
+      b.classList.toggle('on', (b as HTMLElement).dataset.mood === mood));
+    try { orb.setGoatTheme?.(mood === 'goat'); } catch {}
+  };
+  applyMood(localStorage.getItem('alpha_mood') || 'gold');
+  document.querySelectorAll('#moodGrid .mood-opt').forEach(btn => {
+    (btn as HTMLElement).onclick = () => { applyMood((btn as HTMLElement).dataset.mood || 'gold'); try { navigator.vibrate?.(state.haptics ? 12 : 0); } catch {} };
+  });
+
+  // ── Sports Hub — a real, world-scale sports app: search & follow ANY team
+  // on Earth (any sport), real crest imagery, a cross-team live schedule
+  // feed, and the GOAT Protocol. Curated data renders instantly (works fully
+  // offline); live lines (next/last match, crest, league) fill in from
+  // TheSportsDB's free tier afterwards and simply stay hidden when the
+  // network/API fails.
+  {
+    const goatOn = () => localStorage.getItem('alpha_mood') === 'goat';
+    const esc = (s: unknown) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] as string));
+    const sdb = async (path: string): Promise<any | null> => {
+      // Free/test API keys — try the current one first, fall back to the old.
+      for (const key of ['123', '3']) {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 8000);
+        try {
+          const r = await fetch(`https://www.thesportsdb.com/api/v1/json/${key}/${path}`, { signal: ctl.signal });
+          if (r.ok) { clearTimeout(t); return await r.json(); }
+        } catch {}
+        clearTimeout(t);
+      }
+      return null;
+    };
+
+    type SportKey = 'soccer' | 'nba' | 'nfl' | 'mlb' | 'nhl' | 'f1';
+    type SportTeam = { id: string; name: string; sub: string; sport: SportKey; flag: string; accent: string; search: string };
+    // A single, persisted favorite — works for both catalog picks and teams
+    // discovered live via world search, so both flow through one model.
+    type FavTeam = { id: string; name: string; sub: string; apiSport: string; icon: string; accent: string; search: string; badge?: string | null; idTeamApi?: string | null };
+
+    const SPORT_META: Record<SportKey, { label: string; icon: string; apiSport: string }> = {
+      soccer: { label: 'כדורגל', icon: '⚽', apiSport: 'Soccer' },
+      nba: { label: 'כדורסל (NBA)', icon: '🏀', apiSport: 'Basketball' },
+      nfl: { label: 'פוטבול אמריקאי (NFL)', icon: '🏈', apiSport: 'American Football' },
+      mlb: { label: 'בייסבול (MLB)', icon: '⚾', apiSport: 'Baseball' },
+      nhl: { label: 'הוקי קרח (NHL)', icon: '🏒', apiSport: 'Ice Hockey' },
+      f1: { label: 'פורמולה 1', icon: '🏎️', apiSport: 'Motorsport' },
+    };
+    // Icon/accent fallback for sports outside the curated catalog — anything
+    // TheSportsDB returns from a free-text world search still gets a sane
+    // icon instead of a blank box.
+    const ICON_BY_SPORT: Record<string, string> = {
+      Soccer: '⚽', Basketball: '🏀', 'American Football': '🏈', Baseball: '⚾', 'Ice Hockey': '🏒',
+      Motorsport: '🏎️', Tennis: '🎾', Rugby: '🏉', Cricket: '🏏', Golf: '⛳', Boxing: '🥊',
+      Fighting: '🥋', Volleyball: '🏐', Handball: '🤾', Cycling: '🚴', Swimming: '🏊', 'Table Tennis': '🏓',
+      'Field Hockey': '🏑', 'Water Polo': '🤽', Snooker: '🎱', Darts: '🎯', eSports: '🎮', Netball: '🥎',
+    };
+    const iconFor = (sport: string) => ICON_BY_SPORT[sport] || '🏅';
+    const ACCENT_PALETTE = ['#43A1D5', '#DAA520', '#D0021B', '#0BA84A', '#8a5cff', '#ff8a3d', '#2ec4c6', '#e0507a'];
+    const accentFor = (name: string) => ACCENT_PALETTE[[...String(name)].reduce((h, c) => h + c.charCodeAt(0), 0) % ACCENT_PALETTE.length];
+
+    const SPORT_CATALOG: SportTeam[] = [
+      // כדורגל
+      { id: 'maccabi_ta', name: 'מכבי תל אביב', sub: 'ליגת העל · האלופה', sport: 'soccer', flag: '🟡', accent: '#FFD400', search: 'Maccabi Tel Aviv' },
+      { id: 'hapoel_be', name: 'הפועל באר שבע', sub: 'ליגת העל', sport: 'soccer', flag: '🔴', accent: '#D0021B', search: 'Hapoel Beer Sheva' },
+      { id: 'maccabi_haifa', name: 'מכבי חיפה', sub: 'ליגת העל', sport: 'soccer', flag: '🟢', accent: '#0BA84A', search: 'Maccabi Haifa' },
+      { id: 'beitar_yr', name: 'בית״ר ירושלים', sub: 'ליגת העל', sport: 'soccer', flag: '🟡', accent: '#FFCC00', search: 'Beitar Jerusalem' },
+      { id: 'real_madrid', name: 'ריאל מדריד', sub: 'Los Blancos · לה ליגה', sport: 'soccer', flag: '⚪', accent: '#D4AF37', search: 'Real Madrid' },
+      { id: 'barcelona', name: 'ברצלונה', sub: 'לה ליגה', sport: 'soccer', flag: '🔵', accent: '#A50044', search: 'Barcelona' },
+      { id: 'man_city', name: 'מנצ׳סטר סיטי', sub: 'פרמייר ליג', sport: 'soccer', flag: '🩵', accent: '#6CABDD', search: 'Manchester City' },
+      { id: 'liverpool', name: 'ליברפול', sub: 'פרמייר ליג', sport: 'soccer', flag: '🔴', accent: '#C8102E', search: 'Liverpool' },
+      { id: 'psg', name: 'פריז סן ז׳רמן', sub: 'ליג 1', sport: 'soccer', flag: '🔵', accent: '#004170', search: 'Paris Saint-Germain' },
+      { id: 'inter_miami', name: 'אינטר מיאמי', sub: 'MLS · מסי', sport: 'soccer', flag: '🩷', accent: '#F7B5CD', search: 'Inter Miami' },
+      // כדורסל NBA
+      { id: 'lakers', name: 'לוס אנג׳לס לייקרס', sub: 'NBA', sport: 'nba', flag: '💜', accent: '#552583', search: 'Los Angeles Lakers' },
+      { id: 'warriors', name: 'גולדן סטייט ווריורס', sub: 'NBA', sport: 'nba', flag: '💛', accent: '#1D428A', search: 'Golden State Warriors' },
+      { id: 'celtics', name: 'בוסטון סלטיקס', sub: 'NBA', sport: 'nba', flag: '☘️', accent: '#007A33', search: 'Boston Celtics' },
+      { id: 'bucks', name: 'מילווקי באקס', sub: 'NBA', sport: 'nba', flag: '🦌', accent: '#00471B', search: 'Milwaukee Bucks' },
+      { id: 'nuggets', name: 'דנוור נאגטס', sub: 'NBA', sport: 'nba', flag: '⛏️', accent: '#0E2240', search: 'Denver Nuggets' },
+      // פוטבול אמריקאי
+      { id: 'chiefs', name: 'קנזס סיטי צ׳יפס', sub: 'NFL', sport: 'nfl', flag: '🔴', accent: '#E31837', search: 'Kansas City Chiefs' },
+      { id: 'eagles', name: 'פילדלפיה איגלס', sub: 'NFL', sport: 'nfl', flag: '🦅', accent: '#004C54', search: 'Philadelphia Eagles' },
+      { id: 'cowboys', name: 'דאלאס קאובויס', sub: 'NFL', sport: 'nfl', flag: '⭐', accent: '#041E42', search: 'Dallas Cowboys' },
+      { id: '49ers', name: 'סן פרנסיסקו 49ers', sub: 'NFL', sport: 'nfl', flag: '🔴', accent: '#AA0000', search: 'San Francisco 49ers' },
+      // בייסבול
+      { id: 'yankees', name: 'ניו יורק יאנקיז', sub: 'MLB', sport: 'mlb', flag: '⚾', accent: '#132448', search: 'New York Yankees' },
+      { id: 'dodgers', name: 'לוס אנג׳לס דודג׳רס', sub: 'MLB', sport: 'mlb', flag: '⚾', accent: '#005A9C', search: 'Los Angeles Dodgers' },
+      // הוקי קרח
+      { id: 'rangers', name: 'ניו יורק ריינג׳רס', sub: 'NHL', sport: 'nhl', flag: '🏒', accent: '#0038A8', search: 'New York Rangers' },
+      { id: 'oilers', name: 'אדמונטון אויילרס', sub: 'NHL', sport: 'nhl', flag: '🏒', accent: '#FF4C00', search: 'Edmonton Oilers' },
+      // פורמולה 1
+      { id: 'redbull_f1', name: 'רד בול רייסינג', sub: 'פורמולה 1', sport: 'f1', flag: '🏎️', accent: '#1E5BC6', search: 'Red Bull Racing' },
+      { id: 'ferrari_f1', name: 'סקודריה פרארי', sub: 'פורמולה 1', sport: 'f1', flag: '🏎️', accent: '#DC0000', search: 'Scuderia Ferrari' },
+    ];
+    const catalogToFav = (t: SportTeam): FavTeam => ({
+      id: t.id, name: t.name, sub: t.sub, apiSport: SPORT_META[t.sport].apiSport,
+      icon: t.flag, accent: t.accent, search: t.search, badge: null, idTeamApi: null,
+    });
+
+    const FAV_KEY = 'alpha:sports:favs';
+    const DEFAULT_FAV_IDS = ['maccabi_ta', 'real_madrid', 'lakers'];
+    const getFavs = (): FavTeam[] => {
+      const defaults = () => DEFAULT_FAV_IDS.map(id => SPORT_CATALOG.find(t => t.id === id)).filter(Boolean).map(t => catalogToFav(t as SportTeam));
+      try {
+        const raw = localStorage.getItem(FAV_KEY);
+        if (!raw) return defaults();
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed) || !parsed.length) return defaults();
+        if (typeof parsed[0] === 'string') { // legacy v247 format: array of catalog ids
+          return (parsed as string[]).map(id => SPORT_CATALOG.find(t => t.id === id)).filter(Boolean).map(t => catalogToFav(t as SportTeam));
+        }
+        return (parsed as FavTeam[]).filter(f => f && f.id && f.name);
+      } catch { return defaults(); }
+    };
+    const setFavs = (favs: FavTeam[]) => localStorage.setItem(FAV_KEY, JSON.stringify(favs));
+
+    const card = (accent: string, flag: string, title: string, sub: string, body: string) => `
+      <div style="background:var(--glass-hover);border:1px solid var(--glass-border);border-right:3px solid ${accent};border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:20px">${flag}</span>
+          <div><b style="font-size:14px">${title}</b><div style="font-size:11px;color:var(--dim)">${sub}</div></div>
+        </div>
+        <div style="font-size:12.5px;line-height:1.7">${body}</div>
+      </div>`;
+
+    const badgeSlot = (fav: FavTeam, size: number) => `
+      <span style="position:relative;width:${size}px;height:${size}px;flex:none;display:flex;align-items:center;justify-content:center">
+        <img id="shbadge_${fav.id}" src="${fav.badge ? esc(fav.badge) : ''}" alt="" style="width:${size}px;height:${size}px;object-fit:contain;display:${fav.badge ? 'block' : 'none'}" onerror="this.style.display='none';const s=this.nextElementSibling;if(s)s.style.display='flex';" />
+        <span id="shicon_${fav.id}" style="font-size:${Math.round(size * 0.62)}px;position:absolute;inset:0;display:${fav.badge ? 'none' : 'flex'};align-items:center;justify-content:center">${fav.icon}</span>
+      </span>`;
+
+    const teamCard = (fav: FavTeam) => `
+      <div style="position:relative;background:var(--glass-hover);border:1px solid var(--glass-border);border-top:3px solid ${fav.accent};border-radius:16px;padding:13px 14px;display:flex;flex-direction:column;gap:9px">
+        <button class="shRemoveBtn" data-id="${fav.id}" title="הסר מהמעקב" style="all:unset;position:absolute;top:8px;left:8px;cursor:pointer;width:22px;height:22px;border-radius:999px;background:rgba(0,0,0,.35);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center">✕</button>
+        <div style="display:flex;align-items:center;gap:10px;padding-left:20px">
+          ${badgeSlot(fav, 36)}
+          <div style="min-width:0">
+            <b style="font-size:13.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(fav.name)}</b>
+            <div style="font-size:10.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(fav.sub)}</div>
+          </div>
+        </div>
+        <div id="sh_${fav.id}" style="font-size:12px;line-height:1.65;color:var(--dim)">⏳ טוען נתונים חיים…</div>
+      </div>`;
+
+    // Resolves a favorite's live TheSportsDB id/crest (cached onto the
+    // record + persisted so a returning visit is instant), then fills in
+    // its match line. Works identically for catalog picks and world-search
+    // finds — it's all the same FavTeam shape.
+    const fillTeam = async (elId: string, fav: FavTeam, allFavs: FavTeam[]) => {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      let teamId = fav.idTeamApi;
+      if (!teamId) {
+        const d = await sdb('searchteams.php?t=' + encodeURIComponent(fav.search));
+        const list = d?.teams || [];
+        const found = list.find((x: any) => x.strSport === fav.apiSport) || list[0];
+        if (found) {
+          teamId = found.idTeam;
+          fav.idTeamApi = found.idTeam;
+          fav.badge = found.strTeamBadge || null;
+          setFavs(allFavs);
+          if (fav.badge) {
+            const img = document.getElementById('shbadge_' + fav.id) as HTMLImageElement | null;
+            const iconEl = document.getElementById('shicon_' + fav.id);
+            if (img) { img.src = fav.badge; img.style.display = 'block'; }
+            if (iconEl) iconEl.style.display = 'none';
+          }
+        }
+      }
+      if (!teamId) { el.textContent = 'נתונים חיים לא זמינים כרגע.'; return; }
+      let matchLine = '';
+      const nxt = await sdb('eventsnext.php?id=' + teamId);
+      const ev = nxt?.events?.[0];
+      if (ev) matchLine = `<div>${fav.icon} המשחק הבא: <b>${esc(ev.strEvent)}</b> · ${esc(ev.dateEvent)}</div>`;
+      else {
+        const last = await sdb('eventslast.php?id=' + teamId);
+        const lv = last?.results?.[0];
+        if (lv) matchLine = `<div>${fav.icon} משחק אחרון: <b>${esc(lv.strEvent)}</b>${lv.intHomeScore != null ? ` · <b style="direction:ltr;unicode-bidi:isolate">${esc(lv.intHomeScore)}-${esc(lv.intAwayScore)}</b>` : ''}</div>`;
+      }
+      const el2 = document.getElementById(elId);
+      if (el2) el2.innerHTML = matchLine || 'אין נתוני משחקים זמינים כרגע.';
+    };
+
+    type TabKey = 'mine' | 'discover' | 'schedule' | 'news';
+    let activeTab: TabKey = 'mine';
+    const TABS: [TabKey, string][] = [['mine', '⭐ הקבוצות שלי'], ['discover', '🌍 גלה קבוצות'], ['schedule', '📅 לוח משחקים'], ['news', '📰 חדשות']];
+    const tabBarHtml = () => `
+      <div style="display:flex;gap:5px;padding:4px;background:rgba(0,0,0,.25);border-radius:14px">
+        ${TABS.map(([key, label]) => `
+          <button class="shTabBtn" data-tab="${key}" style="all:unset;flex:1;text-align:center;cursor:pointer;padding:9px 6px;border-radius:11px;font-size:11.5px;font-weight:800;transition:background .15s;${activeTab === key ? 'background:linear-gradient(135deg,#daa520,#ffdb8c);color:#1a1408' : 'color:var(--dim)'}">${label}</button>`).join('')}
+      </div>`;
+    const bindTabBar = () => {
+      $('winBody').querySelectorAll<HTMLButtonElement>('.shTabBtn').forEach(btn => {
+        btn.onclick = () => { activeTab = btn.dataset.tab as TabKey; renderActiveTab(); };
+      });
+    };
+
+    const renderMyTeams = () => {
+      const on = goatOn();
+      const favs = getFavs();
+      $('winBody').innerHTML = `
+        <div class="pad" style="display:flex;flex-direction:column;gap:12px">
+          ${tabBarHtml()}
+          <button id="goatToggle" style="all:unset;cursor:pointer;text-align:center;padding:13px 16px;border-radius:14px;font-weight:800;font-size:14px;letter-spacing:.5px;
+            background:${on ? 'linear-gradient(135deg,#43A1D5,#2a7db0)' : 'var(--glass-hover)'};color:${on ? '#fff' : 'var(--ink)'};
+            border:1px solid ${on ? '#43A1D5' : 'var(--glass-border)'};box-shadow:${on ? '0 0 18px rgba(67,161,213,.45)' : 'none'}">
+            ${on ? '⚽ GOAT PROTOCOL פעיל — 🇦🇷 VAMOS! (לחץ לכיבוי)' : '⚽ הפעל GOAT PROTOCOL — מצב מסי/ארגנטינה'}
+          </button>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px">
+            ${card('#43A1D5', '🐐', 'Lionel Messi · The GOAT', 'La Pulga · מספר 10', `
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">
+                <span>🏆 מונדיאל</span><b>2022 🇦🇷</b>
+                <span>✨ כדורי זהב</span><b>8</b>
+                <span>🏆 ליגת האלופות</span><b>4</b>
+                <span>🥇 תארים בקריירה</span><b>45+</b>
+                <span>⚽ שערים בקריירה</span><b>850+</b>
+              </div>`)}
+            ${favs.length
+              ? favs.map(f => teamCard(f)).join('')
+              : `<div style="grid-column:1/-1;text-align:center;padding:26px 12px;color:var(--dim);font-size:13px">עדיין לא עוקבים אחרי אף קבוצה — עברו ל"🌍 גלה קבוצות" כדי לחפש ולעקוב אחרי כל קבוצה בעולם</div>`}
+          </div>
+        </div>`;
+      bindTabBar();
+      const tg = document.getElementById('goatToggle');
+      if (tg) tg.onclick = () => {
+        applyMood(goatOn() ? 'gold' : 'goat');
+        try { navigator.vibrate?.(state.haptics ? 20 : 0); } catch {}
+        renderMyTeams();
+      };
+      $('winBody').querySelectorAll<HTMLButtonElement>('.shRemoveBtn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          setFavs(getFavs().filter(f => f.id !== btn.dataset.id));
+          try { navigator.vibrate?.(state.haptics ? 10 : 0); } catch {}
+          renderMyTeams();
+        };
+      });
+      favs.forEach(f => fillTeam('sh_' + f.id, f, favs));
+    };
+
+    const renderDiscover = () => {
+      const sports = Object.keys(SPORT_META) as SportKey[];
+      $('winBody').innerHTML = `
+        <div class="pad" style="display:flex;flex-direction:column;gap:14px">
+          ${tabBarHtml()}
+          <input id="shSearchInput" type="text" placeholder="🔍 חפש כל קבוצה בעולם — כל ספורט, כל מדינה (למשל: Chelsea, Al Nassr, India)…"
+            style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:12px;background:var(--glass-hover);border:1px solid var(--glass-border);color:var(--ink);font-size:13px" />
+          <div id="shSearchResults" style="display:flex;flex-direction:column;gap:7px"></div>
+          <div id="shQuickAdd">
+            <div style="font-size:12px;font-weight:800;color:var(--dim);margin:2px 0 4px">⭐ הצעות מהירות לפי ענף ספורט</div>
+            ${sports.map(s => `<div style="margin-bottom:9px"><div style="font-size:11px;font-weight:700;color:var(--dim);margin-bottom:6px">${SPORT_META[s].icon} ${SPORT_META[s].label}</div>
+              <div id="shChips_${s}" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>`).join('')}
+          </div>
+        </div>`;
+      bindTabBar();
+
+      const renderChips = () => {
+        const followedIds = new Set(getFavs().map(f => f.id));
+        sports.forEach(s => {
+          const el = document.getElementById('shChips_' + s);
+          if (!el) return;
+          el.innerHTML = SPORT_CATALOG.filter(t => t.sport === s).map(t => {
+            const f = followedIds.has(t.id);
+            return `<button class="shChipBtn" data-id="${t.id}" style="all:unset;cursor:pointer;font-size:11.5px;font-weight:700;padding:7px 12px;border-radius:999px;${f ? 'background:rgba(11,168,74,.18);color:#5fe08a;border:1px solid rgba(11,168,74,.35)' : 'background:var(--glass-hover);border:1px solid var(--glass-border);color:var(--ink)'}">${t.flag} ${esc(t.name)}${f ? ' ✓' : ''}</button>`;
+          }).join('');
+          el.querySelectorAll<HTMLButtonElement>('.shChipBtn').forEach(chip => {
+            chip.onclick = () => {
+              const id = chip.dataset.id as string;
+              const t = SPORT_CATALOG.find(x => x.id === id);
+              if (!t) return;
+              const cur = getFavs();
+              const already = cur.some(f => f.id === id);
+              setFavs(already ? cur.filter(f => f.id !== id) : [...cur, catalogToFav(t)]);
+              try { navigator.vibrate?.(state.haptics ? 10 : 0); } catch {}
+              renderChips();
+              renderResults(searchInput.value);
+            };
+          });
+        });
+      };
+
+      const resultsEl = () => document.getElementById('shSearchResults');
+      const renderResults = async (qRaw: string) => {
+        const q = qRaw.trim();
+        const el = resultsEl();
+        if (!el) return;
+        if (q.length < 2) { el.innerHTML = ''; return; }
+        el.innerHTML = '<div style="font-size:12px;color:var(--dim);padding:4px 2px">⏳ מחפש…</div>';
+        const d = await sdb('searchteams.php?t=' + encodeURIComponent(q));
+        const el2 = resultsEl();
+        if (!el2) return; // tab switched away while the request was in flight
+        if (searchInput.value.trim() !== q) return; // superseded by a newer keystroke
+        const list = (d?.teams || []).slice(0, 14);
+        if (!list.length) { el2.innerHTML = '<div style="text-align:center;padding:10px;color:var(--dim);font-size:12px">לא נמצאו תוצאות עבור "' + esc(q) + '"</div>'; return; }
+        const followedIds = new Set(getFavs().map(f => f.id));
+        el2.innerHTML = list.map((r: any) => {
+          const rid = 'sdb:' + r.idTeam;
+          const already = followedIds.has(rid);
+          return `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;background:var(--glass-hover);border:1px solid var(--glass-border)">
+              <span style="width:30px;height:30px;flex:none;display:flex;align-items:center;justify-content:center">
+                ${r.strTeamBadge ? `<img src="${esc(r.strTeamBadge)}" alt="" style="width:30px;height:30px;object-fit:contain" onerror="this.style.display='none'" />` : `<span style="font-size:19px">${iconFor(r.strSport)}</span>`}
+              </span>
+              <div style="flex:1;min-width:0">
+                <b style="font-size:12.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.strTeam)}</b>
+                <div style="font-size:10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${iconFor(r.strSport)} ${esc(r.strSport || '')}${r.strLeague ? ' · ' + esc(r.strLeague) : ''}${r.strCountry ? ' · ' + esc(r.strCountry) : ''}</div>
+              </div>
+              <button class="shFollowBtn" data-rid="${rid}" data-name="${esc(r.strTeam)}" data-sport="${esc(r.strSport || '')}" data-league="${esc(r.strLeague || '')}" data-country="${esc(r.strCountry || '')}" data-badge="${esc(r.strTeamBadge || '')}" data-teamid="${esc(r.idTeam)}"
+                style="all:unset;cursor:pointer;font-size:11px;font-weight:700;padding:7px 12px;border-radius:999px;white-space:nowrap;${already ? 'background:rgba(11,168,74,.18);color:#5fe08a;border:1px solid rgba(11,168,74,.35)' : 'background:linear-gradient(135deg,#daa520,#ffdb8c);color:#1a1408'}">${already ? '✓ עוקב' : '+ עקוב'}</button>
+            </div>`;
+        }).join('');
+        el2.querySelectorAll<HTMLButtonElement>('.shFollowBtn').forEach(btn => {
+          btn.onclick = () => {
+            const rid = btn.dataset.rid as string;
+            const cur = getFavs();
+            if (cur.some(f => f.id === rid)) {
+              setFavs(cur.filter(f => f.id !== rid));
+            } else {
+              const sport = btn.dataset.sport || '';
+              const nf: FavTeam = {
+                id: rid, name: btn.dataset.name || '', sub: [btn.dataset.league, btn.dataset.country].filter(Boolean).join(' · '),
+                apiSport: sport, icon: iconFor(sport), accent: accentFor(btn.dataset.name || rid), search: btn.dataset.name || '',
+                badge: btn.dataset.badge || null, idTeamApi: btn.dataset.teamid || null,
+              };
+              setFavs([...cur, nf]);
+            }
+            try { navigator.vibrate?.(state.haptics ? 12 : 0); } catch {}
+            renderResults(q);
+            renderChips();
+          };
+        });
+      };
+
+      const searchInput = document.getElementById('shSearchInput') as HTMLInputElement;
+      let debounce: number | undefined;
+      searchInput.addEventListener('input', () => {
+        if (debounce) window.clearTimeout(debounce);
+        debounce = window.setTimeout(() => renderResults(searchInput.value), 400);
+      });
+      renderChips();
+    };
+
+    const renderSchedule = async () => {
+      const favs = getFavs();
+      $('winBody').innerHTML = `
+        <div class="pad" style="display:flex;flex-direction:column;gap:14px">
+          ${tabBarHtml()}
+          <div id="shScheduleList" style="display:flex;flex-direction:column;gap:8px">
+            ${favs.length
+              ? '<div style="text-align:center;padding:16px;color:var(--dim);font-size:12.5px">⏳ טוען את כל המשחקים שלך…</div>'
+              : '<div style="text-align:center;padding:28px 12px;color:var(--dim);font-size:13px">אין קבוצות במעקב עדיין — עברו ל"🌍 גלה קבוצות" כדי להתחיל</div>'}
+          </div>
+        </div>`;
+      bindTabBar();
+      if (!favs.length) return;
+      const rows: { fav: FavTeam; ev: any; isNext: boolean }[] = [];
+      for (const fav of favs) {
+        let teamId = fav.idTeamApi;
+        if (!teamId) {
+          const d = await sdb('searchteams.php?t=' + encodeURIComponent(fav.search));
+          const list = d?.teams || [];
+          const found = list.find((x: any) => x.strSport === fav.apiSport) || list[0];
+          if (found) { teamId = found.idTeam; fav.idTeamApi = found.idTeam; fav.badge = fav.badge || found.strTeamBadge || null; }
+        }
+        if (!teamId) continue;
+        const nxt = await sdb('eventsnext.php?id=' + teamId);
+        const ev = nxt?.events?.[0];
+        if (ev) { rows.push({ fav, ev, isNext: true }); continue; }
+        const last = await sdb('eventslast.php?id=' + teamId);
+        const lv = last?.results?.[0];
+        if (lv) rows.push({ fav, ev: lv, isNext: false });
+      }
+      setFavs(favs); // persist any freshly-resolved ids/crests for next time
+      rows.sort((a, b) => {
+        if (a.isNext !== b.isNext) return a.isNext ? -1 : 1;
+        const da = a.ev.dateEvent || '', db = b.ev.dateEvent || '';
+        return a.isNext ? da.localeCompare(db) : db.localeCompare(da);
+      });
+      const today = new Date().toISOString().slice(0, 10);
+      const listEl = document.getElementById('shScheduleList');
+      if (!listEl) return;
+      if (!rows.length) { listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--dim);font-size:12.5px">אין נתוני משחקים זמינים כרגע.</div>'; return; }
+      listEl.innerHTML = rows.map(({ fav, ev, isNext }) => `
+        <div style="display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:12px;background:var(--glass-hover);border:1px solid var(--glass-border);border-right:3px solid ${fav.accent}">
+          ${badgeSlot(fav, 28)}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(ev.strEvent || fav.name)}</div>
+            <div style="font-size:10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fav.icon} ${esc(fav.name)} · ${esc(ev.dateEvent || '')}${!isNext && ev.intHomeScore != null ? ` · <b style="direction:ltr;unicode-bidi:isolate">${esc(ev.intHomeScore)}-${esc(ev.intAwayScore)}</b>` : ''}</div>
+          </div>
+          ${isNext
+            ? `<span style="font-size:9.5px;font-weight:800;padding:5px 9px;border-radius:999px;white-space:nowrap;${ev.dateEvent === today ? 'background:rgba(255,93,115,.2);color:#ff8a9a' : 'background:rgba(67,161,213,.18);color:#7fc4ec'}">${ev.dateEvent === today ? '🔴 היום' : 'קרוב'}</span>`
+            : `<span style="font-size:9.5px;font-weight:800;padding:5px 9px;border-radius:999px;white-space:nowrap;background:rgba(255,255,255,.08);color:var(--dim)">הסתיים</span>`}
+        </div>`).join('');
+    };
+
+    // ── sports headlines — the same free RSS-through-CORS-proxy technique
+    // OCTOPUS uses, scoped to sport desks. Cached for 5 minutes so tab
+    // flips don't refetch; fully graceful offline (shows what it has).
+    type SportsNewsItem = { src: string; title: string; link: string; at: number };
+    let sportsNewsCache: { at: number; items: SportsNewsItem[] } | null = null;
+    const SPORTS_FEEDS: [string, string][] = [
+      ['ynet ספורט', 'https://www.ynet.co.il/Integration/StoryRss5.xml'],
+      ['ESPN', 'https://www.espn.com/espn/rss/news'],
+      ['BBC Sport', 'http://feeds.bbci.co.uk/sport/rss.xml'],
+      ['Sky Sports', 'https://www.skysports.com/rss/12040'],
+    ];
+    const pullSportsNews = async (): Promise<SportsNewsItem[]> => {
+      if (sportsNewsCache && Date.now() - sportsNewsCache.at < 300000) return sportsNewsCache.items;
+      const all = await Promise.allSettled(SPORTS_FEEDS.map(async ([src, url]) => {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 9000);
+        try {
+          const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), { signal: ctl.signal });
+          if (!r.ok) return [];
+          const doc = new DOMParser().parseFromString(await r.text(), 'text/xml');
+          return [...doc.querySelectorAll('item')].slice(0, 10).map((it) => ({
+            src,
+            title: (it.querySelector('title')?.textContent || '').trim(),
+            link: (it.querySelector('link')?.textContent || '#').trim(),
+            at: Date.parse(it.querySelector('pubDate')?.textContent || '') || Date.now(),
+          })).filter((x) => x.title);
+        } catch { return []; } finally { clearTimeout(t); }
+      }));
+      const items = all.flatMap((p) => p.status === 'fulfilled' ? p.value : []).sort((a, b) => b.at - a.at).slice(0, 30);
+      if (items.length) sportsNewsCache = { at: Date.now(), items };
+      return items;
+    };
+    const sportsAgo = (at: number) => {
+      const m = Math.max(0, Math.round((Date.now() - at) / 60000));
+      return m < 60 ? `לפני ${m} ד׳` : m < 1440 ? `לפני ${Math.round(m / 60)} ש׳` : `לפני ${Math.round(m / 1440)} ימים`;
+    };
+    // English headlines get translated to Hebrew progressively after render —
+    // same free gtx endpoint the Lyrics app and OCTOPUS use, cached so each
+    // headline costs at most one request ever.
+    const trSportsCache: Map<string, string> = (() => {
+      try { return new Map(Object.entries(JSON.parse(localStorage.getItem('alpha:sports:trCache') || '{}'))); } catch { return new Map(); }
+    })();
+    const translateSportsTitles = async (items: SportsNewsItem[]) => {
+      const needs = (t: string) => !/[֐-׿]/.test(t) && /[A-Za-z]{3,}/.test(t);
+      for (let i = 0; i < items.length; i++) {
+        const n = items[i];
+        if (!needs(n.title)) continue;
+        let he = trSportsCache.get(n.title) || null;
+        if (!he) {
+          try {
+            const ctl = new AbortController();
+            const t = setTimeout(() => ctl.abort(), 8000);
+            const r = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=iw&dt=t&q=' + encodeURIComponent(n.title), { signal: ctl.signal });
+            clearTimeout(t);
+            if (r.ok) { const d = await r.json(); if (d && Array.isArray(d[0])) he = d[0].map((s: any) => (s && s[0]) ? s[0] : '').join('') || null; }
+          } catch { }
+          if (he) {
+            trSportsCache.set(n.title, he);
+            try { localStorage.setItem('alpha:sports:trCache', JSON.stringify(Object.fromEntries([...trSportsCache.entries()].slice(-300)))); } catch { }
+          }
+        }
+        if (!he || activeTab !== 'news') { if (!he) continue; else return; }
+        const el = document.querySelector(`#shNewsList a[data-ni="${i}"] .sn-title`);
+        if (el) el.innerHTML = `${i === 0 ? '🔥 ' : ''}${esc(he)} <span style="font-size:9px;opacity:.55">🌐</span>`;
+      }
+    };
+    const renderSportsNews = async () => {
+      $('winBody').innerHTML = `
+        <div class="pad" style="display:flex;flex-direction:column;gap:14px">
+          ${tabBarHtml()}
+          <div id="shNewsList" style="display:flex;flex-direction:column;gap:8px">
+            <div style="text-align:center;padding:16px;color:var(--dim);font-size:12.5px">📡 מושך כותרות ספורט מ-${SPORTS_FEEDS.length} מקורות…</div>
+          </div>
+        </div>`;
+      bindTabBar();
+      const items = await pullSportsNews();
+      const listEl = document.getElementById('shNewsList');
+      if (!listEl || activeTab !== 'news') return;
+      if (!items.length) { listEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--dim);font-size:13px">אין חיבור למקורות החדשות כרגע — נסו רענון בעוד רגע.</div>'; return; }
+      listEl.innerHTML = items.map((n, i) => `
+        <a href="${esc(n.link)}" target="_blank" rel="noopener" data-ni="${i}" style="display:block;text-decoration:none;color:inherit;padding:${i === 0 ? '14px' : '10px'} 12px;border-radius:12px;background:var(--glass-hover);border:1px solid var(--glass-border)${i === 0 ? ';border-right:3px solid #daa520' : ''}">
+          <div class="sn-title" style="font-size:${i === 0 ? '15px' : '12.5px'};font-weight:${i === 0 ? '800' : '700'};line-height:1.35">${i === 0 ? '🔥 ' : ''}${esc(n.title)}</div>
+          <div style="font-size:10px;color:var(--dim);margin-top:3px">${esc(n.src)} · ${sportsAgo(n.at)}</div>
+        </a>`).join('');
+      translateSportsTitles(items);
+    };
+
+    const renderActiveTab = () => {
+      if (activeTab === 'mine') renderMyTeams();
+      else if (activeTab === 'discover') renderDiscover();
+      else if (activeTab === 'news') renderSportsNews();
+      else renderSchedule();
+    };
+
+    $('sportsHubBtn').addEventListener('click', (e) => {
+      e.preventDefault();
+      openWin('⚽ Sports Hub');
+      activeTab = 'mine';
+      renderActiveTab();
+    });
+  }
+
+  // ── Oriki Protocol — kid-safe locked play mode ──────────────────────────
+  // Entry is a secret long-press (parent-only, nothing to tap for a child to
+  // stumble into); exit always requires the PIN the parent set on first use.
+  // The 3D stage itself switches to a bright toon look with tap-to-bounce toy
+  // vehicles via orb.setOrikiMode — everything else (HeavyGuard, trading,
+  // settings, the app drawer) is hidden at the CSS layer (body.oriki-mode).
+  {
+    const PIN_KEY = 'alpha:oriki:pin';
+    const ON_KEY = 'alpha:oriki:on';
+    const CHILD_NAME = 'אורי';
+
+    const applyOrikiChrome = (on: boolean) => {
+      document.body.classList.toggle('oriki-mode', on);
+      try { orb.setOrikiMode?.(on); } catch {}
+      try { orb.pulseGlitch?.(0.18); } catch {}
+    };
+
+    let lockPill: HTMLButtonElement | null = null;
+    const showLockPill = () => {
+      if (lockPill) return;
+      lockPill = document.createElement('button');
+      lockPill.id = 'orikiExitPill';
+      lockPill.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:9998;padding:12px 22px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:rgba(20,16,10,.75);color:#fff;font-size:13px;font-weight:700;cursor:pointer;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)';
+      lockPill.textContent = '🔒 יציאה — למבוגרים';
+      lockPill.onclick = () => promptPin('exit');
+      document.body.appendChild(lockPill);
+    };
+    const hideLockPill = () => { lockPill?.remove(); lockPill = null; };
+
+    function promptPin(mode: 'set' | 'exit'): void {
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(6,4,2,.86);display:flex;align-items:center;justify-content:center;padding:20px';
+      const isSet = mode === 'set';
+      ov.innerHTML = `
+        <div style="max-width:320px;width:100%;background:#16110a;border:1px solid rgba(218,165,32,.3);border-radius:18px;padding:26px 22px;text-align:center">
+          <div style="font-size:15px;font-weight:700;color:#daa520;margin-bottom:6px">${isSet ? '🐾 הגדרת קוד יציאה' : '🔒 קוד יציאה'}</div>
+          <p id="orikiPinSub" style="font-size:12px;color:rgba(255,255,255,.6);margin:0 0 16px">${isSet ? 'קוד בן 4 ספרות שרק אתה יודע — יידרש כדי לצאת ממצב אורי' : `הזן את קוד היציאה כדי לצאת ממצב ${CHILD_NAME}`}</p>
+          <input id="orikiPinInput" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]*" autocomplete="off"
+            style="width:100%;box-sizing:border-box;text-align:center;letter-spacing:10px;font-size:22px;padding:12px;border-radius:10px;border:1px solid rgba(218,165,32,.35);background:rgba(0,0,0,.35);color:#fff;margin-bottom:10px" />
+          <div id="orikiPinErr" style="font-size:11px;color:#ff8a7a;min-height:16px;margin-bottom:8px"></div>
+          <button id="orikiPinGo" style="width:100%;padding:12px;border-radius:10px;border:none;background:linear-gradient(135deg,#daa520,#ffdb8c);color:#1a1408;font-weight:800;font-size:14px;cursor:pointer;margin-bottom:8px">${isSet ? 'המשך' : 'אישור'}</button>
+          <button id="orikiPinCancel" style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.5);font-size:12px;cursor:pointer">ביטול</button>
+        </div>`;
+      document.body.appendChild(ov);
+      const input = ov.querySelector('#orikiPinInput') as HTMLInputElement;
+      const err = ov.querySelector('#orikiPinErr') as HTMLElement;
+      const sub = ov.querySelector('#orikiPinSub') as HTMLElement;
+      input.focus();
+      let firstPin: string | null = null; // two-step confirm, "set" flow only
+      const close = () => ov.remove();
+      (ov.querySelector('#orikiPinCancel') as HTMLElement).onclick = close;
+      ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+      const go = () => {
+        const v = input.value.trim();
+        if (!/^\d{4}$/.test(v)) { err.textContent = 'קוד חייב להיות 4 ספרות'; return; }
+        if (isSet) {
+          if (!firstPin) {
+            firstPin = v;
+            input.value = '';
+            err.textContent = '';
+            sub.textContent = 'הזן שוב לאישור';
+            return;
+          }
+          if (v !== firstPin) { err.textContent = 'הקודים לא תואמים — נסה שוב'; firstPin = null; input.value = ''; return; }
+          localStorage.setItem(PIN_KEY, v);
+          localStorage.setItem(ON_KEY, '1');
+          applyOrikiChrome(true);
+          showLockPill();
+          try { voice.speak(`היי ${CHILD_NAME}! בואי נשחק — תיגע ברכבים כדי לראות אותם מקפצים!`); } catch {}
+          close();
+        } else {
+          const saved = localStorage.getItem(PIN_KEY);
+          if (v !== saved) { err.textContent = 'קוד שגוי'; input.value = ''; return; }
+          localStorage.setItem(ON_KEY, '0');
+          applyOrikiChrome(false);
+          hideLockPill();
+          close();
+        }
+      };
+      (ov.querySelector('#orikiPinGo') as HTMLElement).onclick = go;
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    }
+
+    // Secret trigger: long-press the build-version badge (low-visibility
+    // corner a parent can find on purpose, a child won't stumble into).
+    const badge = document.getElementById('buildVer');
+    if (badge) {
+      let pressTimer: number | null = null;
+      const start = () => {
+        pressTimer = window.setTimeout(() => {
+          try { navigator.vibrate?.(state.haptics ? [15, 40, 15] : 0); } catch {}
+          if (document.body.classList.contains('oriki-mode')) return; // already locked in — use the exit pill
+          if (localStorage.getItem(PIN_KEY)) {
+            localStorage.setItem(ON_KEY, '1');
+            applyOrikiChrome(true);
+            showLockPill();
+            try { voice.speak(`היי ${CHILD_NAME}! בואי נשחק — תיגע ברכבים כדי לראות אותם מקפצים!`); } catch {}
+          } else {
+            promptPin('set');
+          }
+        }, 1100);
+      };
+      const cancel = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+      badge.addEventListener('pointerdown', start);
+      badge.addEventListener('pointerup', cancel);
+      // Deliberately NOT pointerleave: a couple of stray pixels of pointer
+      // drift mid-press (touch jitter, a live clock re-layout under the
+      // finger) shouldn't cancel an otherwise-held long-press. pointercancel
+      // (the browser aborting the gesture — e.g. a scroll taking over) is
+      // the correct signal to give up on.
+      badge.addEventListener('pointercancel', cancel);
+    }
+
+    // Re-apply the lock across reloads — a curious kid refreshing the page
+    // must not be an escape hatch.
+    if (localStorage.getItem(ON_KEY) === '1') {
+      applyOrikiChrome(true);
+      showLockPill();
+    }
+  }
+
+  // (The mobile "minimal mode" — panels auto-hiding after 10s, leaving only a
+  //  central record button — was removed per user request. On mobile the panels
+  //  now stay visible just like on desktop.)
+
+  // ── Gesture detection — camera hand tracking for Pokemon swap ───────────────
+  // Palm held 1.5s → dispel current Pokemon. Fist → quick open → throw new Pokemon.
+  {
+    let gestureActive = false;
+    let gestureShowSkeleton = localStorage.getItem('alpha_hand_skeleton') !== '0';
+    // Skeleton toggle checkbox
+    const handSkeletonCheck = document.getElementById('handSkeletonCheck') as HTMLInputElement;
+    if (handSkeletonCheck) {
+      handSkeletonCheck.checked = gestureShowSkeleton;
+      handSkeletonCheck.onchange = () => {
+        gestureShowSkeleton = handSkeletonCheck.checked;
+        localStorage.setItem('alpha_hand_skeleton', gestureShowSkeleton ? '1' : '0');
+      };
+    }
+    let gestureStream: MediaStream | null = null;
+    let gestureHands: any = null;
+    let gestureCamera: any = null;
+    // Watchdog: MediaPipe's hand model lazily fetches wasm/binary assets from the
+    // CDN on the first send() call. On a flaky mobile network (carrier content
+    // filtering, slow data) that fetch can silently hang forever — the send()
+    // promise never resolves or rejects, so nothing ever crashes, but nothing
+    // ever detects either: this is what "gestures don't work at all on my
+    // phone" looks like from the outside. gotFirstHandResult + gestureWatchdog
+    // give the user real feedback + an easy retry instead of a silent freeze.
+    let gotFirstHandResult = false;
+    let gestureWatchdog: ReturnType<typeof setTimeout> | null = null;
+    let palmHoldMs = 0;
+    let throwCooldownMs = 0;
+    let suppressPalmMs = 0;   // after a summon, ignore the open hand for dispel
+    let prevScale = 0;        // hand size last frame (kept for re-acquire reset)
+    let handPresentMs = 0;    // how long a CONFIDENT, real-sized hand has been held
+    let noHandMs = 0;         // how long since a hand was last found (dark-room check)
+    let darkCheckMs = 0;      // throttle for the brightness sample
+    let isDarkEnv = false;    // last brightness verdict — sticky between checks
+    const SETTLE_MS = 450;    // ignore the first moments after acquiring a hand
+    // Finger-pointing laser cursor + dwell-to-select.
+    let pointSX = 0, pointSY = 0;       // smoothed cursor screen position
+    let dwellMs = 0;
+    let dwellTarget: Element | null = null;
+    let clickCooldownMs = 0;
+    const DWELL_MS = 800;               // fast dwell-to-click
+    // Gesture stability/debounce — a pose must be held briefly before it becomes
+    // the "confirmed" gesture, so frame-to-frame finger jitter can't make the
+    // detector flip between gestures ("go crazy").
+    let rawPrev = '';
+    let rawStableMs = 0;
+    let confirmedGesture = 'none';
+    const STABLE_MS = 230;   // a pose must hold this long before it's confirmed
+    // Pinch-to-grab manipulation of the orb.
+    let pinchActive = false;
+    let pinchStartHX = 0, pinchStartHY = 0;
+    let pinchStartXf: { x: number; y: number; z: number; s: number; px: number; py: number; pz: number } | null = null;
+    // When the Pokémon summon dock is open, a pinch scrolls it left/right
+    // instead of spinning the character — this remembers the scroll offset
+    // at the moment the pinch started, mirroring pinchStartHX/pinchStartXf.
+    let dockScrollStartLeft = 0;
+    const PALM_HOLD_THRESHOLD = 1100;  // hold open palm ~1.1s to release a Pokémon
+    const FIST_HOLD_THRESHOLD = 650;   // hold a fist ~0.65s to summon (no throw needed)
+    let fistHoldMs = 0;                // how long a confirmed fist has been held
+    let ballHeldMs = 0, ballPX = 0, ballPY = 0;   // grabbed-pokéball state (grab→throw)
+    const THROW_COOLDOWN = 2200;
+
+    // ── Live diagnostic readout (mobile only) — turns "still doesn't work,
+    // no idea why" into concrete numbers: is the camera actually producing
+    // frames, is MediaPipe actually returning results, is a hand ever found,
+    // and at what confidence/size. ──
+    let dbgOn = false;
+    let dbgFramesSent = 0, dbgResults = 0, dbgHandsFound = 0;
+    let dbgLastScore = 0, dbgLastSpan = 0, dbgLastArmed = false;
+    function dbgRender() {
+      const el = document.getElementById('gestureDebug');
+      if (!el || !dbgOn) return;
+      el.textContent =
+        `sent:${dbgFramesSent} res:${dbgResults} hands:${dbgHandsFound}\n` +
+        `score:${dbgLastScore.toFixed(2)} span:${dbgLastSpan.toFixed(2)} armed:${dbgLastArmed ? 'Y' : 'N'}`;
+    }
+    function dbgStart(isMobile: boolean) {
+      dbgOn = isMobile;
+      dbgFramesSent = 0; dbgResults = 0; dbgHandsFound = 0; dbgLastScore = 0; dbgLastSpan = 0; dbgLastArmed = false;
+      const el = document.getElementById('gestureDebug');
+      if (el) { if (isMobile) { el.removeAttribute('hidden'); dbgRender(); } else el.setAttribute('hidden', ''); }
+    }
+    function dbgStop() {
+      dbgOn = false;
+      const el = document.getElementById('gestureDebug');
+      if (el) el.setAttribute('hidden', '');
+    }
+
+    function gestureStatus(msg: string) {
+      const el = document.getElementById('gestureStatus');
+      if (el) el.textContent = msg;
+    }
+
+    // ── Laser-pointer cursor + dwell-to-select ──────────────────────────────
+    let lastX = 0, lastY = 0;
+    function clickableAt(x: number, y: number): Element | null {
+      let el = document.elementFromPoint(x, y);
+      while (el) {
+        if (el.matches('button,a,input,select,textarea,[role="button"],.sd-item,.ic,.chip,[data-id],[onclick],.sr-card,.sr-quote-btn,.sr-show-btn,.mkt-gen-btn,.mkt-icon-btn,.ag-btn,.ag-chips button,.nav-item')) return el;
+        el = el.parentElement;
+      }
+      return null;
+    }
+    // Fire a full event sequence so even handlers that listen on pointer/mouse
+    // (not just click) activate — makes hand-clicking work on any button.
+    function fireClick(el: HTMLElement, x: number, y: number) {
+      const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window } as any;
+      try { el.dispatchEvent(new PointerEvent('pointerdown', opts)); } catch {}
+      try { el.dispatchEvent(new MouseEvent('mousedown', opts)); } catch {}
+      try { el.dispatchEvent(new PointerEvent('pointerup', opts)); } catch {}
+      try { el.dispatchEvent(new MouseEvent('mouseup', opts)); } catch {}
+      try { el.click(); } catch {}
+    }
+    function updateLaser(x: number, y: number, dt: number) {
+      const cur = document.getElementById('laserCursor');
+      if (!cur) return;
+      lastX = x; lastY = y;
+      cur.removeAttribute('hidden');
+      cur.style.transform = `translate(${x}px, ${y}px)`;
+      const target = clickableAt(x, y);
+      if (target && target === dwellTarget) {
+        dwellMs += dt;
+        const p = Math.min(1, dwellMs / DWELL_MS);
+        cur.style.setProperty('--p', String(p));
+        cur.classList.add('lc-arming');
+        if (dwellMs >= DWELL_MS && clickCooldownMs <= 0) {
+          dwellMs = 0; clickCooldownMs = 1400;
+          cur.classList.remove('lc-arming');
+          cur.style.setProperty('--p', '0');
+          fireClick(target as HTMLElement, lastX, lastY);   // dwell-select
+          cur.classList.add('lc-fire');
+          setTimeout(() => cur.classList.remove('lc-fire'), 300);
+        }
+      } else {
+        dwellTarget = target;
+        dwellMs = 0;
+        cur.style.setProperty('--p', '0');
+        cur.classList.toggle('lc-arming', false);
+        cur.classList.toggle('lc-over', !!target);
+      }
+    }
+    function hideLaser() {
+      const cur = document.getElementById('laserCursor');
+      if (cur) { cur.setAttribute('hidden', ''); cur.classList.remove('lc-arming', 'lc-over', 'lc-fire'); }
+      dwellTarget = null; dwellMs = 0; pointSX = 0; pointSY = 0;
+    }
+
+    function stopGesture() {
+      gestureActive = false;
+      if (gestureWatchdog) { clearTimeout(gestureWatchdog); gestureWatchdog = null; }
+      gotFirstHandResult = false;
+      noHandMs = 0; darkCheckMs = 0; isDarkEnv = false;
+      dbgStop();
+      try { orb.setPerfMode(localStorage.getItem('alpha_fast_mode') === '1'); } catch {}   // restore orb quality
+      if (gestureCamera) { try { gestureCamera.stop(); } catch {} gestureCamera = null; }
+      if (gestureHands) { try { gestureHands.close(); } catch {} gestureHands = null; }
+      if (gestureStream) { gestureStream.getTracks().forEach(t => t.stop()); gestureStream = null; }
+      const vid = document.getElementById('gestureVideo') as HTMLVideoElement | null;
+      if (vid) vid.srcObject = null;
+      const liveVid = document.getElementById('gestureLiveVideo') as HTMLVideoElement | null;
+      if (liveVid) { liveVid.srcObject = null; liveVid.setAttribute('hidden', ''); }
+      document.body.classList.remove('gesture-cam-open');
+      document.getElementById('gesturePanel')!.setAttribute('hidden', '');
+      const ov = document.getElementById('handOverlay') as HTMLCanvasElement | null;
+      if (ov) { const c = ov.getContext('2d'); if (c) c.clearRect(0, 0, ov.width, ov.height); ov.setAttribute('hidden', ''); }
+      if ((window as any).__sizeHandOverlay) { window.removeEventListener('resize', (window as any).__sizeHandOverlay); (window as any).__sizeHandOverlay = null; }
+      const help = document.getElementById('gestureHelp'); if (help) { clearTimeout((help as any).__t); help.setAttribute('hidden', ''); }
+      $('detectBtn').classList.remove('active');
+      const cur = document.getElementById('laserCursor'); if (cur) cur.setAttribute('hidden', '');
+    }
+
+    async function startGesture(camOpen = false) {
+      const panel = document.getElementById('gesturePanel')!;
+      panel.removeAttribute('hidden');
+      $('detectBtn').classList.add('active');
+      gestureActive = true;
+      gestureStatus('⏳ מאתחל מצלמה…');
+
+      // Pop the gesture cheat-sheet, then fade it out after 7s.
+      const help = document.getElementById('gestureHelp');
+      if (help) {
+        help.removeAttribute('hidden');
+        help.classList.remove('gh-out');
+        clearTimeout((help as any).__t);
+        (help as any).__t = setTimeout(() => {
+          help.classList.add('gh-out');
+          setTimeout(() => help.setAttribute('hidden', ''), 600);
+        }, 7000);
+      }
+
+      // Phones can't run MediaPipe's FULL hand model (it stalls and detection never
+      // starts), so on mobile we stay on the lite model + a lighter camera. Desktop
+      // gets the full model + higher resolution for max accuracy.
+      const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || ('ontouchstart' in window) || window.innerWidth < 900;
+      dbgStart(isMobileDevice);
+      // On phones, running the heavy 3D orb AND MediaPipe hand inference at the same
+      // time starves the detector of frames → erratic/late detection. Drop the orb to
+      // its cheap render path while detecting (restored in stopGesture).
+      if (isMobileDevice) { try { orb.setPerfMode(true); } catch {} }
+      try {
+        const res = isMobileDevice ? { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } } : { width: { ideal: 640 }, height: { ideal: 480 } };
+        gestureStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', ...res }, audio: false });
+      } catch (err) {
+        // Report the REAL failure, not a blanket "permission denied" — e.g. the
+        // camera being held by another app/tab (NotReadableError) or an
+        // unsatisfiable constraint (OverconstrainedError) looks nothing like a
+        // permission problem to the user, and used to show that misleading
+        // message while leaving the panel stuck half-open (gestureActive was
+        // never reset, so a retry needed an extra click just to close it).
+        const name = (err as any)?.name || 'Unknown';
+        console.error('[gesture] getUserMedia failed:', name, err);
+        gestureStatus(name === 'NotAllowedError' ? '❌ גישה למצלמה נדחתה' : `❌ שגיאת מצלמה (${name}) — נסה שוב`);
+        stopGesture();
+        return;
+      }
+      const vid = document.getElementById('gestureVideo') as HTMLVideoElement;
+      const cvs = document.getElementById('gestureCanvas') as HTMLCanvasElement;
+      vid.srcObject = gestureStream;
+      await vid.play().catch(() => {});
+      cvs.width = 320; cvs.height = 240;
+      // Open-camera mode: show the full-screen mirrored selfie behind the skeleton.
+      const liveVid = document.getElementById('gestureLiveVideo') as HTMLVideoElement | null;
+      if (liveVid) {
+        if (camOpen) {
+          liveVid.srcObject = gestureStream;
+          liveVid.removeAttribute('hidden');
+          liveVid.play().catch(() => {});
+          document.body.classList.add('gesture-cam-open');
+        } else {
+          liveVid.srcObject = null;
+          liveVid.setAttribute('hidden', '');
+          document.body.classList.remove('gesture-cam-open');
+        }
+      }
+      gestureStatus('⏳ טוען זיהוי ידיים…');
+
+      // ── Full-screen transparent overlay: draw the hand as a glowing ghost ──
+      const overlay = document.getElementById('handOverlay') as HTMLCanvasElement;
+      const octx = overlay.getContext('2d')!;
+      overlay.removeAttribute('hidden');
+      const sizeOverlay = () => {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        overlay.width = Math.round(window.innerWidth * dpr);
+        overlay.height = Math.round(window.innerHeight * dpr);
+        octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      };
+      sizeOverlay();
+      window.addEventListener('resize', sizeOverlay);
+      (window as any).__sizeHandOverlay = sizeOverlay;
+
+      if (!(window as any).Hands) {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js';
+        document.head.appendChild(s);
+        let scriptFailed = false;
+        s.onerror = () => { scriptFailed = true; };
+        await new Promise<void>((res, rej) => {
+          s.onload = () => res();
+          const t = setInterval(() => { if (scriptFailed) { clearInterval(t); rej(); } }, 100);
+          setTimeout(() => { clearInterval(t); rej(); }, 8000);
+        }).catch(() => {
+          console.error('[gesture] failed to load MediaPipe hands.min.js from CDN');
+          gestureStatus('❌ טעינת זיהוי ידיים נכשלה — בדוק חיבור אינטרנט ונסה שוב');
+          stopGesture(); return;
+        });
+        if (!gestureActive) return;
+      }
+
+      const Hands = (window as any).Hands;
+      try {
+        gestureHands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
+        // Mobile = lite model (the full model stalls on phones and detection never
+        // starts). Desktop = full model for max accuracy. The One-Euro smoothing +
+        // higher tracking confidence still make BOTH far steadier than before.
+        // Moderate confidence so the lite mobile model actually detects a hand (0.8
+        // was so high it often found nothing → "no skeleton"). False positives are
+        // handled downstream by the per-frame `trusted` gate + settle + hold, not by
+        // starving detection here.
+        gestureHands.setOptions({ maxNumHands: 2, modelComplexity: isMobileDevice ? 0 : 1, minDetectionConfidence: isMobileDevice ? 0.5 : 0.6, minTrackingConfidence: isMobileDevice ? 0.4 : 0.5, selfieMode: true });
+      } catch (err) {
+        console.error('[gesture] Hands init failed', err);
+        gestureStatus('❌ זיהוי ידיים לא נטען — נסה שוב');
+        stopGesture();
+        return;
+      }
+
+      let lastFrameMs = performance.now();
+
+      // ── One-Euro filter: jitter-free yet low-latency landmark smoothing ──────
+      // The raw MediaPipe landmarks jitter frame-to-frame, which made gestures
+      // flicker and the cursor shake. The One-Euro filter smooths hard when the
+      // hand is still (kills jitter) and barely at all when it moves fast (no lag)
+      // — the standard technique for hand-tracking pointers. Huge stability win.
+      const OE_MINCUT = 1.3, OE_BETA = 0.55, OE_DCUT = 1.0;
+      let oePrev: number[][] | null = null, oeDPrev: number[][] | null = null;
+      const oeAlpha = (cutoff: number, dtS: number) => { const tau = 1 / (2 * Math.PI * cutoff); return 1 / (1 + tau / dtS); };
+      function smoothLandmarks(raw: any[], dtS: number): any[] {
+        if (!oePrev || oePrev.length !== raw.length) {
+          oePrev = raw.map((p) => [p.x, p.y, p.z]);
+          oeDPrev = raw.map(() => [0, 0, 0]);
+          return raw.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+        }
+        const out: any[] = [];
+        for (let i = 0; i < raw.length; i++) {
+          const r = [raw[i].x, raw[i].y, raw[i].z]; const o = [0, 0, 0];
+          for (let k = 0; k < 3; k++) {
+            const dx = (r[k] - oePrev[i][k]) / dtS;
+            const ad = oeAlpha(OE_DCUT, dtS);
+            const dHat = ad * dx + (1 - ad) * oeDPrev![i][k]; oeDPrev![i][k] = dHat;
+            const cutoff = OE_MINCUT + OE_BETA * Math.abs(dHat);
+            const a = oeAlpha(cutoff, dtS);
+            const xHat = a * r[k] + (1 - a) * oePrev[i][k]; oePrev[i][k] = xHat; o[k] = xHat;
+          }
+          out.push({ x: o[0], y: o[1], z: o[2] });
+        }
+        return out;
+      }
+
+      // Adaptive complexity: if the full model can't sustain a usable framerate on
+      // this device, fall back to the lite model live (no reload of the page).
+      let cplxLevel = 1, cplxFrames = 0, cplxSum = 0, cplxChecked = false;
+
+      // ── Realistic holographic hand ──────────────────────────────────────────
+      // Layered render: a radial-lit palm, a soft translucent "flesh" stroke, a
+      // bright energy-core line, and glowing joints/fingertips — reads like a real
+      // translucent hand rather than a thin wireframe. Sizes scale with the hand.
+      const HCONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+      // How large the hand skeleton is drawn (cosmetic only). Much smaller on
+      // phones, where the hand fills the front camera and otherwise sprawled.
+      const HAND_RENDER_SCALE = isMobileDevice ? 0.5 : 0.85;
+      function drawHand(hand: any[], mapX: (n: number) => number, mapY: (n: number) => number, primary: boolean) {
+        // Render the skeleton at a controlled size. On phones the front camera
+        // fills with the hand, so mapping landmarks straight onto the (contained)
+        // frame made the skeleton sprawl across the whole screen. Shrink every
+        // landmark toward the hand's own centre by HAND_RENDER_SCALE so the hand
+        // is always drawn small & natural, wherever it is — purely cosmetic;
+        // gesture math still uses the raw normalised landmarks.
+        let cx = 0, cy = 0; for (const p of hand) { cx += p.x; cy += p.y; } cx /= hand.length; cy /= hand.length;
+        const k = HAND_RENDER_SCALE;
+        const PX = (i: number) => mapX(cx + (hand[i].x - cx) * k), PY = (i: number) => mapY(cy + (hand[i].y - cy) * k);
+        const palmR = Math.max(12, Math.hypot(PX(0) - PX(9), PY(0) - PY(9)));
+        const a = primary ? 1 : 0.55;
+        octx.lineCap = 'round'; octx.lineJoin = 'round';
+        // Thin, precise anatomical-style bones with a subtle hologram glow.
+        octx.shadowColor = 'rgba(255,205,90,.7)'; octx.shadowBlur = 6;
+        octx.strokeStyle = `rgba(255,238,175,${0.9 * a})`;
+        octx.lineWidth = Math.max(1.3, palmR * 0.045);
+        for (const [p, q] of HCONN) { octx.beginPath(); octx.moveTo(PX(p), PY(p)); octx.lineTo(PX(q), PY(q)); octx.stroke(); }
+        // Small precise joints (knuckles), fingertips a touch brighter.
+        octx.shadowBlur = 7;
+        for (let i = 0; i < 21; i++) {
+          const tip = i === 4 || i === 8 || i === 12 || i === 16 || i === 20;
+          const r = tip ? Math.max(2.4, palmR * 0.055) : Math.max(1.7, palmR * 0.038);
+          octx.beginPath(); octx.arc(PX(i), PY(i), r, 0, Math.PI * 2);
+          octx.fillStyle = tip ? `rgba(255,245,195,${0.95 * a})` : `rgba(245,212,135,${0.85 * a})`;
+          octx.fill();
+        }
+        octx.shadowBlur = 0;
+      }
+
+      gestureHands.onResults((results: any) => {
+        if (!gestureActive) return;
+        if (!gotFirstHandResult) {
+          gotFirstHandResult = true;
+          if (gestureWatchdog) { clearTimeout(gestureWatchdog); gestureWatchdog = null; }
+        }
+        dbgResults++;
+        dbgHandsFound = results.multiHandLandmarks?.length || 0;
+        const now = performance.now();
+        const rawDt = now - lastFrameMs;
+        const dt = Math.min(200, rawDt);
+        lastFrameMs = now;
+        // Measure real inference cadence over the first ~40 processed frames.
+        if (!cplxChecked) {
+          cplxFrames++; cplxSum += rawDt;
+          if (cplxFrames >= 40) {
+            cplxChecked = true;
+            const avg = cplxSum / cplxFrames;
+            if (avg > 110 && cplxLevel === 1) {   // < ~9fps → too slow, drop to lite
+              cplxLevel = 0;
+              try { gestureHands.setOptions({ modelComplexity: 0 }); } catch {}
+            }
+          }
+        }
+        const W = window.innerWidth, H = window.innerHeight;
+        octx.clearRect(0, 0, W, H);
+        // Stretch-map: normalised [0-1] coordinates → full screen pixels so the
+        // hand tracks anywhere on screen without dead zones at the edges.
+        const mapX = (nx: number) => nx * W;
+        const mapY = (ny: number) => ny * H;
+
+        const noHand = () => {
+          // If no hand has been found for a while, check whether the room is
+          // actually just too dark to see anything — sampled cheaply (coarse
+          // stride) from the same small downscaled frame already fed to
+          // MediaPipe, so a dark room gets an actionable message instead of
+          // an endless, misleading "raise your hand" with no clue why it
+          // never works.
+          noHandMs += dt;
+          darkCheckMs += dt;
+          if (darkCheckMs > 600 && noHandMs > 2000) {
+            darkCheckMs = 0;
+            try {
+              const w = cap.width, h = cap.height;
+              if (w > 0 && h > 0) {
+                const data = capCtx.getImageData(0, 0, w, h).data;
+                let sum = 0, n = 0;
+                for (let i = 0; i < data.length; i += 40) { sum += data[i] + data[i + 1] + data[i + 2]; n++; }
+                isDarkEnv = n > 0 && (sum / (n * 3)) < 45;
+              }
+            } catch { /* getImageData can throw on a tainted canvas — just skip this check */ }
+          }
+          gestureStatus(isDarkEnv ? '🔅 חשוך מדי לזיהוי — הוסף תאורה או התקרב לחלון' : 'הרם יד מול המצלמה');
+          palmHoldMs = 0; fistHoldMs = 0; ballHeldMs = 0; prevScale = 0; handPresentMs = 0;
+          rawPrev = ''; rawStableMs = 0; confirmedGesture = 'none';
+          oePrev = null; oeDPrev = null;   // reset smoothing so re-acquire snaps in
+          orb.pokeballRelease?.();
+          hideLaser();
+          dbgLastScore = 0; dbgLastSpan = 0; dbgLastArmed = false; dbgRender();
+        };
+        if (!results.multiHandLandmarks?.length) { noHand(); return; }
+        noHandMs = 0; isDarkEnv = false;
+
+        // ALWAYS smooth + draw the detected hand so the user sees the skeleton as
+        // live feedback. Detection QUALITY gates only the ACTIONS (below) — it never
+        // hides the hand, otherwise a slightly-too-far hand looks like the detector
+        // is dead (the "no skeleton at all" report).
+        // Two-hand support: pick the PRIMARY (largest / closest) hand to drive the
+        // gestures, but draw ALL detected hands as holograms.
+        const hands: any[][] = results.multiHandLandmarks;
+        const spanOf = (h: any[]) => { let mnx = 1, mxx = 0, mny = 1, mxy = 0; for (const p of h) { if (p.x < mnx) mnx = p.x; if (p.x > mxx) mxx = p.x; if (p.y < mny) mny = p.y; if (p.y > mxy) mxy = p.y; } return Math.max(mxx - mnx, mxy - mny); };
+        let primaryIdx = 0, bestSpan = -1;
+        hands.forEach((h, idx) => { const s = spanOf(h); if (s > bestSpan) { bestSpan = s; primaryIdx = idx; } });
+        const rawLm0 = hands[primaryIdx];
+        const lm = smoothLandmarks(rawLm0, Math.min(0.05, Math.max(0.012, dt / 1000)));
+        // Shrink-map for primary-hand overlay drawing (matches drawHand's scale so
+        // the pinch ring sits on the smaller skeleton, not the full-size hand).
+        let _pcx = 0, _pcy = 0; for (const p of lm) { _pcx += p.x; _pcy += p.y; } _pcx /= lm.length; _pcy /= lm.length;
+        const mapXs = (nx: number) => mapX(_pcx + (nx - _pcx) * HAND_RENDER_SCALE);
+        const mapYs = (ny: number) => mapY(_pcy + (ny - _pcy) * HAND_RENDER_SCALE);
+        // Quality: handedness confidence + how much of the frame the hand fills.
+        const score = results.multiHandedness?.[primaryIdx]?.score ?? 1;
+        const handSpan = bestSpan;
+        const trusted = score >= (isMobileDevice ? 0.55 : 0.7) && handSpan >= (isMobileDevice ? 0.10 : 0.13);
+        if (trusted) handPresentMs += dt; else handPresentMs = 0;
+        const armed = trusted && handPresentMs >= SETTLE_MS;
+        dbgLastScore = score; dbgLastSpan = handSpan; dbgLastArmed = armed; dbgRender();
+        // Draw every hand (primary uses the smoothed landmarks; others raw).
+        if (gestureShowSkeleton) {
+          for (let hi = 0; hi < hands.length; hi++) drawHand(hi === primaryIdx ? lm : hands[hi], mapX, mapY, hi === primaryIdx);
+        }
+
+        // FINGER-FOLD test — the most reliable open/fist signal there is.
+        // For each finger, measure tip→knuckle(MCP) distance ÷ the finger's own first
+        // bone (MCP→PIP). Extended fingers give ≈2.2–2.8; a curled finger folds its
+        // tip back to the knuckle giving ≈0.2–0.5 — a huge, unambiguous gap. Because
+        // it's all distances WITHIN one finger it's fully rotation-invariant (works at
+        // any hand angle) and self-normalising (the short pinky reads the same as the
+        // long middle finger). The wide dead-zone (1.55 up / 1.25 curl) leaves a
+        // relaxed hand as 'none' so nothing fires when idle.
+        const d3 = (a: number, b: number) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y, (lm[a].z || 0) - (lm[b].z || 0));
+        const fold = (mcp: number, pip: number, tip: number) => d3(mcp, tip) / Math.max(0.0001, d3(mcp, pip));
+        const fI = fold(5, 6, 8), fM = fold(9, 10, 12), fR = fold(13, 14, 16), fP = fold(17, 18, 20);
+        const idxUp = fI > 1.55, midUp = fM > 1.55, rngUp = fR > 1.55, pkyUp = fP > 1.55;
+        const idxCur = fI < 1.25, midCur = fM < 1.25, rngCur = fR < 1.25, pkyCur = fP < 1.25;
+        const upCount = [idxUp, midUp, rngUp, pkyUp].filter(Boolean).length;
+        const curlCount = [idxCur, midCur, rngCur, pkyCur].filter(Boolean).length;
+        const open = upCount >= 4;                         // 🖐️ all fingers extended → free to PLAY
+        const fist = upCount === 0 && curlCount >= 3;     // ✊ clearly closed → summon
+        const pointing = idxUp && !midUp && !rngUp && !pkyUp;  // ☝️ index only → pointer
+        // 👎 Thumbs-down → dismiss the Pokémon. Four fingers curled + the thumb
+        // extended and pointing DOWN. A deliberate pose that never fires while an
+        // open hand "plays", which is exactly what the open palm used to break.
+        const thumbExt = d3(2, 4) / Math.max(0.0001, d3(2, 3)) > 1.5;
+        const thumbsDown = upCount === 0 && curlCount >= 3 && thumbExt && (lm[4].y > lm[2].y + 0.03);
+
+        throwCooldownMs = Math.max(0, throwCooldownMs - dt);
+        suppressPalmMs = Math.max(0, suppressPalmMs - dt);
+        clickCooldownMs = Math.max(0, clickCooldownMs - dt);
+
+        const cx2 = mapX(lm[9].x), cy2 = mapY(lm[9].y);
+
+        // Hand "size" — wrist(0)→middle-MCP(9) distance. Grows as the hand moves
+        // toward the camera, independent of fingers opening/closing. Drives the
+        // forward-thrust ("throw at the screen") detection.
+        const handScale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
+        if (prevScale === 0) prevScale = handScale;
+
+        // Pinch = thumb tip (4) close to index tip (8). Hysteresis (grab <0.06,
+        // hold until >0.11) so the grip doesn't flicker. Pinch takes priority
+        // over every other gesture so grabbing never triggers throw/dispel.
+        const pinchD = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+        const pinching = pinchActive ? pinchD < 0.11 : pinchD < 0.06;
+
+        // Classify this frame, then debounce: a new pose must persist STABLE_MS
+        // before it takes over — "none" switches immediately (an empty/relaxed
+        // reading should never be second-guessed). FIST is checked first: in a
+        // fist the thumb rests over the curled fingers, so thumb-tip and
+        // index-tip sit close together and the pinch test would otherwise
+        // steal it. A fist (no fingers up) is unambiguous, so it wins.
+        // Until the hand has settled (armed), nothing classifies — pure observation.
+        const raw = !armed ? 'none' : thumbsDown ? 'dispel' : fist ? 'fist' : pinching ? 'pinch' : pointing ? 'point' : open ? 'open' : 'none';
+        if (raw === rawPrev) rawStableMs += dt; else { rawPrev = raw; rawStableMs = 0; }
+        // Pinch used to skip this debounce entirely ("its own hysteresis
+        // already protects it") — but the 2D thumb-index distance it's based
+        // on can dip below the grab threshold for a single noisy frame during
+        // completely ordinary hand movement (not a deliberate pinch), and
+        // since pinch drives a continuous action (spin the character / drag
+        // the summon dock) that one bad frame was enough to visibly hijack
+        // the screen with no real pinch ever made — exactly the "does things
+        // I didn't ask for" complaint. Require a short deliberate hold to
+        // START a pinch, same as every other gesture; once a pinch is
+        // actually active, keep releasing/tracking instant so an intentional
+        // grab still feels responsive.
+        const PINCH_ENTER_MS = 140;
+        if (raw === 'none') confirmedGesture = raw;
+        else if (raw === 'pinch') { if (pinchActive || rawStableMs >= PINCH_ENTER_MS) confirmedGesture = raw; }
+        else if (rawStableMs >= STABLE_MS) confirmedGesture = raw;
+
+        if (confirmedGesture === 'pinch') {
+          const hx = (lm[4].x + lm[8].x) / 2;   // pinch midpoint
+          const hy = (lm[4].y + lm[8].y) / 2;
+          const dockEl = document.getElementById('summonDock');
+          const dockIsOpen = !!dockEl && !dockEl.hasAttribute('hidden');
+          if (!pinchActive) {
+            pinchActive = true;
+            pinchStartHX = hx; pinchStartHY = hy;
+            if (dockIsOpen) dockScrollStartLeft = (window as any).__dockScrollLeft?.() ?? 0;
+            else pinchStartXf = orb.getCharacterTransform();
+          }
+          fistHoldMs = 0;
+          const dx = hx - pinchStartHX;     // selfieMode → already mirrored
+          const dy = hy - pinchStartHY;
+          if (dockIsOpen && (window as any).__dockScrollTo) {
+            // 🤏 Pinch (thumb + index finger together) while the Pokémon bar is
+            // open — drag left/right to scroll it, like swiping a carousel.
+            const SENS_SCROLL = window.innerWidth * 1.6;
+            (window as any).__dockScrollTo(dockScrollStartLeft - dx * SENS_SCROLL);
+            gestureStatus('🤏 גלול ימינה/שמאלה לבחירת פוקימון');
+          } else {
+            const xf = pinchStartXf!;
+            const SENS = 5.0;                 // high sensitivity for precise control
+            // Grab & turn the Pokémon inside the orb: horizontal drag spins around
+            // Y, vertical drag tilts around X. Relative to the grab-start pose.
+            orb.setCharacterTransform(xf.x + dy * SENS, xf.y + dx * SENS, xf.z, xf.s, xf.px, xf.py, xf.pz);
+            gestureStatus('🤏 אוחז בכדור — הזז יד כדי לסובב');
+          }
+          octx.beginPath(); octx.arc(mapXs(hx), mapYs(hy), isMobileDevice ? 18 : 30, 0, Math.PI * 2);
+          octx.strokeStyle = 'rgba(120,220,255,.95)'; octx.lineWidth = isMobileDevice ? 3 : 5; octx.stroke();
+        } else if (confirmedGesture === 'point') {
+          // ☝️ Finger-pointing laser cursor — index tip (lm[8]) drives a pixel-precise
+          // cursor; snaps to nearby clickable targets; dwelling selects.
+          if (pinchActive) { pinchActive = false; pinchStartXf = null; }
+          fistHoldMs = 0;
+          // Map index fingertip to screen with GAIN around center so small, comfortable
+          // movement covers the full screen. Higher gain = less physical movement needed.
+          const GAIN = 2.1;
+          const nx = Math.min(1, Math.max(0, 0.5 + (lm[8].x - 0.5) * GAIN));
+          const ny = Math.min(1, Math.max(0, 0.5 + (lm[8].y - 0.5) * GAIN));
+          let ptx = nx * window.innerWidth;
+          let pty = ny * window.innerHeight;
+          // Snap to nearby clickable target — pulls cursor to the element center when
+          // within 90px, making imprecise pointing click reliably.
+          const snapTarget = clickableAt(ptx, pty);
+          if (snapTarget) {
+            const sr = (snapTarget as HTMLElement).getBoundingClientRect();
+            const scx = sr.left + sr.width / 2, scy = sr.top + sr.height / 2;
+            const sd = Math.hypot(ptx - scx, pty - scy);
+            if (sd < 90) { ptx = ptx + (scx - ptx) * 0.65; pty = pty + (scy - pty) * 0.65; }
+          }
+          // Adaptive smoothing: fast on big moves, snappy near target.
+          const d = Math.hypot(ptx - pointSX, pty - pointSY);
+          const onT = !!snapTarget;
+          const a = pointSX ? Math.min(0.75, (onT ? 0.38 : 0.2) + d / 350) : 1;
+          pointSX = pointSX ? pointSX + (ptx - pointSX) * a : ptx;
+          pointSY = pointSY ? pointSY + (pty - pointSY) * a : pty;
+          updateLaser(pointSX, pointSY, dt);
+          gestureStatus('☝️ מצביע — החזק רגע לבחירה');
+        } else {
+          hideLaser();
+          if (pinchActive) { pinchActive = false; pinchStartXf = null; }
+          if (confirmedGesture === 'fist') {
+            // ✊ GRAB the REAL 3D pokéball — it appears in your fist and follows the
+            // hand inside the orb. FLICK it (fast hand motion) — or just hold — to
+            // THROW it at the orb and summon.
+            palmHoldMs = 0;
+            if (throwCooldownMs <= 0) {
+              fistHoldMs += dt;
+              if (ballHeldMs === 0) { ballPX = cx2; ballPY = cy2; }
+              orb.pokeballHold?.(lm[9].x, lm[9].y);
+              ballHeldMs += dt;
+              const vx = cx2 - ballPX, vy = cy2 - ballPY; ballPX = cx2; ballPY = cy2;
+              const speed = (Math.hypot(vx, vy) / Math.max(1, dt)) * 16;   // px per ~frame
+              const flick = ballHeldMs > 140 && speed > 26;
+              if (flick || fistHoldMs >= FIST_HOLD_THRESHOLD) {
+                fistHoldMs = 0; ballHeldMs = 0;
+                throwCooldownMs = THROW_COOLDOWN; suppressPalmMs = 1100;
+                gestureStatus('🚀 זריקה! בחר פוקימון');
+                // A real flick passes its actual measured speed through so the throw
+                // animation's duration/arc/spin genuinely reflects how hard the user
+                // threw — a slow release (hold-to-summon, no flick) keeps the default
+                // gentle toss instead of being forced through the same speed math.
+                orb.pokeballThrow?.(() => (window as any).openSummonDock?.(), flick ? speed : undefined);
+                setTimeout(() => { if (gestureActive) gestureStatus('זיהוי פעיל'); }, 2500);
+              } else {
+                gestureStatus('✊ אוחז בכדור — תזרוק לכיוון הכדור לזימון');
+              }
+            }
+          } else {
+            fistHoldMs = 0; ballHeldMs = 0; orb.pokeballRelease?.();
+            if (open) gestureStatus('🖐️ יד פתוחה — שחק עם הפוקימון'); else if (!thumbsDown) gestureStatus('זיהוי פעיל');
+          }
+        }
+
+        // ── Dock gesture: when summon dock is open, track hand X to hover items.
+        // Skipped while pinching — a pinch instead drags the dock to scroll it
+        // (see the pinch branch above), so the two must not fight over the frame. ──
+        if (confirmedGesture !== 'pinch' && (window as any).__dockGestureMove && (window as any).closeSummonDock &&
+            document.getElementById('summonDock') && !document.getElementById('summonDock')!.hasAttribute('hidden')) {
+          (window as any).__dockGestureMove(lm[9].x); // wrist X (0..1)
+        }
+
+        // ── 👎 Thumbs-down DISMISS (dispel) — replaces the open-palm release so an
+        // open hand stays free to play. Hold briefly; a ring shows progress. Decay
+        // (not hard-reset) on brief misses so a model flicker doesn't restart it. ──
+        const dispelEligible = thumbsDown && suppressPalmMs <= 0;
+        if (dispelEligible) palmHoldMs += dt;
+        else palmHoldMs = Math.max(0, palmHoldMs - dt * 2.5);
+        if (dispelEligible && palmHoldMs > 80) {
+          const progress = Math.min(1, palmHoldMs / PALM_HOLD_THRESHOLD);
+          gestureStatus(`👎 החזק להעלמה… ${Math.round(progress * 100)}%`);
+          octx.beginPath(); octx.arc(cx2, cy2, 42, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+          octx.strokeStyle = `rgba(218,165,32,${0.4 + progress * 0.6})`; octx.lineWidth = 6; octx.stroke();
+          if (palmHoldMs >= PALM_HOLD_THRESHOLD) {
+            palmHoldMs = 0; suppressPalmMs = 900;
+            gestureStatus('⚡ הפוקימון הועלם!');
+            (window as any).dispelOrb?.();
+          }
+        }
+        prevScale = handScale;
+
+      });
+
+      // Feed MediaPipe a SMALL, downscaled canvas frame (~320px wide). This is what
+      // made it "work great" before: the lite model is fast on a small image and
+      // resizes to 256 internally anyway, so sending the camera's full (possibly
+      // 720p+) frame just choked it on mobile → "barely detects". Drawing to a fixed
+      // small canvas also delivers a clean image regardless of the hidden video size.
+      const cap = document.createElement('canvas');
+      const capCtx = cap.getContext('2d')!;
+      const CAP_W = 480;
+      let rafId = 0;
+      // MediaPipe's send() lazily fetches its wasm/model binaries from the CDN on
+      // the first call and can hang indefinitely on a bad connection instead of
+      // rejecting — a plain `await` on that would freeze this whole loop forever
+      // (no next frame ever gets scheduled, camera looks "on" but nothing happens).
+      // Race it against a timeout so a stuck call can never block the loop.
+      const SEND_TIMEOUT_MS = 4000;
+      function sendWithTimeout(image: HTMLCanvasElement): Promise<void> {
+        return new Promise((resolve) => {
+          let done = false;
+          const finish = () => { if (!done) { done = true; resolve(); } };
+          setTimeout(finish, SEND_TIMEOUT_MS);
+          gestureHands.send({ image }).then(finish, finish);
+        });
+      }
+      const tick = async () => {
+        if (!gestureActive) return;
+        if (vid.readyState >= 2 && vid.videoWidth > 0) {
+          const h = Math.round(CAP_W * (vid.videoHeight / vid.videoWidth));
+          if (cap.width !== CAP_W) { cap.width = CAP_W; cap.height = h; }
+          try { capCtx.drawImage(vid, 0, 0, CAP_W, h); } catch {}
+          dbgFramesSent++; dbgRender();
+          await sendWithTimeout(cap);
+        }
+        rafId = requestAnimationFrame(tick);
+      };
+      (window as any).__stopGestureRaf = () => { cancelAnimationFrame(rafId); };
+      gestureStatus('מצלמה פעילה');
+      tick();
+      // Watchdog: if the model never produces a single result (stuck loading its
+      // wasm/binary assets over a flaky connection, or silently incompatible with
+      // this browser), give a real error + return to a retryable state instead of
+      // leaving "מצלמה פעילה" on screen forever with nothing actually happening.
+      gestureWatchdog = setTimeout(() => {
+        if (gestureActive && !gotFirstHandResult) {
+          console.error('[gesture] no hand-tracking results after 9s — MediaPipe likely failed to load over the network');
+          gestureStatus('❌ הזיהוי לא נטען — בדוק חיבור אינטרנט ונסה שוב');
+          stopGesture();
+        }
+      }, 9000);
+
+      // ── Physical Pokéball detector ───────────────────────────────────────────
+      // Desktop-only: on phones the variable lighting + skin tones generate too
+      // many false-positive yellow clusters. Only active on desktop webcam sessions.
+      if (!isMobileDevice) {
+        const pbCv = document.createElement('canvas');
+        pbCv.width = 160; pbCv.height = 120;
+        const pbCtx = pbCv.getContext('2d', { willReadFrequently: true })!;
+
+        type PBState = 'none' | 'closed' | 'open';
+        let pbState: PBState = 'none';
+        let pbReading: PBState = 'none';
+        let pbCount = 0;
+        // Sampled every 190ms — 10 consecutive matching reads (~1.9s sustained)
+        // before a transition fires, so a passing coincidence (shifting light,
+        // a moment's head turn) can't trigger a "ball" state on its own.
+        const PB_DEBOUNCE = 10;
+
+        function samplePokeball(): PBState {
+          if (!vid.videoWidth || vid.readyState < 2) return 'none';
+          try { pbCtx.drawImage(vid, 0, 0, 160, 120); } catch { return 'none'; }
+          const { data } = pbCtx.getImageData(0, 0, 160, 120);
+
+          // ── Safari Ball: yellow/amber body ──────────────────────────────────
+          // Use relative ratios (not absolute) so indoor/warm lighting still works.
+          // Yellow = R and G both elevated, B clearly lower, R slightly > G.
+          let yMinX = 160, yMaxX = 0, yMinY = 120, yMaxY = 0, yellowCount = 0;
+
+          // ── Classic Pokéball: red top + white bottom ─────────────────────────
+          // Red  = R clearly dominant over G and B (ratio-based for dim rooms).
+          // White = all channels bright (lowered threshold for off-white / cream).
+          let redSX = 0, redSY = 0, redCount = 0;
+          let whSX  = 0, whSY  = 0, whCount  = 0;
+          let rMinX = 160, rMaxX = 0, rMinY = 120, rMaxY = 0;
+          let wMinX = 160, wMaxX = 0, wMinY = 120, wMaxY = 0;
+
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            const px = (i >> 2) % 160, py = (i >> 2) / 160 | 0;
+
+            // Yellow (Safari Ball): R and G close together and both high, B
+            // clearly lower — a narrower band than before, specifically to
+            // separate genuine amber/gold from skin tone, which typically has
+            // R noticeably ahead of G (this loose test used to read ordinary
+            // skin/warm-lit wood as "yellow ball" and spawn a Pokémon with no
+            // ball ever shown).
+            if (r > 110 && g > 75 && b < 140
+                && r - b > 35 && g - b > 15
+                && r > g * 0.85 && r < g * 1.2) {
+              if (px < yMinX) yMinX = px; if (px > yMaxX) yMaxX = px;
+              if (py < yMinY) yMinY = py; if (py > yMaxY) yMaxY = py;
+              yellowCount++;
+            }
+            // Red (classic Pokéball top): R >> G and R >> B
+            else if (r > 110 && r > g * 1.5 && r > b * 1.5 && g < 130 && b < 130) {
+              redSX += px; redSY += py; redCount++;
+              if (px < rMinX) rMinX = px; if (px > rMaxX) rMaxX = px;
+              if (py < rMinY) rMinY = py; if (py > rMaxY) rMaxY = py;
+            }
+            // White (classic Pokéball bottom): all channels bright (≥150 each)
+            else if (r > 150 && g > 150 && b > 150 && r + g + b > 490) {
+              whSX += px; whSY += py; whCount++;
+              if (px < wMinX) wMinX = px; if (px > wMaxX) wMaxX = px;
+              if (py < wMinY) wMinY = py; if (py > wMaxY) wMaxY = py;
+            }
+          }
+
+          // Classic Pokéball: red cluster ABOVE white cluster, horizontally
+          // aligned, AND compact (a real ball held up is a small tight blob —
+          // a red shirt in front of a white wall, or a face, spans a much
+          // bigger and looser area than that, and used to pass this check).
+          const classicOk = (() => {
+            if (redCount < 200 || whCount < 200) return false;
+            const rCY = redSY / redCount, wCY = whSY / whCount;
+            const rCX = redSX / redCount, wCX = whSX / whCount;
+            const bw = Math.max(rMaxX, wMaxX) - Math.min(rMinX, wMinX);
+            const bh = Math.max(rMaxY, wMaxY) - Math.min(rMinY, wMinY);
+            return rCY < wCY                   // red is above white ✓
+              && (wCY - rCY) < 80              // not too far apart vertically
+              && Math.abs(rCX - wCX) < 65      // horizontally aligned (same ball)
+              && bw < 90 && bh < 90;           // compact — an actual held-up ball, not a shirt+wall
+          })();
+
+          // A real ball shown to the camera fills a meaningful, compact patch
+          // of the frame — not a handful of scattered pixels that happen to
+          // match a loose color ratio somewhere in the shot.
+          const yBw = yMaxX - yMinX, yBh = yMaxY - yMinY;
+          const safariOk = yellowCount >= 500 && yBw < 100 && yBh < 100;
+          if (!safariOk && !classicOk) return 'none';
+
+          // Bounding box for the detected ball
+          let bx1: number, bx2: number, by1: number, by2: number;
+          if (safariOk) {
+            bx1 = Math.max(0, yMinX); bx2 = Math.min(159, yMaxX);
+            by1 = Math.max(0, yMinY); by2 = Math.min(119, yMaxY);
+          } else {
+            bx1 = Math.max(0, Math.min(rMinX, wMinX));
+            bx2 = Math.min(159, Math.max(rMaxX, wMaxX));
+            by1 = Math.max(0, Math.min(rMinY, wMinY));
+            by2 = Math.min(119, Math.max(rMaxY, wMaxY));
+          }
+
+          const bw = bx2 - bx1 + 1, bh = by2 - by1 + 1;
+          if (bw < 6 || bh < 6) return 'closed';
+
+          // Open ball exposes dark interior → darkRatio rises
+          let darkCount = 0, total = 0;
+          for (let y = by1; y <= by2; y++) {
+            for (let x = bx1; x <= bx2; x++) {
+              const i4 = (y * 160 + x) * 4;
+              total++;
+              if (data[i4] < 60 && data[i4 + 1] < 60 && data[i4 + 2] < 60) darkCount++;
+            }
+          }
+          const darkRatio = darkCount / Math.max(1, total);
+          const aspect    = bw / Math.max(1, bh);
+          return (darkRatio > 0.13 || aspect > 1.6) ? 'open' : 'closed';
+        }
+
+        function applyPokeballTransition(next: PBState) {
+          if (next === pbState) return;
+          const prev = pbState;
+          pbState = next;
+          if (next === 'closed') {
+            // Pokémon retreats into the ball with a shrink animation
+            document.body.classList.add('pokeball-capturing');
+          } else if (next === 'open') {
+            // Ball opens — character bursts out
+            document.body.classList.remove('pokeball-capturing');
+            if (prev === 'closed') {
+              // Was inside ball → now release with summon dock fanfare
+              setTimeout(() => (window as any).openSummonDock?.(), 380);
+            }
+          } else {
+            // Ball left the frame — restore character quietly
+            document.body.classList.remove('pokeball-capturing');
+          }
+        }
+
+        const pbInterval = setInterval(() => {
+          if (!gestureActive) { clearInterval(pbInterval); document.body.classList.remove('pokeball-capturing'); return; }
+          const reading = samplePokeball();
+          if (reading === pbReading) {
+            pbCount++;
+            if (pbCount >= PB_DEBOUNCE) { pbCount = PB_DEBOUNCE; applyPokeballTransition(reading); }
+          } else {
+            pbReading = reading;
+            pbCount = 1;
+          }
+        }, 190);
+
+        // Wrap the existing RAF stop so we also kill the interval and clean up
+        const _prevStop = (window as any).__stopGestureRaf;
+        (window as any).__stopGestureRaf = () => {
+          clearInterval(pbInterval);
+          document.body.classList.remove('pokeball-capturing');
+          pbState = 'none';
+          if (_prevStop) _prevStop();
+        };
+      }
+      // ── End Pokéball detector ────────────────────────────────────────────────
+    }
+
+    $('detectBtn').onclick = () => {
+      if (gestureActive) { (window as any).__stopGestureRaf?.(); stopGesture(); return; }
+      // Show mode chooser before starting.
+      const chooser = document.getElementById('gestureModeChooser');
+      if (chooser) chooser.removeAttribute('hidden');
+    };
+    document.getElementById('gmcHidden')?.addEventListener('click', () => {
+      document.getElementById('gestureModeChooser')?.setAttribute('hidden', '');
+      startGesture(false);
+    });
+    document.getElementById('gmcOpen')?.addEventListener('click', () => {
+      document.getElementById('gestureModeChooser')?.setAttribute('hidden', '');
+      startGesture(true);
+    });
+    document.getElementById('gmcCancel')?.addEventListener('click', () => {
+      document.getElementById('gestureModeChooser')?.setAttribute('hidden', '');
+    });
+  }
+
+  // Tap/click the orb stage to trigger the active Pokemon's attack
+  {
+    let attackCooldown = false;
+    document.getElementById('stage')!.addEventListener('click', () => {
+      if (attackCooldown) return;
+      attackCooldown = true;
+      const canvas = $<HTMLCanvasElement>('attackFx');
+      const rect = document.getElementById('stage')!.getBoundingClientRect();
+      canvas.style.width = rect.width + 'px';
+      canvas.style.height = rect.height + 'px';
+      orb.attackCharacter(canvas);
+      setTimeout(() => { attackCooldown = false; }, 1800);
+    });
+  }
 
   // HeavyGuard OS
   const hgBase = import.meta.env.BASE_URL || '/';
@@ -1192,14 +4218,33 @@ export function mountApp(root: HTMLElement) {
   });
 
   async function hgLoad(key: string): Promise<any[]> {
-    const storage = (window as any).storage || (window as any).puter?.kv;
-    if (storage) {
-      try {
-        const r = await storage.get(key);
-        if (r && r.value != null) return JSON.parse(r.value);
-      } catch {}
-    }
     try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+  }
+  // Persist a Heavy Guard table from the DASHBOARD side so it can never
+  // silently vanish (the user's "every install report disappears" bug):
+  //  · verified write — read back and compare, because a quota-exceeded
+  //    setItem throws into silent catch blocks and a private-mode write can
+  //    no-op; on failure, evict the lyrics song cache (the one big
+  //    expendable blob on this shared origin) and retry;
+  //  · mirror into window.storage when the platform provides it — the
+  //    Heavy Guard app reads that copy FIRST, and before this mirror its
+  //    next save would overwrite localStorage with a stale list, erasing
+  //    every install reported here (its loadIndex now also merges, so the
+  //    two fixes back each other up);
+  //  · report the truth back to the caller so the chat can say "not saved"
+  //    instead of a false ✅.
+  async function hgPersist(key: string, arr: any[]): Promise<boolean> {
+    const json = JSON.stringify(arr);
+    const tryWrite = () => {
+      try { localStorage.setItem(key, json); return localStorage.getItem(key) === json; } catch { return false; }
+    };
+    let ok = tryWrite();
+    if (!ok) {
+      try { localStorage.removeItem('lt:cache:v1'); } catch { /* nothing to evict */ }
+      ok = tryWrite();
+    }
+    try { await (window as any).storage?.set?.(key, json); } catch { /* platform KV optional */ }
+    return ok;
   }
 
   const CONTRACTORS: Record<string, string> = {
@@ -1207,6 +4252,1209 @@ export function mountApp(root: HTMLElement) {
     mb: 'm.b מערכות', sd: 'ס.ד מיגונים', hg: 'Heavy Guard',
   };
   function cName(id: string) { return CONTRACTORS[id] || id; }
+
+  // ── Holographic HUD: live Heavy Guard data on the main display ──────────
+  function renderHud() {
+    let idx: any[] = [];
+    try { idx = (JSON.parse(localStorage.getItem('hg2:index') || '[]') || []).filter((x: any) => x && x.status !== 'running'); } catch {}
+    const money = (n: number) => '₪' + (Number(n) || 0).toLocaleString('he-IL');
+    const ym = new Date().toISOString().slice(0, 7);
+    const total = idx.length;
+    // Cumulative income comes from the accountant's books (see modules/books.ts),
+    // plus live installs only for months the bookkeeper hasn't closed yet.
+    const liveAfter = idx.reduce((s: number, x: any) => s + (String(x.date || '').slice(0, 7) > BOOKS_LAST_KEY ? (Number(x.price) || 0) : 0), 0);
+    const revenue = cumulativeIncome(liveAfter);
+    const month = idx.filter((x: any) => (x.date || '').startsWith(ym));
+    const monthRev = BOOKS_BY_KEY[ym] ? BOOKS_BY_KEY[ym].income : month.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    const ops = document.querySelector('#hudOps .hud-card-body');
+    if (ops) {
+      ops.innerHTML = total === 0 && revenue === 0
+        ? '<div class="hud-empty">אין עדיין נתוני Heavy Guard במכשיר זה</div>'
+        : `<div class="hud-stat"><span>התקנות סה"כ</span><b>${total.toLocaleString('he-IL')}</b></div>
+           <div class="hud-stat"><span>הכנסה מצטברת</span><b class="cy">${money(revenue)}</b></div>
+           <div class="hud-stat"><span>החודש</span><b>${month.length} · ${money(monthRev)}</b></div>
+           <div class="hud-line"></div>
+           <div class="hud-foot">${BIZ_TAG}</div>`;
+    }
+    const pipe = document.querySelector('#hudPipe .hud-card-body');
+    if (pipe) {
+      const byC: Record<string, { count: number; rev: number }> = {};
+      idx.forEach((x: any) => { const c = x.contractor || '?'; (byC[c] = byC[c] || { count: 0, rev: 0 }); byC[c].count++; byC[c].rev += Number(x.price) || 0; });
+      const rows = Object.entries(byC).map(([id, v]) => ({ name: cName(id), ...v })).sort((a, b) => b.rev - a.rev).slice(0, 5);
+      const max = Math.max(1, ...rows.map((r) => r.rev));
+      pipe.innerHTML = rows.length === 0
+        ? '<div class="hud-empty">אין נתונים</div>'
+        : rows.map((r) => `<div class="hud-prow"><span class="hud-pn">${r.name}</span><div class="hud-pbar"><i style="width:${Math.round(r.rev / max * 100)}%"></i></div><b>${money(r.rev)}</b></div>`).join('');
+    }
+  }
+  const BIZ_TAG = 'Heavy Guard · נתוני שטח חיים';
+
+  // ── Business briefing (Hebrew) — HeavyGuard KPIs + fleet + live markets ──
+  // Pulls only local HG data + the markets already fetched (no cross-origin), so
+  // it always works. Shown in chat when the GLOBAL OPERATIONS panel is tapped.
+  function businessBriefing(): string {
+    const idx = readIdx();
+    const ym = new Date().toISOString().slice(0, 7);
+    const money = (n: number) => '₪' + Math.round(n || 0).toLocaleString('he-IL');
+    const total = idx.length;
+    // Same books-authoritative income as the HUD (see modules/books.ts).
+    const liveAfter = idx.reduce((s: number, x: any) => s + (String(x.date || '').slice(0, 7) > BOOKS_LAST_KEY ? (Number(x.price) || 0) : 0), 0);
+    const revenue = cumulativeIncome(liveAfter);
+    const month = idx.filter((x: any) => (x.date || '').startsWith(ym));
+    const monthRev = BOOKS_BY_KEY[ym] ? BOOKS_BY_KEY[ym].income : month.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0);
+    const byC: Record<string, { n: number; rev: number }> = {};
+    idx.forEach((x: any) => { const c = x.contractor || '?'; (byC[c] = byC[c] || { n: 0, rev: 0 }); byC[c].n++; byC[c].rev += Number(x.price) || 0; });
+    const top = Object.entries(byC).map(([id, v]) => ({ name: cName(id), ...v })).sort((a, b) => b.rev - a.rev).slice(0, 3);
+    const unsched = idx.filter((x: any) => x && (x.status === 'running' || !x.date)).length;
+    const openTasks = readTasks().filter((t: any) => !t.done).length;
+    const trips = readTrips(); const km = trips.reduce((s: number, t: any) => s + (Number(t.km) || 0), 0);
+    const lines: string[] = ['🛡️ **תדריך עסקי · Heavy Guard**'];
+    if (total === 0 && revenue === 0) lines.push('אין עדיין נתוני התקנות במכשיר זה.');
+    else {
+      lines.push(`• התקנות סה"כ: ${total} · הכנסה מצטברת: ${money(revenue)}`);
+      lines.push(`• החודש: ${month.length} התקנות · ${money(monthRev)}`);
+      if (top.length) lines.push('• קבלנים מובילים: ' + top.map((t) => `${t.name} (${money(t.rev)})`).join(' · '));
+      if (unsched) lines.push(`• ⚠️ ${unsched} התקנות ממתינות לתיאום`);
+    }
+    if (openTasks) lines.push(`• ${openTasks} משימות פתוחות`);
+    lines.push(`• 🚚 צי: ${trips.length} נסיעות · ${km} ק"מ`);
+    if (lastMarketRows.length) {
+      const m = lastMarketRows.slice(0, 4).map((r) => `${r.name} ${r.price} (${r.chg >= 0 ? '+' : ''}${r.chg.toFixed(1)}%)`);
+      lines.push('📊 שווקים: ' + m.join(' · '));
+    }
+    return lines.join('\n');
+  }
+  (window as any).businessBriefing = businessBriefing;
+
+  // ── Fleet panel (main-screen card; tap → full control center) ──
+  // Mirrors the REAL ניהול-צי data inside Heavy Guard: the same hg2:trips
+  // and hg2:vehicle stores its "רכב ותחזוקה" screen reads/writes — trips +
+  // km, upcoming ביטוח/טסט/טיפול reminders (≤30 days, exactly HG's rule),
+  // and total maintenance spend. One source of truth, two screens.
+  function renderFleetPanel() {
+    const el = document.querySelector('#hudFleetPanel .hud-card-body');
+    if (!el) return;
+    // Keep the total trips/km stat live from the location-reports table
+    // itself (same source todayKm already reads), instead of only updating
+    // when the owner manually clicks "חשב מהדיווח היומי" in the full fleet
+    // window — that manual-only path was why this stayed stuck at 0.
+    syncTripsFromDailyReport();
+    const trips = readTrips();
+    const km = trips.reduce((s: number, t: any) => s + (Number(t.km) || 0), 0);
+    let vehicle: any[] = [];
+    try { vehicle = JSON.parse(localStorage.getItem('hg2:vehicle') || '[]') || []; } catch {}
+    const maintCost = vehicle.reduce((s: number, r: any) => s + (Number(r.cost) || 0), 0);
+    const daysTo = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
+    const reminders = vehicle
+      .filter((r: any) => r.remind)
+      .map((r: any) => ({ ...r, days: daysTo(r.remind) }))
+      .filter((r: any) => r.days <= 30)
+      .sort((a: any, b: any) => a.days - b.days)
+      .slice(0, 2);
+    const remindHtml = reminders.map((r: any) =>
+      `<div class="hud-stat"><span>⏰ ${r.type}${r.note ? ' · ' + r.note : ''}</span><b class="${r.days < 0 ? 'warn' : ''}">${r.days < 0 ? `עבר לפני ${-r.days} ימים` : r.days === 0 ? 'היום' : `בעוד ${r.days} ימים`}</b></div>`).join('');
+    const last = vehicle.slice().sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''))[0];
+    // Current odometer — same "hg2:odometer" record HG's רכב-ותחזוקה screen
+    // writes; tap ✎ to update it right from here (writes back to the shared
+    // key, so HG shows the new reading too).
+    let odo: any = {};
+    try { odo = JSON.parse(localStorage.getItem('hg2:odometer') || '{}') || {}; } catch {}
+    // Latest GPS-tracked drive (the gps.html tracker stores trips in
+    // hg_trips_v1 on this same origin) + quick access to the tracker.
+    let gpsTrips: any[] = [];
+    try { gpsTrips = JSON.parse(localStorage.getItem('hg_trips_v1') || '[]') || []; } catch {}
+    const gLast = gpsTrips[0];
+    const gpsRow = gLast && gLast.distanceKm != null
+      ? `<div class="hud-stat"><span>🛰️ נסיעת GPS אחרונה</span><b>${Number(gLast.distanceKm).toFixed(1)} ק"מ · ${Math.round(gLast.avgKmh || 0)} קמ"ש</b></div>`
+      : '';
+    // Today's driving, computed live from today's install reports rather
+    // than requiring the owner to log a trip by hand first — every trip is
+    // the same round trip (HQ ⇄ job ⇄ HQ), so this is always up to date the
+    // moment a install gets reported, not just after "חשב מהדיווח היומי".
+    const today = new Date().toISOString().slice(0, 10);
+    const todayLocs = [...new Set(readIdx().filter((r: any) => (r.date || '') === today && r.location).map((r: any) => (r.location || '').trim()))];
+    const todayKm = todayLocs.reduce((s: number, loc: string) => s + (roundTripKm(loc) || 0), 0);
+    const todayRow = `<div class="hud-stat"><span>קמ היום (הלוך-חזור מ-${escHtml(HQ_LABEL)})</span><b>${todayKm.toFixed(1)} ק"מ</b></div>` +
+      (todayLocs.length ? `<div class="hud-stat"><span>דיווחתי היום ב</span><b>${todayLocs.map(escHtml).join(', ')}</b></div>` : '');
+    el.innerHTML = `
+      <div class="hud-stat"><span>מד ק"מ נוכחי</span><b class="cy">${odo.km ? Number(odo.km).toLocaleString('he-IL') : '—'} <button id="hudOdoEdit" title="עדכן ק&quot;מ" style="background:none;border:1px solid rgba(228,188,99,.4);border-radius:6px;color:#E4BC63;font-size:11px;cursor:pointer;padding:1px 7px;vertical-align:2px">✎</button></b></div>
+      ${todayRow}
+      <div class="hud-stat"><span>נסיעות · ק"מ</span><b>${trips.length} · ${km.toLocaleString('he-IL')}</b></div>
+      ${remindHtml}
+      <div class="hud-stat"><span>אחזקה מצטברת</span><b>${money(maintCost)}</b></div>
+      ${last ? `<div class="hud-stat"><span>אחרון: ${last.type || ''}</span><b>${(last.date || '').split('-').reverse().join('/')}</b></div>` : ''}
+      ${gpsRow}
+      <div class="hud-foot">מסונכרן עם ניהול הצי ב-Heavy Guard ↗ · <a href="gps.html" style="color:#F7E8C0;font-weight:800;text-decoration:none" onclick="event.stopPropagation()">🛰️ GPS Tracker</a></div>`;
+    document.getElementById('hudOdoEdit')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = odo.km ? String(odo.km) : '';
+      const v = window.prompt('קריאת מד ק"מ נוכחית:', cur);
+      const kmNew = parseInt(v || '', 10);
+      if (!kmNew || kmNew <= 0) return;
+      try { localStorage.setItem('hg2:odometer', JSON.stringify({ km: kmNew, date: new Date().toISOString().slice(0, 10) })); } catch {}
+      puterSync.scheduleSync?.();
+      renderFleetPanel();
+    });
+  }
+  const money = (n: number) => '₪' + Math.round(n || 0).toLocaleString('he-IL');
+
+  // ── Live markets ──
+  const mkFmt = (n: number) => n >= 1000 ? Math.round(n).toLocaleString('en-US') : n.toLocaleString('en-US', { maximumFractionDigits: n >= 1 ? 2 : 4 });
+  type MkRow = { name: string; price: string; chg: number; group?: 'crypto' | 'index' | 'stock' };
+  let lastMarketRows: MkRow[] = [];
+  let lastMarketAt = 0;
+  // Fetch a fuller market board: crypto (CoinGecko) + indices/gold (Yahoo).
+  async function fetchMarketRows(): Promise<MkRow[]> {
+    const rows: MkRow[] = [];
+    try {
+      const ids = 'bitcoin,ethereum,solana,binancecoin,ripple,cardano,dogecoin';
+      const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
+      const d = await r.json();
+      const order: [string, string][] = [['bitcoin', 'Bitcoin'], ['ethereum', 'Ethereum'], ['solana', 'Solana'], ['binancecoin', 'BNB'], ['ripple', 'XRP'], ['cardano', 'Cardano'], ['dogecoin', 'Dogecoin']];
+      for (const [id, name] of order) if (d[id]) rows.push({ name, price: '$' + mkFmt(d[id].usd), chg: d[id].usd_24h_change || 0, group: 'crypto' });
+    } catch {}
+    // Indices/commodities + real single STOCKS — one parallel batch.
+    const yahooSyms: [string, string, 'index' | 'stock'][] = [
+      ['%5EGSPC', 'S&P 500', 'index'], ['%5EIXIC', 'NASDAQ', 'index'], ['%5EDJI', 'Dow Jones', 'index'], ['GC%3DF', 'זהב', 'index'], ['CL%3DF', 'נפט', 'index'],
+      ['AAPL', 'Apple', 'stock'], ['NVDA', 'Nvidia', 'stock'], ['TSLA', 'Tesla', 'stock'], ['MSFT', 'Microsoft', 'stock'], ['GOOGL', 'Google', 'stock'],
+    ];
+    const yahoo = await Promise.all(yahooSyms.map(async ([sym, name, group]) => {
+      try {
+        const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=2d`);
+        const d = await r.json();
+        const m = d.chart.result[0].meta;
+        const price = m.regularMarketPrice;
+        const prev = m.chartPreviousClose ?? m.previousClose ?? price;
+        return { name, price: (group === 'stock' ? '$' : '') + mkFmt(price), chg: prev ? ((price - prev) / prev) * 100 : 0, group } as MkRow;
+      } catch { return null; }
+    }));
+    yahoo.forEach((row) => { if (row) rows.push(row); });
+    if (rows.length) { lastMarketRows = rows; lastMarketAt = Date.now(); }
+    return rows;
+  }
+  const mkRowHtml = (r: MkRow) => {
+    const up = r.chg >= 0; const c = up ? '#3FD79A' : '#FF5C50';
+    return `<div class="mk-row"><span class="mk-name">${r.name}</span><span class="mk-price" data-mk="${r.name}">${r.price}</span><span class="mk-chg" style="color:${c}">${up ? '▲' : '▼'}${Math.abs(r.chg).toFixed(2)}%</span></div>`;
+  };
+  // Sci-fi "decrypt" effect — a changed market value scrambles through
+  // random glyphs for ~0.4s before settling on the real number, so live
+  // updates read as data streaming in rather than silently mutating.
+  const mkPrevVals = new Map<string, string>();
+  function scrambleTo(el: HTMLElement, finalText: string) {
+    const glyphs = '0123456789₪$#%@&';
+    const steps = 8;
+    let i = 0;
+    const iv = setInterval(() => {
+      i++;
+      if (i >= steps || !el.isConnected) { el.textContent = finalText; clearInterval(iv); return; }
+      const reveal = (i / steps) * finalText.length;
+      el.textContent = finalText.split('').map((ch, idx) => (idx < reveal || ch === ',' || ch === '.' ? ch : glyphs[(Math.random() * glyphs.length) | 0])).join('');
+    }, 50);
+  }
+  function scrambleChangedPrices(container: Element) {
+    container.querySelectorAll<HTMLElement>('.mk-price[data-mk]').forEach((el) => {
+      const key = el.dataset.mk || '';
+      const val = el.textContent || '';
+      const prev = mkPrevVals.get(key);
+      mkPrevVals.set(key, val);
+      if (prev !== undefined && prev !== val) scrambleTo(el, val);
+    });
+  }
+  // Quick-access strip to the TRADE platform: live autotrader numbers read
+  // via the trading bridge (direction+confidence, PnL, win rate, bots,
+  // open positions) with a one-tap link to the full platform.
+  function tradeStripHtml(): string {
+    const openLink = `<a class="mk-trade-open" href="${TRADE_URL}" target="_blank" rel="noopener">פתח TRADE ↗</a>`;
+    const t = readAutotraderState();
+    if (!t) {
+      return `<div class="mk-trade"><div class="mk-trade-foot"><span>📈 פלטפורמת המסחר · אין נתונים חיים במכשיר זה</span>${openLink}</div></div>`;
+    }
+    const pos = readPortfolioPositions();
+    const dir = t.alphaState?.direction || 'NEUTRAL';
+    const dirTxt = dir === 'LONG' ? '📈 LONG' : dir === 'SHORT' ? '📉 SHORT' : '⏸ נייטרלי';
+    const conf = t.alphaState ? ` ${Math.round(t.alphaState.confidence || 0)}%` : '';
+    const pnlC = t.totalPnl >= 0 ? '#3FD79A' : '#FF5C50';
+    return `<div class="mk-trade">
+      <div class="mk-trade-row">
+        <div><b style="color:${pnlC}">${t.totalPnl >= 0 ? '+' : ''}$${Math.round(t.totalPnl).toLocaleString('en-US')}</b><span>PnL</span></div>
+        <div><b>${Math.round(t.fleetWinRate)}%</b><span>הצלחה</span></div>
+        <div><b>${t.activeBots.length}</b><span>בוטים</span></div>
+        <div><b>${dirTxt}${conf}</b><span>כיוון</span></div>
+      </div>
+      <div class="mk-trade-foot"><span>${pos.length} פוזיציות פתוחות · ${t.totalTrades} עסקאות</span>${openLink}</div>
+    </div>`;
+  }
+  // The panel itself expands/collapses in place on tap: collapsed shows a
+  // mixed taste of each group; expanded shows the full board under group
+  // headers (crypto / indices+commodities / stocks).
+  let mkExpanded = false;
+  const MK_GROUPS: ['crypto' | 'index' | 'stock', string][] = [['crypto', 'קריפטו'], ['index', 'מדדים וסחורות'], ['stock', 'מניות']];
+  // ── Physicality engine: the 2D panels ride the screen glass. Mouse (or
+  // phone tilt via gyroscope) nudges the side panels a few px opposite the
+  // pointer, selling the illusion that the UI floats in front of the 3D
+  // space behind it. rAF-throttled CSS vars; skipped for reduced-motion.
+  function startParallax() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const root = document.body;
+    let tx = 0; let ty = 0; let raf = 0;
+    const apply = () => {
+      raf = 0;
+      root.style.setProperty('--par-x', tx.toFixed(3));
+      root.style.setProperty('--par-y', ty.toFixed(3));
+    };
+    const queue = () => { if (!raf) raf = requestAnimationFrame(apply); };
+    window.addEventListener('pointermove', (e) => {
+      tx = (e.clientX / innerWidth) * 2 - 1;
+      ty = (e.clientY / innerHeight) * 2 - 1;
+      queue();
+    }, { passive: true });
+    // phone tilt — same vars from the gyroscope where available
+    window.addEventListener('deviceorientation', (e) => {
+      if (e.gamma == null || e.beta == null) return;
+      tx = Math.max(-1, Math.min(1, e.gamma / 30));
+      ty = Math.max(-1, Math.min(1, (e.beta - 45) / 30));
+      queue();
+    }, { passive: true });
+  }
+
+  // ── Cinematic boot sequence — chained onto the intro's 'revealed' class.
+  // Darkness → neural grid → the robot materializes (scale+glow) → panels
+  // lock in with ping rings + header text de-scrambling → gold sync pulse
+  // and a 1s robot calibration surge. Pure CSS classes staged from here.
+  function runBootSequence() {
+    const body = document.body;
+    if (body.classList.contains('boot-done')) return;
+    const start = () => {
+      if (body.classList.contains('boot-run')) return;
+      body.classList.add('boot-run');
+      document.querySelectorAll<HTMLElement>('.hud-card').forEach((c, i) => c.style.setProperty('--bi', String(i % 5)));
+      const veil = document.createElement('div');
+      veil.className = 'boot-veil';
+      body.appendChild(veil);
+      // Low power-up hum — only audible when the intro's click/keypress
+      // already unlocked audio; otherwise silently skipped.
+      try {
+        const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
+        const actx = new AC();
+        if (actx.state === 'running') {
+          const o = actx.createOscillator(); const g = actx.createGain();
+          o.type = 'sine';
+          o.frequency.setValueAtTime(46, actx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(110, actx.currentTime + 1.6);
+          g.gain.setValueAtTime(0.0001, actx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.05, actx.currentTime + 0.5);
+          g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 1.9);
+          o.connect(g); g.connect(actx.destination);
+          o.start(); o.stop(actx.currentTime + 2);
+          setTimeout(() => { try { actx.close(); } catch {} }, 2500);
+        } else { try { actx.close(); } catch {} }
+      } catch {}
+      setTimeout(() => veil.classList.add('grid'), 500);                                    // stage 1
+      setTimeout(() => { body.classList.add('boot-mat'); veil.classList.add('fade'); }, 1400); // stage 2
+      setTimeout(() => {                                                                    // stage 3
+        body.classList.add('boot-lock');
+        document.querySelectorAll<HTMLElement>('.hud-card-h span').forEach((el, i) => {
+          const txt = el.textContent || '';
+          if (txt) setTimeout(() => scrambleTo(el, txt), i * 90);
+        });
+      }, 2000);
+      setTimeout(() => {                                                                    // online
+        body.classList.add('boot-online');
+        try { orb.setEnergy(0.9); setTimeout(() => orb.setEnergy(0.2), 1000); } catch {}
+        veil.remove();
+        setTimeout(() => { body.classList.remove('boot-run', 'boot-mat', 'boot-lock', 'boot-online'); body.classList.add('boot-done'); }, 1700);
+      }, 3300);
+    };
+    if (body.classList.contains('revealed')) { start(); return; }
+    const mo = new MutationObserver(() => {
+      if (body.classList.contains('revealed')) { mo.disconnect(); start(); }
+    });
+    mo.observe(body, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  // ── Orbital radial menu — the hud-rail destinations orbiting the robot.
+  // Cloned from #hudRail so the two menus can never drift apart; clicking a
+  // ring item triggers the original rail entry (same handlers/links).
+  function buildOrbitalMenu() {
+    const menu = document.getElementById('orbMenu');
+    const rail = document.getElementById('hudRail');
+    if (!menu || !rail || menu.children.length) return;
+    const items = Array.from(rail.children) as HTMLElement[];
+    const n = items.length || 1;
+    items.forEach((src, i) => {
+      // Crown arc over the robot (-160°..-20°): the bottom stays clear of
+      // the reply panel, dock and menu trigger no matter the screen size.
+      const a = n > 1 ? -160 + (140 / (n - 1)) * i : -90;
+      const wrap = document.createElement('div');
+      wrap.className = 'orbm-item';
+      wrap.style.setProperty('--a', a + 'deg');
+      const btn = document.createElement('button');
+      btn.className = 'orbm-in';
+      btn.type = 'button';
+      btn.style.setProperty('--a', a + 'deg');
+      const label = (src.querySelector('span')?.textContent || '').split('·')[0].trim();
+      btn.innerHTML = `<i class="orbm-ic">${src.querySelector('svg')?.outerHTML || ''}</i><b>${label}</b>`;
+      btn.onclick = () => src.click();
+      btn.onmouseenter = () => menu.classList.add('paused');
+      btn.onmouseleave = () => menu.classList.remove('paused');
+      wrap.style.setProperty('--i', String(i));
+      wrap.appendChild(btn);
+      menu.appendChild(wrap);
+    });
+    // Contextual reveal — the ring stays collapsed inside the core until the
+    // ALPHA MENU trigger under the robot is hovered or clicked; clicking
+    // anywhere else folds it back in (zero-clutter default).
+    const tag = document.querySelector('.hud-core-tag') as HTMLElement | null;
+    if (tag) {
+      tag.textContent = '✦ ALPHA MENU';
+      const open = (v: boolean) => menu.classList.toggle('open', v);
+      tag.addEventListener('click', (e) => { e.stopPropagation(); open(!menu.classList.contains('open')); });
+      tag.addEventListener('mouseenter', () => open(true));
+      document.addEventListener('click', (e) => {
+        const t = e.target as Node;
+        if (!menu.contains(t) && t !== tag) open(false);
+      });
+    }
+  }
+
+  // ── Background FX layer — stars, comets, constellation data-streams and a
+  // soft aurora on a 2D canvas above the orb scene (additive, transparent).
+  // Cheap: one canvas, a few hundred draw ops, paused when the tab hides,
+  // skipped entirely for reduced-motion users.
+  function startBgFx() {
+    const cvs = document.getElementById('bgfx') as HTMLCanvasElement | null;
+    if (!cvs || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const ctx = cvs.getContext('2d');
+    if (!ctx) return;
+    let W = 0; let H = 0;
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      W = cvs.width = Math.round(innerWidth * dpr);
+      H = cvs.height = Math.round(innerHeight * dpr);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    const mobile = innerWidth < 860;
+    // In the lightweight orb mode we still want the flow current (it is the
+    // platform's signature ambience) but none of the heavier constellation
+    // layers — emptying their arrays makes the existing draw loops no-ops.
+    const FLOW_ONLY = ORB_MINIMAL;
+    const R = (a: number, b: number) => a + Math.random() * (b - a);
+    const stars = Array.from({ length: FLOW_ONLY ? 0 : (mobile ? 40 : 85) }, () => ({ x: Math.random(), y: Math.random(), r: R(0.4, 1.5), p: R(0, 7), s: R(0.002, 0.012) }));
+    const nodes = Array.from({ length: FLOW_ONLY ? 0 : (mobile ? 11 : 22) }, () => ({ x: Math.random(), y: Math.random(), vx: R(-0.012, 0.012), vy: R(-0.009, 0.009) }));
+    const pulses: { a: number; b: number; t: number; v: number }[] = [];
+    // ── flow field, ported from the NeuroSomatic engine: particles ride a
+    // sin/cos vector field, drift, decay and respawn. Same maths, tuned to
+    // Alpha's gold/cyan palette so it reads as the platform's own current. ──
+    type FlowP = { x: number; y: number; vx: number; vy: number; age: number; sp: number; hue: number };
+    const FLOW_N = FLOW_ONLY ? (mobile ? 190 : 430) : (mobile ? 260 : 620);
+    const flow: FlowP[] = Array.from({ length: FLOW_N }, () => ({
+      x: Math.random(), y: Math.random(), vx: 0, vy: 0,
+      age: Math.random() * 200, sp: R(0.5, 1.5), hue: R(-18, 26),
+    }));
+    let flowT = 0;
+    // Data-driven nebula: market volatility (__mktVol 0..1) scales the
+    // aurora and the pulse rate; a data refresh fires __bgfxPulse → the
+    // mesh visibly surges and the nodes vibrate for a moment.
+    let burst = 0;
+    (window as any).__bgfxPulse = () => { burst = 1; };
+    let comet: { x: number; y: number; vx: number; vy: number; life: number } | null = null;
+    let nextComet = FLOW_ONLY ? Infinity : R(2, 6);
+    const auroras = [0, 1, 2].map((i) => ({ cx: 0.2 + i * 0.3, cy: 0.25 + (i % 2) * 0.4, r: R(0.24, 0.4), hue: i === 1 ? '46,230,255' : '228,188,99', ph: R(0, 7) }));
+    let last = performance.now();
+    const tick = (now: number) => {
+      requestAnimationFrame(tick);
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (document.hidden || !W) return;
+      ctx.clearRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'lighter';
+      // ── flow current (drawn first so the constellation stays on top) ──
+      flowT += 0.0042;
+      const FQ = 2.6, AMP = 5.2, INT = 0.55 + burst * 0.5;
+      for (const f of flow) {
+        const ang = (Math.sin(f.x * FQ * 6.2 + flowT) + Math.cos(f.y * FQ * 6.2 + flowT)) * Math.PI * INT * AMP;
+        f.vx += Math.cos(ang) * 0.00028;
+        f.vy += Math.sin(ang) * 0.00028;
+        f.x += f.vx * f.sp; f.y += f.vy * f.sp;
+        f.vx *= 0.94; f.vy *= 0.94;
+        f.age += 0.5;
+        if (f.x < 0 || f.x > 1 || f.y < 0 || f.y > 1 || f.age > 200) {
+          f.x = Math.random(); f.y = Math.random(); f.vx = 0; f.vy = 0; f.age = 0;
+        }
+        const a = Math.min(1, (200 - f.age) / 60) * (0.28 + burst * 0.3);
+        ctx.fillStyle = `hsla(${(42 + f.hue + Math.sin(flowT) * 14 + 360) % 360}, 82%, 62%, ${a})`;
+        ctx.fillRect(f.x * W, f.y * H, 1.4, 1.4);
+      }
+      const t = now / 1000;
+      const vol = Math.min(1, Number((window as any).__mktVol) || 0);
+      if (burst > 0) burst = Math.max(0, burst - dt * 0.6);
+      // aurora — three huge soft blobs drifting in slow circles, glowing
+      // brighter when the markets run hot
+      auroras.forEach((a) => {
+        const cx = (a.cx + Math.sin(t * 0.05 + a.ph) * 0.06) * W;
+        const cy = (a.cy + Math.cos(t * 0.04 + a.ph) * 0.05) * H;
+        const rad = a.r * Math.max(W, H);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+        g.addColorStop(0, `rgba(${a.hue},${(0.05 + 0.02 * Math.sin(t * 0.3 + a.ph)) * (1 + vol * 0.9 + burst * 0.6)})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+      });
+      // constellation nodes + links + data pulses
+      nodes.forEach((nd) => {
+        nd.x = (nd.x + nd.vx * dt + 1) % 1;
+        nd.y = (nd.y + nd.vy * dt + 1) % 1;
+      });
+      const LINK = mobile ? 0.16 : 0.13;
+      ctx.lineWidth = Math.max(1, W / 1900);
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x; const dy = nodes[i].y - nodes[j].y;
+          const d = Math.hypot(dx, dy * (H / W));
+          if (d < LINK) {
+            ctx.strokeStyle = `rgba(228,188,99,${0.14 * (1 - d / LINK)})`;
+            ctx.beginPath();
+            ctx.moveTo(nodes[i].x * W, nodes[i].y * H);
+            ctx.lineTo(nodes[j].x * W, nodes[j].y * H);
+            ctx.stroke();
+            if (pulses.length < 8 && Math.random() < 0.002 + vol * 0.004 + burst * 0.02) pulses.push({ a: i, b: j, t: 0, v: R(0.5, 1.1) });
+          }
+        }
+        ctx.fillStyle = 'rgba(247,232,192,.5)';
+        ctx.beginPath();
+        const jit = burst * 2.2; // nodes vibrate on a data surge
+        ctx.arc(nodes[i].x * W + (jit ? (Math.random() - 0.5) * jit : 0), nodes[i].y * H + (jit ? (Math.random() - 0.5) * jit : 0), Math.max(1, W / 1500) * (1 + burst * 0.7), 0, 7);
+        ctx.fill();
+      }
+      for (let k = pulses.length - 1; k >= 0; k--) {
+        const p = pulses[k];
+        p.t += p.v * dt;
+        if (p.t >= 1) { pulses.splice(k, 1); continue; }
+        const A = nodes[p.a]; const B = nodes[p.b];
+        const px = (A.x + (B.x - A.x) * p.t) * W;
+        const py = (A.y + (B.y - A.y) * p.t) * H;
+        ctx.fillStyle = 'rgba(46,230,255,.85)';
+        ctx.beginPath();
+        ctx.arc(px, py, Math.max(1.6, W / 900), 0, 7);
+        ctx.fill();
+      }
+      // twinkling stars
+      stars.forEach((st) => {
+        st.y = (st.y + st.s * dt) % 1;
+        const a = 0.25 + 0.55 * Math.abs(Math.sin(t * 1.8 + st.p));
+        ctx.fillStyle = `rgba(247,232,192,${a})`;
+        ctx.beginPath();
+        ctx.arc(st.x * W, st.y * H, st.r * (W / 1600), 0, 7);
+        ctx.fill();
+      });
+      // shooting star every few seconds
+      nextComet -= dt;
+      if (!comet && nextComet <= 0) {
+        comet = { x: R(0.1, 0.9) * W, y: R(0, 0.25) * H, vx: R(-0.5, 0.5) * W, vy: R(0.25, 0.45) * H, life: 1 };
+        nextComet = R(4, 9);
+      }
+      if (comet) {
+        comet.x += comet.vx * dt; comet.y += comet.vy * dt; comet.life -= dt * 0.9;
+        if (comet.life <= 0) { comet = null; } else {
+          const tail = 0.12;
+          const g = ctx.createLinearGradient(comet.x - comet.vx * tail, comet.y - comet.vy * tail, comet.x, comet.y);
+          g.addColorStop(0, 'rgba(228,188,99,0)');
+          g.addColorStop(1, `rgba(255,240,200,${0.8 * comet.life})`);
+          ctx.strokeStyle = g;
+          ctx.lineWidth = Math.max(1.4, W / 1100);
+          ctx.beginPath();
+          ctx.moveTo(comet.x - comet.vx * tail, comet.y - comet.vy * tail);
+          ctx.lineTo(comet.x, comet.y);
+          ctx.stroke();
+        }
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    };
+    requestAnimationFrame(tick);
+  }
+
+  function renderMarketsBody(rows: MkRow[]) {
+    // Market-stress read: the average absolute 24h move across the board
+    // drives the 'storm mode' UI state (high-contrast red accents before
+    // you even ask) and the background nebula's intensity + pulse rate.
+    if (rows.length) {
+      const vol = rows.reduce((sum, r) => sum + Math.min(10, Math.abs(r.chg)), 0) / rows.length;
+      (window as any).__mktVol = Math.min(1, vol / 5);
+      document.body.classList.toggle('mkt-storm', vol >= 3.2);
+      (window as any).__bgfxPulse?.();
+    }
+    // Live holographic BTC tag beside the robot (decrypt-scrambles on change).
+    const btc = rows.find((r) => r.name === 'Bitcoin');
+    const holoVal = document.getElementById('holoBtcVal');
+    const holoTag = document.getElementById('holoBtc');
+    if (btc && holoVal && holoTag) {
+      (holoTag as HTMLElement).hidden = false;
+      if (holoVal.textContent !== btc.price) scrambleTo(holoVal as HTMLElement, btc.price);
+    }
+    const el = document.querySelector('#hudMarkets .hud-card-body');
+    if (!el) return;
+    const strip = tradeStripHtml();
+    if (!rows.length) { el.innerHTML = strip + '<div class="hud-empty">שווקים לא זמינים כרגע</div>'; return; }
+    if (mkExpanded) {
+      const sections = MK_GROUPS.map(([g, title]) => {
+        const rs = rows.filter((r) => r.group === g);
+        return rs.length ? `<div class="mk-sec">${title}</div>` + rs.map(mkRowHtml).join('') : '';
+      }).join('');
+      el.innerHTML = strip + sections + '<div class="mk-more">לחץ לצמצום ⌃</div>';
+      scrambleChangedPrices(el);
+    } else {
+      const pick = [
+        ...rows.filter((r) => r.group === 'crypto').slice(0, 2),
+        ...rows.filter((r) => r.group === 'index').slice(0, 2),
+        ...rows.filter((r) => r.group === 'stock').slice(0, 2),
+      ];
+      el.innerHTML = strip + (pick.length ? pick : rows.slice(0, 6)).map(mkRowHtml).join('') + '<div class="mk-more">לחץ להרחבת כל השווקים ⌄</div>';
+      scrambleChangedPrices(el);
+    }
+  }
+  async function renderMarkets() {
+    // Fresh-enough cache renders instantly (e.g. on expand/collapse taps).
+    if (Date.now() - lastMarketAt < 55000 && lastMarketRows.length) { renderMarketsBody(lastMarketRows); return; }
+    renderMarketsBody(lastMarketRows);
+    renderMarketsBody(await fetchMarketRows());
+  }
+  function toggleMarketsPanel(e: Event) {
+    if ((e.target as HTMLElement).closest('a')) return; // links keep working
+    mkExpanded = !mkExpanded;
+    renderMarketsBody(lastMarketRows);
+  }
+
+  // ── Israel news panel ──────────────────────────────────────────────
+  // rss2json's free anonymous tier is rate-limited and often just fails
+  // (this was showing "חדשות לא זמינות" almost permanently), so this now
+  // falls back to fetching the raw RSS XML through a CORS proxy and
+  // parsing it client-side, trying a couple of Israeli news feeds in turn
+  // before giving up. Refreshed every 5 minutes (well inside "hourly").
+  const NEWS_SOURCES = [
+    'https://www.ynet.co.il/Integration/StoryRss2.xml',
+    'https://rss.walla.co.il/feed/1',
+  ];
+  function newsRowsHtml(items: { title: string; link: string }[]) {
+    return items.slice(0, 6).map((it) => {
+      const href = /^https?:\/\//i.test(it.link || '') ? it.link : '#';
+      return `<a class="nw-row" href="${escHtml(href)}" target="_blank" rel="noopener"><span class="nw-dot"></span><span class="nw-t">${escHtml(it.title || '')}</span></a>`;
+    }).join('');
+  }
+  async function fetchRssViaJsonProxy(rssUrl: string): Promise<{ title: string; link: string }[]> {
+    try {
+      const r = await fetch('https://api.rss2json.com/v1/api.json?count=6&rss_url=' + encodeURIComponent(rssUrl), { signal: AbortSignal.timeout(6000) });
+      const d = await r.json();
+      if (d.status === 'ok' && d.items && d.items.length) return d.items.map((it: any) => ({ title: it.title, link: it.link }));
+    } catch {}
+    return [];
+  }
+  async function fetchRssViaCorsProxy(rssUrl: string): Promise<{ title: string; link: string }[]> {
+    try {
+      const r = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(rssUrl), { signal: AbortSignal.timeout(8000) });
+      const xml = await r.text();
+      const doc = new DOMParser().parseFromString(xml, 'text/xml');
+      return [...doc.querySelectorAll('item')].map((it) => ({
+        title: it.querySelector('title')?.textContent || '',
+        link: it.querySelector('link')?.textContent || '#',
+      })).filter((it) => it.title);
+    } catch {}
+    return [];
+  }
+  async function renderNews() {
+    const el = document.querySelector('#hudNews .hud-card-body');
+    if (!el) return;
+    for (const src of NEWS_SOURCES) {
+      let items = await fetchRssViaJsonProxy(src);
+      if (!items.length) items = await fetchRssViaCorsProxy(src);
+      if (items.length) { el.innerHTML = newsRowsHtml(items); return; }
+    }
+    el.innerHTML = '<div class="hud-empty">חדשות לא זמינות כרגע</div>';
+  }
+
+  // ── The four side panels: today's agenda, open personal tasks, live agent
+  // activity from the Agents Command Center (same localStorage the agents
+  // app writes), and real Tel-Aviv weather (open-meteo, free, no key). ──
+  const esc = (s: string) => String(s || '').replace(/</g, '&lt;');
+  function renderAgendaPanel() {
+    const el = document.querySelector('#hudAgenda .hud-card-body');
+    if (!el) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const ev = loadEvents().filter((e) => e.date >= today).slice(0, 3);
+    el.innerHTML = ev.length
+      ? ev.map((e) => `<div class="hud-stat"><span>${esc(e.title).slice(0, 26)}</span><b class="cy" style="font-size:12px">${e.date === today ? (e.time || 'היום') : e.date.slice(5).split('-').reverse().join('/')}</b></div>`).join('')
+      : '<div class="hud-empty">אין אירועים קרובים · אמור "קבע פגישה"</div>';
+  }
+  function renderTasksPanel() {
+    const el = document.querySelector('#hudTasksPanel .hud-card-body');
+    if (!el) return;
+    const open = loadTasks().filter((t) => !t.done);
+    const top = [...open].sort((a, b) => (a.priority === 'high' ? -1 : 1) - (b.priority === 'high' ? -1 : 1)).slice(0, 3);
+    el.innerHTML = top.length
+      ? top.map((t) => `<div class="hud-stat"><span>${t.priority === 'high' ? '🔥 ' : ''}${esc(t.text).slice(0, 28)}</span></div>`).join('') +
+        (open.length > 3 ? `<div class="hud-foot">+${open.length - 3} נוספות</div>` : '')
+      : '<div class="hud-empty">אין משימות פתוחות 🎉</div>';
+  }
+  const AGENT_NAMES: Record<string, string> = { ceo: 'יהודה', sales: 'זבולון', ops: 'גד', cmo: 'נפתלי', dev: 'דן', auto: 'אשר', data: 'יששכר', cs: 'בנימין', finance: 'ראובן', procure: 'שמעון', legal: 'לוי', growth: 'יוסף', facilities: 'דבורה' };
+  function renderTeamPanel() {
+    const el = document.querySelector('#hudTeamPanel .hud-card-body');
+    if (!el) return;
+    let acts: any[] = [];
+    try { acts = JSON.parse(localStorage.getItem('alpha:agents:activity') || '[]') || []; } catch {}
+    const top = acts.slice(0, 3);
+    el.innerHTML = top.length
+      ? top.map((a) => `<div class="hud-stat"><span><b style="font-size:11px;color:#E4BC63">${AGENT_NAMES[a.agentId] || ''}</b> · ${esc(a.text).slice(0, 30)}</span></div>`).join('') +
+        '<div class="hud-foot">לחץ למרכז הסוכנים ↗</div>'
+      : '<div class="hud-empty">פתח את מרכז הסוכנים כדי להתחיל</div>';
+  }
+  const WMO: Record<number, string> = { 0: '☀️ בהיר', 1: '🌤️ בהיר בעיקר', 2: '⛅ מעונן חלקית', 3: '☁️ מעונן', 45: '🌫️ ערפל', 48: '🌫️ ערפל', 51: '🌦️ טפטוף', 53: '🌦️ טפטוף', 61: '🌧️ גשם קל', 63: '🌧️ גשם', 65: '🌧️ גשם חזק', 80: '🌦️ ממטרים', 95: '⛈️ סופת רעמים' };
+  async function renderWeatherPanel() {
+    const el = document.querySelector('#hudWeather .hud-card-body');
+    if (!el) return;
+    try {
+      const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=32.08&longitude=34.78&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=Asia%2FJerusalem&forecast_days=1', { signal: AbortSignal.timeout(7000) });
+      const d = await r.json();
+      const c = d.current;
+      el.innerHTML = `
+        <div class="hud-stat"><span>${WMO[c.weather_code] || '🌡️'}</span><b>${Math.round(c.temperature_2m)}°</b></div>
+        <div class="hud-stat"><span>טווח היום</span><b class="cy" style="font-size:13px">${Math.round(d.daily.temperature_2m_min[0])}°–${Math.round(d.daily.temperature_2m_max[0])}°</b></div>
+        <div class="hud-foot">תל אביב · רוח ${Math.round(c.wind_speed_10m)} קמ"ש</div>`;
+    } catch {
+      el.innerHTML = '<div class="hud-empty">מזג אוויר לא זמין כרגע</div>';
+    }
+  }
+  // "קרה היום בעבר" — real historical events for today's month/day, from
+  // Wikipedia's free/keyless On This Day API (same "free public API, real
+  // data, no key" pattern as the weather/markets/news cards above — nothing
+  // here is invented). Cached per calendar date in localStorage so this
+  // only ever hits the network once a day, not on every HUD refresh tick;
+  // Hebrew Wikipedia first (matches the app), falling back to English if
+  // the Hebrew edition has nothing for the date.
+  async function fetchOnThisDay(mm: string, dd: string): Promise<{ year: string; text: string }[]> {
+    for (const lang of ['he', 'en']) {
+      try {
+        const r = await fetch(`https://${lang}.wikipedia.org/api/rest_v1/feed/onthisday/events/${mm}/${dd}`, { signal: AbortSignal.timeout(8000) });
+        if (!r.ok) continue;
+        const d = await r.json();
+        const events = (d.events || []) as { year: number; text: string }[];
+        if (events.length > 0) return events.slice(0, 3).map((e) => ({ year: String(e.year), text: e.text }));
+      } catch { /* try the next language / fall through to the empty-state below */ }
+    }
+    return [];
+  }
+  async function renderOnThisDayPanel() {
+    const el = document.querySelector('#hudOnThisDay .hud-card-body');
+    if (!el) return;
+    const today = new Date();
+    const dateKey = today.toISOString().slice(0, 10);
+    const CACHE_KEY = 'alpha:onthisday';
+    let cached: { date: string; events: { year: string; text: string }[] } | null = null;
+    try { cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch {}
+    let events = cached && cached.date === dateKey ? cached.events : null;
+    if (!events) {
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      events = await fetchOnThisDay(mm, dd);
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ date: dateKey, events })); } catch {}
+    }
+    el.innerHTML = events.length
+      ? events.map((e) => `<div class="hud-stat hud-otd-row"><b class="cy" style="font-size:12px">${esc(e.year)}</b><span>${esc(e.text).slice(0, 90)}</span></div>`).join('') +
+        '<div class="hud-foot">ויקיפדיה · קרה היום בעבר</div>'
+      : '<div class="hud-empty">לא נמצאו אירועים להיום כרגע</div>';
+  }
+
+  // ════════ Fleet & Operations Control Center ════════
+  // One window, five panels: map of installs, trips/fleet, HeavyGuard tasks,
+  // installs awaiting scheduling, and a live rotating-DNA effect.
+  const escHtml = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+  const readTrips = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:trips') || '[]') || []; } catch { return []; } };
+  const writeTrips = (a: any[]) => { try { localStorage.setItem('hg2:trips', JSON.stringify(a)); } catch {} puterSync.scheduleSync?.(); };
+  // Heavy Guard's registered address (also on every invoice/quote) — every
+  // trip is a round trip that starts and ends here, so km can be derived
+  // from the daily install report instead of typed in by hand each time.
+  const HQ_LABEL = 'דן 7, ראשל"צ';
+  const HQ_GEO_KEY = 'ראשון לציון';
+  // Straight-line (haversine) distance undercounts real road km, so a fixed
+  // factor approximates actual driving distance for a rough, automatic figure.
+  const ROAD_FACTOR = 1.3;
+  function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+    const R = 6371;
+    const dLat = (b.lat - a.lat) * Math.PI / 180, dLng = (b.lng - a.lng) * Math.PI / 180;
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+  }
+  function resolveGeo(loc: string): { lat: number; lng: number } | null {
+    const k = (loc || '').trim();
+    if (!k) return null;
+    if (FLEET_GEO[k]) return FLEET_GEO[k];
+    for (const key of Object.keys(FLEET_GEO)) { if (k.includes(key) || key.includes(k)) return FLEET_GEO[key]; }
+    return null;
+  }
+  // Round-trip km from HQ to a reported location and back — null when the
+  // location doesn't resolve to a known city, so callers can fall back to
+  // manual entry instead of showing a made-up number.
+  function roundTripKm(loc: string): number | null {
+    const hq = FLEET_GEO[HQ_GEO_KEY], g = resolveGeo(loc);
+    if (!hq || !g) return null;
+    return Math.round(haversineKm(hq, g) * 2 * ROAD_FACTOR * 10) / 10;
+  }
+  // Turns the daily install report (hg2:index — every "onHgReport" voice/chat
+  // entry, each with its own location + date) into fleet trips: one round
+  // trip HQ→location→HQ per reported day+location that isn't already logged,
+  // with km computed automatically instead of typed in by hand.
+  function syncTripsFromDailyReport(): number {
+    const idx = readIdx();
+    const trips = readTrips();
+    const existing = new Set(trips.map((t: any) => `${t.date}|${t.to}`));
+    let added = 0;
+    idx.forEach((r: any) => {
+      const loc = (r.location || '').trim(), date = r.date || '';
+      if (!loc || !date) return;
+      const key = `${date}|${loc}`;
+      if (existing.has(key)) return;
+      const km = roundTripKm(loc);
+      if (km == null) return;
+      trips.unshift({ id: 'auto-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), from: HQ_LABEL, to: loc, date, km, note: 'מהדיווח היומי · הלוך ושוב' });
+      existing.add(key);
+      added++;
+    });
+    if (added) writeTrips(trips);
+    return added;
+  }
+  const readIdx = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:index') || '[]') || []; } catch { return []; } };
+  const readTasks = (): any[] => { try { return JSON.parse(localStorage.getItem('hg2:tasks') || '[]') || []; } catch { return []; } };
+  const writeTasks = (a: any[]) => { try { localStorage.setItem('hg2:tasks', JSON.stringify(a)); } catch {} puterSync.scheduleSync?.(); };
+  const wazeUrl = (to: string) => `https://waze.com/ul?q=${encodeURIComponent(to || '')}&navigate=yes`;
+
+  // Israeli location → coordinates (mirrors the HeavyGuard map table) for plotting installs.
+  const FLEET_GEO: Record<string, { lat: number; lng: number; city: string }> = {"xcmg אשקלון":{lat:31.668,lng:34.574,city:"אשקלון"},"אופקים":{lat:31.317,lng:34.62,city:"אופקים"},"אחיסמך":{lat:31.931,lng:34.918,city:"אחיסמך"},"אל סייד":{lat:31.3,lng:34.86,city:"אל סייד"},"אמקול":{lat:31.792,lng:34.65,city:"אשדוד"},"אשדוד":{lat:31.792,lng:34.65,city:"אשדוד"},"אשקלון":{lat:31.668,lng:34.574,city:"אשקלון"},"באר טוביה":{lat:31.738,lng:34.722,city:"באר טוביה"},"באר שבע":{lat:31.252,lng:34.791,city:"באר שבע"},"בית נחמיה":{lat:31.952,lng:34.953,city:"בית נחמיה"},"בית שמש":{lat:31.745,lng:34.987,city:"בית שמש"},"ביתר עלית":{lat:31.696,lng:35.117,city:"ביתר עלית"},"בני עייש":{lat:31.788,lng:34.74,city:"בני עייש"},"בני ראם":{lat:31.742,lng:34.782,city:"בני ראם"},"בר גיורא":{lat:31.731,lng:35.052,city:"בר גיורא"},"גבעת ברנר":{lat:31.866,lng:34.795,city:"גבעת ברנר"},"גבעת כוח":{lat:31.96,lng:34.952,city:"גבעת כוח"},"גן יבנה":{lat:31.789,lng:34.706,city:"גן יבנה"},"חולון":{lat:32.015,lng:34.779,city:"חולון"},"חולון קטרפילר":{lat:32.015,lng:34.779,city:"חולון"},"חיפה":{lat:32.794,lng:34.989,city:"חיפה"},"טייבה":{lat:32.266,lng:35.01,city:"טייבה"},"טירה":{lat:32.234,lng:34.951,city:"טירה"},"יבנה":{lat:31.878,lng:34.739,city:"יבנה"},"יפו":{lat:32.052,lng:34.752,city:"יפו"},"ירושלים":{lat:31.768,lng:35.214,city:"ירושלים"},"כסייפה":{lat:31.24,lng:35.12,city:"כסייפה"},"כפר קאסם":{lat:32.115,lng:34.977,city:"כפר קאסם"},"כרמיאל":{lat:32.916,lng:35.292,city:"כרמיאל"},"מבשרת ציון":{lat:31.799,lng:35.15,city:"מבשרת ציון"},"מודיעין":{lat:31.898,lng:35.01,city:"מודיעין"},"מודיעין עלית":{lat:31.93,lng:35.04,city:"מודיעין עלית"},"מנוחה":{lat:31.59,lng:34.74,city:"מנוחה"},"מסמיה":{lat:31.78,lng:34.8,city:"מסמיה"},"מצליח":{lat:31.91,lng:34.85,city:"מצליח"},"נס ציונה":{lat:31.929,lng:34.798,city:"נס ציונה"},"נען":{lat:31.885,lng:34.855,city:"נען"},"נתיבות":{lat:31.422,lng:34.588,city:"נתיבות"},"עד הלום":{lat:31.792,lng:34.65,city:"אשדוד"},"עכו":{lat:32.928,lng:35.075,city:"עכו"},"ערוגות":{lat:31.73,lng:34.74,city:"ערוגות"},"פרדס חנה":{lat:32.474,lng:34.974,city:"פרדס חנה"},"פתח תקווה":{lat:32.087,lng:34.887,city:"פתח תקווה"},"צריפין":{lat:31.95,lng:34.83,city:"צריפין"},"קטרפילר":{lat:31.252,lng:34.791,city:"באר שבע"},"קטרפילר באר שבע":{lat:31.252,lng:34.791,city:"באר שבע"},"קריית גת":{lat:31.61,lng:34.771,city:"קריית גת"},"קריית מלאכי":{lat:31.731,lng:34.745,city:"קריית מלאכי"},"ראשון  לציון":{lat:31.964,lng:34.805,city:"ראשון לציון"},"ראשון לציון":{lat:31.964,lng:34.805,city:"ראשון לציון"},"רהט":{lat:31.393,lng:34.754,city:"רהט"},"רווחה":{lat:31.6,lng:34.71,city:"רווחה"},"רמלה":{lat:31.928,lng:34.866,city:"רמלה"},"שדרות":{lat:31.525,lng:34.596,city:"שדרות"},"שילת":{lat:31.93,lng:35.02,city:"שילת"},"תל אביב":{lat:32.08,lng:34.781,city:"תל אביב"},"אפקו":{lat:31.898,lng:35.01,city:"מודיעין"},"קייס":{lat:32.015,lng:34.779,city:"חולון"}};
+
+  let leafletPromise: Promise<any> | null = null;
+  function loadLeaflet(): Promise<any> {
+    if ((window as any).L) return Promise.resolve((window as any).L);
+    if (leafletPromise) return leafletPromise;
+    leafletPromise = new Promise((resolve, reject) => {
+      if (!document.getElementById('leaflet-css')) {
+        const link = document.createElement('link');
+        link.id = 'leaflet-css'; link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(link);
+      }
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; s.async = true;
+      s.onload = () => resolve((window as any).L);
+      s.onerror = () => reject(new Error('leaflet load failed'));
+      document.head.appendChild(s);
+    });
+    return leafletPromise;
+  }
+
+  // Live rotating DNA double-helix on a canvas. Returns a stop() for teardown.
+  function startDna(cv: HTMLCanvasElement): () => void {
+    const ctx = cv.getContext('2d'); if (!ctx) return () => {};
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    let raf = 0, t = 0, alive = true;
+    const resize = () => { const r = cv.getBoundingClientRect(); cv.width = Math.max(40, r.width) * dpr; cv.height = Math.max(40, r.height) * dpr; };
+    resize();
+    const frame = () => {
+      if (!alive) return;
+      const W = cv.width, H = cv.height, cx = W / 2, amp = W * 0.27, turns = 2.3, N = 44;
+      ctx.clearRect(0, 0, W, H); t += 0.018;
+      for (let i = 0; i < N; i++) {
+        const p = i / (N - 1), y = p * H, ang = p * Math.PI * 2 * turns + t;
+        const x1 = cx + Math.sin(ang) * amp, x2 = cx + Math.sin(ang + Math.PI) * amp;
+        const z1 = (Math.cos(ang) + 1) / 2, z2 = (Math.cos(ang + Math.PI) + 1) / 2;
+        ctx.strokeStyle = `rgba(228,188,99,${0.08 + 0.14 * Math.abs(Math.sin(ang))})`;
+        ctx.lineWidth = dpr; ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+        ctx.fillStyle = `rgba(247,232,192,${0.35 + 0.5 * z1})`;
+        ctx.beginPath(); ctx.arc(x1, y, (2 + 2 * z1) * dpr, 0, 7); ctx.fill();
+        ctx.fillStyle = `rgba(63,198,255,${0.35 + 0.5 * z2})`;
+        ctx.beginPath(); ctx.arc(x2, y, (2 + 2 * z2) * dpr, 0, 7); ctx.fill();
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    let ro: ResizeObserver | null = null;
+    try { ro = new ResizeObserver(resize); ro.observe(cv); } catch {}
+    frame();
+    return () => { alive = false; cancelAnimationFrame(raf); try { ro?.disconnect(); } catch {} };
+  }
+
+  const tripRowHtml = (t: any) => `
+    <div class="fl-row" data-id="${t.id}">
+      <div class="fl-mid"><b>${escHtml(t.from || '—')} ← ${escHtml(t.to || '—')}</b><span>${t.date || ''}${t.km ? ` · ${t.km} ק"מ` : ''}${t.note ? ' · ' + escHtml(t.note) : ''}</span></div>
+      ${t.to ? `<a class="fl-waze" href="${wazeUrl(t.to)}" target="_blank" rel="noopener">Waze ↗</a>` : ''}
+      <button class="fl-del" data-id="${t.id}">✕</button>
+    </div>`;
+
+  // The real GPS tracker (gps.html, a separate self-contained page) records
+  // its own trips straight from the phone's Geolocation API into hg_trips_v1
+  // — a different log than the manually-added/auto-computed hg2:trips above.
+  // Surfaced here read-only so the fleet window shows actual measured drives
+  // alongside the reported/estimated ones, instead of only living on the
+  // main dashboard's small "latest GPS trip" HUD line.
+  const readGpsTrips = (): any[] => { try { return JSON.parse(localStorage.getItem('hg_trips_v1') || '[]') || []; } catch { return []; } };
+  const gpsTripRowHtml = (t: any) => {
+    const d = t.startedAt ? new Date(t.startedAt) : null;
+    const dateStr = d ? d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+    return `<div class="fl-row">
+      <div class="fl-mid"><b>${Number(t.distanceKm || 0).toFixed(1)} ק"מ</b><span>${dateStr} · ${Math.round(t.avgKmh || 0)} קמ"ש ממוצע${t.synced ? ' · ✓ סונכרן' : ''}</span></div>
+    </div>`;
+  };
+
+  let mapInst: any = null;
+  function renderFleet() {
+    try { winCleanup?.(); } catch {} winCleanup = null;
+    const body = $('winBody');
+    const trips = readTrips().slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const totalKm = trips.reduce((s, t) => s + (Number(t.km) || 0), 0);
+    const idx = readIdx();
+    const today = new Date().toISOString().slice(0, 10);
+    const gpsTrips = readGpsTrips().slice().sort((a: any, b: any) => (b.startedAt || '').localeCompare(a.startedAt || ''));
+    const gpsTotalKm = gpsTrips.reduce((s: number, t: any) => s + (Number(t.distanceKm) || 0), 0);
+    const gpsTotalH = gpsTrips.reduce((s: number, t: any) => s + (Number(t.durationSec) || 0), 0) / 3600;
+
+    // Map points: installs whose location resolves to coordinates, counted per place.
+    const ptCount: Record<string, { g: { lat: number; lng: number; city: string }; n: number }> = {};
+    idx.forEach((x: any) => { const k = (x?.location || '').trim(); const g = FLEET_GEO[k]; if (!g) return; (ptCount[k] = ptCount[k] || { g, n: 0 }).n++; });
+    const geoCount = Object.keys(ptCount).length;
+
+    // Tasks: open tasks for today + undated backlog.
+    const tasks = readTasks().filter((t: any) => !t.done);
+    const dayTasks = tasks.filter((t: any) => t.date === today);
+    const backlog = tasks.filter((t: any) => !t.date);
+    const taskList = [...dayTasks, ...backlog].slice(0, 40);
+    const taskRows = taskList.length
+      ? taskList.map((t: any) => `<label class="ops-task" data-id="${t.id}"><input type="checkbox"/><span>${escHtml(t.title || '')}</span><i>${t.date === today ? 'היום' : (t.date || 'ללא תאריך')}</i></label>`).join('')
+      : '<div class="ops-empty">אין משימות פתוחות 🎉</div>';
+
+    // Unscheduled installs: still running, or no date set.
+    const unsched = idx.filter((x: any) => x && (x.status === 'running' || !x.date)).slice(0, 40);
+    const unschedRows = unsched.length
+      ? unsched.map((x: any) => { const loc = (x.location || '').trim(); return `<div class="ops-urow"><div class="ops-umid"><b>${escHtml(loc || 'ללא מיקום')}</b><span>${escHtml(cName(x.contractor || '') || '')}${x.status === 'running' ? ' · בתהליך' : ' · ללא תאריך'}</span></div>${loc ? `<a class="fl-waze" href="${wazeUrl(loc)}" target="_blank" rel="noopener">Waze ↗</a>` : ''}</div>`; }).join('')
+      : '<div class="ops-empty">אין התקנות הממתינות לתיאום</div>';
+
+    body.innerHTML = `<div class="pad ops-center">
+      <div class="ops-grid">
+        <section class="ops-panel ops-span2">
+          <div class="ops-h">🗺️ מפת התקנות · שטח</div>
+          <div class="ops-map" id="opsMap"></div>
+          <div class="ops-foot">${geoCount} מיקומים · ${idx.length} התקנות סה"כ</div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="ops-h">🚚 ניהול צי · נסיעות</div>
+          <div class="fl-add">
+            <input id="flFrom" placeholder="מאיפה" dir="rtl" value="${escHtml(HQ_LABEL)}"/>
+            <input id="flTo" placeholder="לאן (כתובת / עיר)" dir="rtl"/>
+            <div class="fl-add-row"><input id="flDate" type="date" value="${today}"/><input id="flKm" type="number" placeholder='ק&quot;מ (מחושב אוטומטית)' dir="ltr"/></div>
+            <button id="flAdd">+ הוסף נסיעה</button>
+            <button id="flAutoKm" class="fl-auto" title="מוסיף נסיעת הלוך-חזור מ-${escHtml(HQ_LABEL)} לכל מיקום שדווח היום ועדיין לא נוסף">🧮 חשב קילומטראז' מהדיווח היומי</button>
+          </div>
+          <div class="fl-tot" id="flTot">${trips.length} נסיעות · ${totalKm} ק"מ סה"כ</div>
+          <div class="ops-scroll fl-list" id="flList">${trips.map(tripRowHtml).join('') || '<div class="ops-empty">אין נסיעות עדיין — הוסף ונווט ב-Waze</div>'}</div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="ops-h">🛰️ מעקב GPS · HG Track</div>
+          <div class="fl-tot">${gpsTrips.length} נסיעות נמדדות · ${gpsTotalKm.toFixed(1)} ק"מ · ${gpsTotalH.toFixed(1)} שעות נהיגה</div>
+          <div class="ops-scroll fl-list">${gpsTrips.slice(0, 20).map(gpsTripRowHtml).join('') || '<div class="ops-empty">אין עדיין נסיעות GPS — פתח את המעקב וצא לדרך</div>'}</div>
+          <a class="fl-auto" style="display:block;text-align:center;text-decoration:none;margin-top:8px" href="gps.html" target="_blank" rel="noopener">🛰️ פתח את מעקב הנסיעות</a>
+        </section>
+
+        <section class="ops-panel">
+          <div class="ops-h">✅ משימות HeavyGuard</div>
+          <div class="ops-scroll" id="opsTasks">${taskRows}</div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="ops-h">📅 התקנות לתיאום</div>
+          <div class="ops-scroll">${unschedRows}</div>
+        </section>
+
+        <section class="ops-panel ops-dna-panel ops-span2">
+          <div class="ops-h">⚡ ALPHA · SIGNAL</div>
+          <div class="ops-alpha-hud">
+            <canvas class="ops-alpha-dna-cv" id="opsDna"></canvas>
+            <div class="ops-alpha-signal">
+              <div class="ops-alpha-label">MARKET DIRECTION</div>
+              <div class="ops-alpha-dir neutral" id="opsAlphaDir">LOADING…</div>
+              <div class="ops-alpha-conf-wrap">
+                <div class="ops-alpha-conf"><div class="ops-alpha-conf-bar" id="opsAlphaBar" style="width:0%"></div></div>
+                <div class="ops-alpha-conf-pct" id="opsAlphaConfPct">—</div>
+              </div>
+              <div class="ops-alpha-meta">
+                <div class="ops-alpha-kv"><span>CONFIDENCE</span><b id="opsKvConf">—</b></div>
+                <div class="ops-alpha-kv"><span>MASTERY</span><b id="opsKvMastery">—</b></div>
+                <div class="ops-alpha-kv"><span>WIN RATE</span><b id="opsKvWr">—</b></div>
+                <div class="ops-alpha-kv"><span>NET P&amp;L</span><b id="opsKvPnl">—</b></div>
+              </div>
+              <div class="ops-alpha-bots" id="opsAlphaBots"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="ops-panel ops-span2">
+          <div class="ops-h">📊 פוזיציות פעילות · Poly-Market</div>
+          <div id="opsPositions"><div class="ops-empty">אין חיבור ל-Poly-Market — פתח את האפליקציה באותו דפדפן</div></div>
+        </section>
+      </div>
+    </div>`;
+
+    // ── Trips: add (partial re-render of list, keeps map/DNA alive) ──
+    const refreshTripList = () => {
+      const arr = readTrips().slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const km = arr.reduce((s, t) => s + (Number(t.km) || 0), 0);
+      const list = body.querySelector('#flList'); const tot = body.querySelector('#flTot');
+      if (list) list.innerHTML = arr.map(tripRowHtml).join('') || '<div class="ops-empty">אין נסיעות עדיין — הוסף ונווט ב-Waze</div>';
+      if (tot) tot.textContent = `${arr.length} נסיעות · ${km} ק"מ סה"כ`;
+      bindTripDel();
+    };
+    const bindTripDel = () => body.querySelectorAll('.fl-del').forEach((btn) => (btn as HTMLElement).onclick = () => {
+      const id = (btn as HTMLElement).dataset.id; writeTrips(readTrips().filter((t) => t.id !== id)); refreshTripList();
+    });
+    body.querySelector('#flAdd')?.addEventListener('click', () => {
+      const g = (id: string) => (document.getElementById(id) as HTMLInputElement).value;
+      const to = g('flTo').trim(); if (!to) return;
+      const arr = readTrips();
+      arr.unshift({ id: Date.now().toString(36), from: g('flFrom').trim(), to, date: g('flDate'), km: g('flKm'), note: '' });
+      writeTrips(arr);
+      // "from" stays HQ — every trip is the same round trip, per the owner.
+      (document.getElementById('flTo') as HTMLInputElement).value = '';
+      (document.getElementById('flKm') as HTMLInputElement).value = '';
+      refreshTripList();
+    });
+    bindTripDel();
+    // Auto-fill round-trip km as soon as "to" resolves to a known city —
+    // only while the km field hasn't been hand-edited this session, so a
+    // deliberate manual figure is never silently overwritten.
+    let flKmTouched = false;
+    body.querySelector('#flKm')?.addEventListener('input', () => { flKmTouched = true; });
+    body.querySelector('#flTo')?.addEventListener('input', (e) => {
+      if (flKmTouched) return;
+      const km = roundTripKm((e.target as HTMLInputElement).value);
+      const kmEl = body.querySelector('#flKm') as HTMLInputElement | null;
+      if (kmEl && km != null) kmEl.value = String(km);
+    });
+    body.querySelector('#flAutoKm')?.addEventListener('click', (e) => {
+      const btn = e.currentTarget as HTMLButtonElement;
+      const added = syncTripsFromDailyReport();
+      refreshTripList();
+      const original = btn.textContent;
+      btn.textContent = added > 0 ? `✅ נוספו ${added} נסיעות` : 'הכל כבר מעודכן';
+      setTimeout(() => { btn.textContent = original; }, 2200);
+    });
+
+    // ── Tasks: toggle done in place (no full re-render) ──
+    body.querySelectorAll('.ops-task').forEach((el) => (el as HTMLElement).addEventListener('change', () => {
+      const id = (el as HTMLElement).dataset.id;
+      writeTasks(readTasks().map((t: any) => t.id === id ? { ...t, done: true } : t));
+      el.classList.add('ops-done');
+      setTimeout(() => el.remove(), 350);
+    }));
+
+    // ── DNA animation ──
+    const dnaCv = body.querySelector('#opsDna') as HTMLCanvasElement | null;
+    const dnaStop = dnaCv ? startDna(dnaCv) : null;
+
+    // ── Alpha Signal HUD (Poly-Market trading data) ──
+    const hydrateTradingPanels = () => {
+      const at = readAutotraderState();
+      const positions = readPortfolioPositions();
+
+      // Alpha Signal
+      const dirEl = document.getElementById('opsAlphaDir');
+      const barEl = document.getElementById('opsAlphaBar');
+      const pctEl = document.getElementById('opsAlphaConfPct');
+      const botsEl = document.getElementById('opsAlphaBots');
+      const kvConf = document.getElementById('opsKvConf');
+      const kvMastery = document.getElementById('opsKvMastery');
+      const kvWr = document.getElementById('opsKvWr');
+      const kvPnl = document.getElementById('opsKvPnl');
+
+      if (at?.alphaState && dirEl) {
+        const s = at.alphaState;
+        const dir = s.direction || 'NEUTRAL';
+        dirEl.textContent = dir;
+        dirEl.className = `ops-alpha-dir ${dir.toLowerCase()}`;
+        const conf = Math.max(0, Math.min(100, s.confidence || 0));
+        const barColor = dir === 'LONG' ? '#20c97a' : dir === 'SHORT' ? '#ff4a3e' : '#d4a843';
+        if (barEl) { barEl.style.width = `${conf}%`; barEl.style.background = barColor; }
+        if (pctEl) pctEl.textContent = `${conf.toFixed(0)}%`;
+        if (kvConf) kvConf.textContent = `${conf.toFixed(0)}%`;
+        if (kvMastery) kvMastery.textContent = (s.masteryScore ?? 0).toFixed(1);
+        if (kvWr) kvWr.textContent = `${((s.recentWinRate || 0) * 100).toFixed(1)}%`;
+      } else if (dirEl) {
+        dirEl.textContent = 'NO DATA';
+        dirEl.className = 'ops-alpha-dir neutral';
+      }
+
+      if (at) {
+        const pnl = at.totalPnl;
+        if (kvPnl) { kvPnl.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`; kvPnl.className = pnl >= 0 ? 'pos' : 'neg'; }
+        if (botsEl) {
+          const allBots = Object.keys(at.riskGuard);
+          botsEl.innerHTML = allBots.slice(0, 12).map(name => {
+            const on = !at.riskGuard[name]?.paused;
+            return `<span class="ops-alpha-bot ${on ? 'on' : 'off'}">${escHtml(name)}</span>`;
+          }).join('');
+        }
+      }
+
+      // Positions Panel
+      const posEl = document.getElementById('opsPositions');
+      if (posEl) {
+        if (!positions.length) {
+          posEl.innerHTML = '<div class="ops-empty">אין פוזיציות פתוחות — Poly-Market</div>';
+        } else {
+          posEl.innerHTML = `<div class="ops-pos-grid">${
+            positions.slice(0, 16).map(p => {
+              const sideKey = (p.side || '').toLowerCase();
+              const lev = p.leverage ? `x${p.leverage} · ` : '';
+              const entry = p.entry ? `@ ${p.entry.toLocaleString()}` : '';
+              const typ = p.type ? `[${escHtml(p.type)}]` : '';
+              return `<div class="ops-pos-row">
+                <span class="ops-pos-badge ${escHtml(sideKey)}">${escHtml(p.side)}</span>
+                <div class="ops-pos-mid">
+                  <b>${escHtml(p.symbol)}</b>
+                  <span>${lev}${entry} · ${escHtml(p.wallet)}</span>
+                </div>
+                <span class="ops-pos-tag">${typ}</span>
+              </div>`;
+            }).join('')
+          }${positions.length > 16 ? `<div class="ops-empty" style="grid-column:1/-1">+ ${positions.length - 16} פוזיציות נוספות</div>` : ''}</div>`;
+        }
+      }
+    };
+    hydrateTradingPanels();
+    // Auto-refresh trading data every 30s
+    const tradeTimer = setInterval(hydrateTradingPanels, 30000);
+
+    // ── Map (lazy Leaflet) ──
+    const mapEl = body.querySelector('#opsMap') as HTMLElement | null;
+    if (mapEl) {
+      loadLeaflet().then((L) => {
+        if (!body.querySelector('#opsMap')) return;   // window closed meanwhile
+        // Default view: centered on the actual south-central Israel operating
+        // cluster (where FLEET_GEO's cities sit) at a close-in zoom, instead of
+        // a wide zoom-8 view that shows Gaza/Amman/Cairo before any pins load.
+        mapInst = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([31.72, 34.78], 10);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 }).addTo(mapInst);
+        // Lighter label overlay — legible city/road names without the busy,
+        // foreign-language clutter a full-opacity reference layer produces.
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, opacity: 0.55 }).addTo(mapInst);
+        const pts = Object.values(ptCount);
+        const bounds: any[] = [];
+        pts.forEach(({ g, n }) => {
+          const r = 6 + Math.min(16, n * 2);
+          L.circleMarker([g.lat, g.lng], { radius: r, color: '#E4BC63', weight: 2, fillColor: '#F7E8C0', fillOpacity: 0.55 })
+            .addTo(mapInst).bindTooltip(`${g.city} · ${n} התקנות`, { direction: 'top' });
+          bounds.push([g.lat, g.lng]);
+        });
+        if (bounds.length) { try { mapInst.fitBounds(bounds, { padding: [26, 26], maxZoom: 12 }); } catch {} }
+        setTimeout(() => { try { mapInst?.invalidateSize(); } catch {} }, 120);
+      }).catch(() => { if (mapEl) mapEl.innerHTML = '<div class="ops-empty">מפה לא זמינה (אין רשת)</div>'; });
+    }
+
+    // teardown for this window instance
+    winCleanup = () => { try { dnaStop?.(); } catch {} clearInterval(tradeTimer); if (mapInst) { try { mapInst.remove(); } catch {} mapInst = null; } };
+  }
+  function openFleet() { openWin('מרכז שליטה · צי ומבצעים 🛰️'); renderFleet(); }
+
+  // ── Trade simulator — embedded as an in-app system (like HeavyGuard OS) ──
+  // The site is a separate Render deployment, so it loads in an iframe. If the
+  // host refuses framing, the prominent "open in new tab" button is the fallback.
+  const TRADE_URL = 'https://heavt-guard-simulator-1.onrender.com/';
+  function openTradeSystem() {
+    openWin('מערכת מסחר · TRADE 📈');
+    const body = $('winBody');
+    body.innerHTML = `<div class="sys-embed">
+      <div class="sys-embed-bar">
+        <span>מערכת המסחר שלך — חיה מתוך אלפא</span>
+        <a class="sys-embed-open" href="${TRADE_URL}" target="_blank" rel="noopener">פתח בלשונית ↗</a>
+      </div>
+      <div class="sys-embed-frame">
+        <iframe id="tradeFrame" src="${TRADE_URL}" allow="clipboard-write; fullscreen" referrerpolicy="no-referrer"></iframe>
+        <div class="sys-embed-fallback" id="tradeFallback" hidden>
+          <div>לא ניתן להטמיע את המערכת כאן</div>
+          <a class="sys-embed-cta" href="${TRADE_URL}" target="_blank" rel="noopener">פתח את מערכת המסחר ↗</a>
+        </div>
+      </div>
+    </div>`;
+    // If the iframe is blocked (X-Frame-Options) it stays blank — reveal the
+    // fallback if nothing has rendered after a short grace period.
+    const fr = body.querySelector('#tradeFrame') as HTMLIFrameElement | null;
+    let loaded = false;
+    fr?.addEventListener('load', () => { loaded = true; });
+    setTimeout(() => { if (!loaded) { const fb = body.querySelector('#tradeFallback') as HTMLElement | null; if (fb) fb.hidden = false; } }, 4500);
+  }
+
+  // The HUD "HeavyGuard OS" tile reuses the existing dock handler.
+  setTimeout(async () => {
+    document.getElementById('hudHg')?.addEventListener('click', () => document.getElementById('hgBtn')?.click());
+    document.getElementById('hudFleet')?.addEventListener('click', openFleet);
+    document.getElementById('hudTrade')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
+    // The dock's "מסחר" fab button was still a plain external-tab link —
+    // only the HUD rail tile above was ever wired to the in-app embed.
+    document.getElementById('tradeBtn')?.addEventListener('click', (e) => { e.preventDefault(); openTradeSystem(); });
+    // The market widget's own "פתח TRADE" fallback link (re-rendered on every
+    // price refresh, so it needs delegation rather than a one-time bind).
+    document.querySelector('#hudMarkets')?.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement)?.closest('.mk-trade-open')) { e.preventDefault(); e.stopPropagation(); openTradeSystem(); }
+    });
+    document.querySelector('#hudMarkets')?.addEventListener('click', toggleMarketsPanel);
+    // Pre-cog preload: hovering the card warms the market data before the
+    // expand click ever lands (renderMarkets self-caches, so it's free).
+    document.querySelector('#hudMarkets')?.addEventListener('pointerenter', () => { renderMarkets(); });
+    document.getElementById('hudOps')?.addEventListener('click', () => { addMsg(businessBriefing(), 'al'); });
+    document.getElementById('hudFleetPanel')?.addEventListener('click', openFleet);
+    document.getElementById('hudTeamPanel')?.addEventListener('click', () => { location.href = 'agents.html'; });
+    // Announces each system as it starts loading, so index.html's boot veil
+    // can show real progress instead of a static "initializing" caption.
+    const bootStep = (label: string) => { try { window.dispatchEvent(new CustomEvent('alpha-boot-step', { detail: label })); } catch {} };
+    renderHud(); renderFleetPanel(); renderAgendaPanel(); renderTasksPanel(); renderTeamPanel();
+    bootStep('שווקים חיים');
+    const pMarkets = renderMarkets();
+    bootStep('חדשות');
+    const pNews = renderNews();
+    bootStep('מזג אוויר');
+    const pWeather = renderWeatherPanel();
+    bootStep('אירועי היום');
+    const pOnThisDay = renderOnThisDayPanel();
+    bootStep('גימור תצוגה');
+    // Signals index.html's boot veil that the dashboard is ready to reveal.
+    // Reworked per owner feedback that the old "wait for ALL live data no
+    // matter how long" gate made startup feel painfully slow: news chains two
+    // proxy sources (6-8s timeout each) and weather adds another, so on a phone
+    // connection the veil could hang ~10-30s over an already-rendered HUD.
+    // Now the reveal only waits on markets (the one number the deck is really
+    // about) with a short 2.2s cap; news / weather / on-this-day keep loading
+    // in the background behind their own panel loaders and pop in when ready —
+    // a beat of pop-in is a fair trade for a boot that feels near-instant.
+    const settle = (p: Promise<unknown>) => p.catch(() => {});
+    await Promise.race([
+      settle(pMarkets),
+      new Promise((resolve) => setTimeout(resolve, 2200)),
+    ]);
+    (window as any).__alphaReady = true;
+    // The slower panels are intentionally NOT awaited above — keep their
+    // promises alive so an unhandled rejection can't surface, but don't gate
+    // the reveal on them.
+    void Promise.all([settle(pNews), settle(pWeather), settle(pOnThisDay)]);
+    setInterval(() => { renderHud(); renderFleetPanel(); renderAgendaPanel(); renderTasksPanel(); renderTeamPanel(); }, 30000);
+    setInterval(renderMarkets, 60000);
+    setInterval(renderNews, 300000);
+    setInterval(renderWeatherPanel, 900000);
+    // Only actually needs to refresh once a day (its own cache already
+    // guards the network call) — checked hourly just so a tab left open
+    // across midnight picks up the new day's events reasonably promptly.
+    setInterval(renderOnThisDayPanel, 3600000);
+    // The owner's 3D Tiggo 7 turntable in the fleet card — lazy dynamic
+    // import so three.js never weighs down the main bundle's initial load.
+    {
+      const carEl = document.getElementById('hudCar3d');
+      if (carEl) import('../modules/tiggo3d').then((m) => m.mountTiggo3D(carEl)).catch(() => { carEl.style.display = 'none'; });
+    }
+  }, 300);
 
   async function hgSearchLicense(query: string) {
     const q = query.replace(/[-\s]/g, '').toLowerCase();
@@ -1270,6 +5518,15 @@ export function mountApp(root: HTMLElement) {
     }
     const curMonth = new Date().toISOString().slice(0, 7);
     const effectiveMonth = month || curMonth;
+
+    // Compute prev / next month strings
+    const [ey, em] = effectiveMonth.split('-').map(Number);
+    const prevMonthDate = new Date(ey, em - 2, 1);
+    const nextMonthDate = new Date(ey, em, 1);
+    const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const nextMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const isCurrentMonth = effectiveMonth === curMonth;
+
     let filtered = index.filter((r: any) => r.status !== 'running');
     if (contractor) {
       const cLow = contractor.toLowerCase();
@@ -1280,7 +5537,9 @@ export function mountApp(root: HTMLElement) {
       });
     }
     const monthFiltered = filtered.filter((r: any) => (r.date || '').startsWith(effectiveMonth));
+    const curMonthFiltered = filtered.filter((r: any) => (r.date || '').startsWith(curMonth));
     const allTimeFiltered = filtered;
+
     const byContractor: Record<string, { total: number; count: number; jobs: any[] }> = {};
     for (const r of monthFiltered) {
       const cn = cName(r.contractor);
@@ -1288,6 +5547,14 @@ export function mountApp(root: HTMLElement) {
       byContractor[cn].total += r.price || 0;
       byContractor[cn].count++;
       byContractor[cn].jobs.push({ date: r.date, price: r.price, type: r.installType, vehicle: r.vehicleType, id: r.idNumber });
+    }
+    // Current month totals per contractor (for comparison when browsing past months)
+    const byContractorCur: Record<string, { total: number; count: number }> = {};
+    for (const r of curMonthFiltered) {
+      const cn = cName(r.contractor);
+      if (!byContractorCur[cn]) byContractorCur[cn] = { total: 0, count: 0 };
+      byContractorCur[cn].total += r.price || 0;
+      byContractorCur[cn].count++;
     }
     const byContractorAll: Record<string, { total: number; count: number }> = {};
     for (const r of allTimeFiltered) {
@@ -1297,20 +5564,34 @@ export function mountApp(root: HTMLElement) {
       byContractorAll[cn].count++;
     }
     const grandTotal = monthFiltered.reduce((s: number, r: any) => s + (r.price || 0), 0);
+    const curGrandTotal = curMonthFiltered.reduce((s: number, r: any) => s + (r.price || 0), 0);
     const totalJobs = monthFiltered.length;
     const allTimeTotal = allTimeFiltered.reduce((s: number, r: any) => s + (r.price || 0), 0);
     const hebrewMonths = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
     const [y, m] = effectiveMonth.split('-');
     const monthLabel = `${hebrewMonths[parseInt(m) - 1]} ${y}`;
+    const [cy, cm] = curMonth.split('-');
+    const curMonthLabel = `${hebrewMonths[parseInt(cm) - 1]} ${cy}`;
 
     openWin(`HeavyGuard · הכנסות · ${monthLabel}`);
     let html = '<div class="pad" style="direction:rtl">';
+
+    // Month navigation bar
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;padding:6px 10px">
+      <button id="earPrev" style="background:none;border:none;color:var(--cyan);font-size:22px;cursor:pointer;padding:4px 10px;border-radius:8px;line-height:1" title="חודש קודם">◀</button>
+      <span style="font-weight:600;font-size:15px">${monthLabel}</span>
+      <button id="earNext" style="background:none;border:none;color:${isCurrentMonth ? 'rgba(255,255,255,.15)' : 'var(--cyan)'};font-size:22px;cursor:pointer;padding:4px 10px;border-radius:8px;line-height:1" ${isCurrentMonth ? 'disabled' : ''} title="חודש הבא">▶</button>
+    </div>`;
+
+    // Grand total card
     html += `<div style="text-align:center;margin-bottom:20px;padding:16px;background:rgba(218,165,32,.06);border-radius:16px;border:1px solid rgba(218,165,32,.15)">
       <div style="font-size:11px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:4px">${monthLabel}</div>
       <div style="font-size:36px;font-weight:700;color:var(--gold);direction:ltr">₪${grandTotal.toLocaleString()}</div>
-      <div style="color:var(--dim);font-size:13px;margin-top:4px">${totalJobs} עבודות החודש</div>
-      ${allTimeTotal !== grandTotal ? `<div style="color:var(--dim);font-size:11px;margin-top:2px;opacity:.6">סה"כ כללי: ₪${allTimeTotal.toLocaleString()}</div>` : ''}
+      <div style="color:var(--dim);font-size:13px;margin-top:4px">${totalJobs} עבודות</div>
+      ${!isCurrentMonth ? `<div style="color:var(--cyan);font-size:12px;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.06)">${curMonthLabel} (החודש): ₪${curGrandTotal.toLocaleString()} · ${curMonthFiltered.length} עבודות</div>` : ''}
+      ${allTimeTotal !== grandTotal ? `<div style="color:var(--dim);font-size:11px;margin-top:4px;opacity:.6">סה"כ כללי: ₪${allTimeTotal.toLocaleString()}</div>` : ''}
     </div>`;
+
     const entries = Object.entries(byContractor).sort((a, b) => (b[1] as any).total - (a[1] as any).total);
     if (!entries.length) {
       html += '<div style="text-align:center;color:var(--dim);padding:20px">אין עבודות לחודש זה</div>';
@@ -1318,6 +5599,7 @@ export function mountApp(root: HTMLElement) {
     for (const [name, info] of entries) {
       const pct = grandTotal ? Math.round((info.total / grandTotal) * 100) : 0;
       const allTime = byContractorAll[name];
+      const curInfo = byContractorCur[name];
       const uid = 'ej_' + name.replace(/\s/g, '_');
       html += `<div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -1330,6 +5612,7 @@ export function mountApp(root: HTMLElement) {
           </div>
           <span style="color:var(--dim);font-size:12px;min-width:60px;text-align:left">${pct}% · ${info.count} עבודות</span>
         </div>
+        ${!isCurrentMonth && curInfo ? `<div style="font-size:12px;color:var(--cyan);margin-bottom:6px;padding:5px 10px;background:rgba(0,212,255,.06);border-radius:8px;display:inline-block">${curMonthLabel}: ₪${curInfo.total.toLocaleString()} (${curInfo.count} עבודות)</div>` : ''}
         ${allTime ? `<div style="font-size:11px;color:var(--dim);opacity:.6">סה"כ כללי: ₪${allTime.total.toLocaleString()} (${allTime.count} עבודות)</div>` : ''}
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
         <button data-target="${uid}" style="background:none;border:1px solid var(--line);color:var(--cyan);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;transition:.2s" class="earningsToggle">פרטי עבודות ▼</button>
@@ -1345,6 +5628,13 @@ export function mountApp(root: HTMLElement) {
     }
     html += '</div>';
     $('winBody').innerHTML = html;
+
+    // Month navigation handlers
+    const prevBtn = document.getElementById('earPrev');
+    const nextBtn = document.getElementById('earNext');
+    if (prevBtn) prevBtn.onclick = () => hgShowEarnings(contractor, prevMonth);
+    if (nextBtn && !isCurrentMonth) nextBtn.onclick = () => hgShowEarnings(contractor, nextMonth);
+
     $('winBody').querySelectorAll<HTMLButtonElement>('.earningsToggle').forEach(btn => {
       btn.onclick = () => {
         const target = document.getElementById(btn.dataset.target || '');
@@ -1360,7 +5650,6 @@ export function mountApp(root: HTMLElement) {
         const cn = btn.dataset.name || '';
         const info = byContractor[cn];
         if (!info) return;
-        // Build a clean statement for this contractor + month
         const lines: string[] = [];
         lines.push(`דוח עבודות — ${cn}`);
         lines.push(`חודש: ${monthLabel}`);
@@ -1385,14 +5674,27 @@ export function mountApp(root: HTMLElement) {
             addMsg(`📋 הדוח של ${cn} הועתק — אפשר להדביק בוואטסאפ`, 'sys');
           }
         } catch {
-          // Fallback: open WhatsApp with the report prefilled
           window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
         }
       };
     });
   }
 
+  // HeavyGuard hard business rule: the company does NOT install or quote
+  // 8-camera systems. Block any quote that references one — enforced in code so
+  // it holds even if the model ignores the prompt rule.
+  function isEightCameraRequest(text: string): boolean {
+    const s = (text || '').toLowerCase();
+    return /(^|[^\d])8\s*(-?\s*)?(cam|cameras|camera|מצלמות|מצלמה|ערוצים|channels?|ch)(?![A-Za-z0-9_\u0590-\u05FF])/.test(s)
+      || /\b8\s*(ch|channel)\b/.test(s)
+      || /(8|שמונה)\s*מצלמות/.test(s);
+  }
+
   async function hgCreateQuote(customer: string, phone: string, itemsStr: string) {
+    if (isEightCameraRequest(itemsStr) || isEightCameraRequest(customer)) {
+      addMsg('⛔ Heavy Guard לא מתקינה ולא מתמחרת מערכות של 8 מצלמות. אפשר להציע תצורה נתמכת אחרת (למשל מערך 360° ללא 8 מצלמות).', 'sys');
+      return;
+    }
     const items = itemsStr.split(',').map(s => {
       const [desc, priceStr] = s.trim().split(':');
       return { description: (desc || '').trim(), price: parseFloat(priceStr) || 0, qty: 1 };
@@ -1405,17 +5707,15 @@ export function mountApp(root: HTMLElement) {
     };
     const quotes = await hgLoad('hg2:quotes');
     quotes.unshift(newQuote);
-    const storage = (window as any).storage || (window as any).puter?.kv;
-    if (storage) {
-      try { await storage.set('hg2:quotes', JSON.stringify(quotes)); } catch {}
-    }
-    localStorage.setItem('hg2:quotes', JSON.stringify(quotes));
-    addMsg(`הצעת מחיר נוצרה עבור ${customer || 'לקוח'}`, 'sys');
+    const saved = await hgPersist('hg2:quotes', quotes);
+    addMsg(saved ? `הצעת מחיר נוצרה עבור ${customer || 'לקוח'}` : '⚠️ הצעת המחיר לא נשמרה — האחסון במכשיר מלא.', 'sys');
+    puterSync.scheduleSync(() => updateCloudIndicator());
   }
 
   // AR Camera — game-like interactive experience with hand tracking
   let arStream: MediaStream | null = null;
   let arAnimFrame = 0;
+  let arHandLoop = 0;
 
   interface ArObj {
     x: number; y: number; vx: number; vy: number;
@@ -1427,6 +5727,10 @@ export function mountApp(root: HTMLElement) {
   let arObjects: ArObj[] = [];
   let arHandPos = { x: -1, y: -1, pinching: false };
   let arHand2Pos = { x: -1, y: -1, pinching: false };
+  // Hand-zone for character switching: hold your hand in the dashed circle.
+  let arZoneDwell = 0;       // seconds the hand has been inside the zone
+  let arZoneCooldown = 0;    // seconds before the zone can fire again
+  const AR_ZONE = { x: 0.5, y: 0.74, r: 0.13 }; // normalized (lower-centre)
   let arGrabbed: ArObj | null = null;
   let arObjCtx: CanvasRenderingContext2D | null = null;
 
@@ -1445,6 +5749,982 @@ export function mountApp(root: HTMLElement) {
 
   type ArEffect = 'none' | 'fire' | 'water' | 'laser' | 'sparkle' | 'rainbow';
   let arCurrentFx: ArEffect = 'none';
+
+  // ── Dispel & Summon system ──────────────────────────────────
+  interface ArCharacter {
+    name: string; url: string; img?: HTMLImageElement;
+    color?: string; // type glow color
+    drawFn?: (ctx: CanvasRenderingContext2D, size: number) => void;
+  }
+  const arCharacters: ArCharacter[] = [];
+  let arCharIdx = -1;           // which character is summoned (-1 = none)
+  let arCharAnim = 0;           // 0→1 entry animation progress
+  let arCharFromDir = { x: 0, y: 0 };
+  let arOrbDispelled = false;
+  let arPalmHoldTime = 0;
+  let arPrevGesture: 'none' | 'peace' | 'fist' | 'palm' | 'thumbsUp' | 'pointUp' = 'none';
+  let arFistStartTime = 0;
+  let arThrowCooldown = 0;
+  let arBeamFiring = false;
+  let arBeamOrigin = { x: 0.5, y: 0.5 };
+  let arBeamProgress = 0;
+  // Pokeball animation state
+  let arPokeballPhase: 'idle' | 'fly' | 'wobble' | 'open' | 'done' = 'idle';
+  let arPokeballT = 0;
+  let arPokeballFrom = { x: 0.5, y: 0.8 };
+  let arCharCtx: CanvasRenderingContext2D | null = null;
+
+  // ── Pokeball canvas draw helper ──────────────────────────
+  function drawPokeballAt(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, wobble = 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(wobble);
+    ctx.shadowColor = '#ff3333';
+    ctx.shadowBlur = r * 0.4;
+    // Red top
+    ctx.beginPath();
+    ctx.arc(0, 0, r, Math.PI, 0);
+    ctx.fillStyle = '#e63835';
+    ctx.fill();
+    // White bottom
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Black outline + stripe
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = r * 0.06;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r, 0);
+    ctx.lineTo(r, 0);
+    ctx.stroke();
+    // Center button
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = r * 0.06;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── Pokemon canvas draw functions ────────────────────────
+  function drawPikachu(ctx: CanvasRenderingContext2D, s: number) {
+    // Body
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.05, s * 0.28, s * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+    // Ears
+    ctx.fillStyle = '#ffd700';
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.18, -s * 0.22);
+      ctx.lineTo(sx * s * 0.26, -s * 0.46);
+      ctx.lineTo(sx * s * 0.10, -s * 0.22);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.17, -s * 0.34);
+      ctx.lineTo(sx * s * 0.24, -s * 0.46);
+      ctx.lineTo(sx * s * 0.11, -s * 0.34);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffd700';
+    }
+    // Brown back stripes
+    ctx.strokeStyle = '#b8860b'; ctx.lineWidth = s * 0.04;
+    ctx.beginPath(); ctx.moveTo(-s * 0.13, -s * 0.16); ctx.lineTo(s * 0.13, -s * 0.16); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-s * 0.17, -s * 0.05); ctx.lineTo(s * 0.17, -s * 0.05); ctx.stroke();
+    // Red cheeks
+    ctx.fillStyle = 'rgba(220,50,50,0.85)';
+    ctx.beginPath(); ctx.ellipse(-s * 0.19, s * 0.04, s * 0.08, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.19, s * 0.04, s * 0.08, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    // Eyes
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.10, -s * 0.07, s * 0.055, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.10, -s * 0.07, s * 0.055, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-s * 0.09, -s * 0.09, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.11, -s * 0.09, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    // Lightning bolt tail
+    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = s * 0.065; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.26, s * 0.10);
+    ctx.lineTo(s * 0.40, -s * 0.08);
+    ctx.lineTo(s * 0.30, -s * 0.08);
+    ctx.lineTo(s * 0.44, -s * 0.30);
+    ctx.stroke();
+    // Feet
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath(); ctx.ellipse(-s * 0.13, s * 0.33, s * 0.07, s * 0.05, -0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.13, s * 0.33, s * 0.07, s * 0.05, 0.2, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawCharizard(ctx: CanvasRenderingContext2D, s: number) {
+    ctx.fillStyle = '#3a8fb5';
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.12, -s * 0.05);
+      ctx.lineTo(sx * s * 0.52, -s * 0.38);
+      ctx.lineTo(sx * s * 0.48, s * 0.12);
+      ctx.lineTo(sx * s * 0.22, s * 0.06);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.06, s * 0.22, s * 0.30, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f0e0b0';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.10, s * 0.14, s * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.arc(0, -s * 0.20, s * 0.17, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#10c010';
+    ctx.beginPath(); ctx.arc(-s * 0.07, -s * 0.22, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.07, -s * 0.22, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.07, -s * 0.22, s * 0.025, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.07, -s * 0.22, s * 0.025, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.15, s * 0.28);
+    ctx.quadraticCurveTo(s * 0.42, s * 0.44, s * 0.36, s * 0.56);
+    ctx.quadraticCurveTo(s * 0.28, s * 0.44, s * 0.20, s * 0.34);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ff6600';
+    ctx.beginPath(); ctx.arc(s * 0.36, s * 0.57, s * 0.07, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath(); ctx.arc(s * 0.37, s * 0.54, s * 0.04, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawCharmander(ctx: CanvasRenderingContext2D, s: number) {
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.08, s * 0.20, s * 0.26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f0e080';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.12, s * 0.12, s * 0.18, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath(); ctx.arc(0, -s * 0.18, s * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4090e0';
+    ctx.beginPath(); ctx.arc(-s * 0.06, -s * 0.20, s * 0.045, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.06, -s * 0.20, s * 0.045, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.06, -s * 0.20, s * 0.022, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.06, -s * 0.20, s * 0.022, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f08030';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.18, s * 0.25);
+    ctx.quadraticCurveTo(s * 0.40, s * 0.36, s * 0.36, s * 0.48);
+    ctx.quadraticCurveTo(s * 0.28, s * 0.38, s * 0.20, s * 0.32);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ff8800';
+    ctx.beginPath(); ctx.arc(s * 0.37, s * 0.49, s * 0.055, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffdd00';
+    ctx.beginPath(); ctx.arc(s * 0.37, s * 0.47, s * 0.03, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#f08030'; ctx.lineWidth = s * 0.07; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-s * 0.16, s * 0.02); ctx.lineTo(-s * 0.28, s * 0.12); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.16, s * 0.02); ctx.lineTo(s * 0.28, s * 0.12); ctx.stroke();
+  }
+
+  function drawSquirtle(ctx: CanvasRenderingContext2D, s: number) {
+    // Shell
+    ctx.fillStyle = '#7a5c14';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.10, s * 0.23, s * 0.25, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#4a3808'; ctx.lineWidth = s * 0.025;
+    ctx.beginPath(); ctx.moveTo(0, -s * 0.14); ctx.lineTo(0, s * 0.32); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-s * 0.20, s * 0.10); ctx.lineTo(s * 0.20, s * 0.10); ctx.stroke();
+    // Body
+    ctx.fillStyle = '#4896c8';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.08, s * 0.18, s * 0.20, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c8e8f0';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.12, s * 0.10, s * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4896c8';
+    ctx.beginPath(); ctx.arc(0, -s * 0.18, s * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-s * 0.06, -s * 0.20, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.06, -s * 0.20, s * 0.05, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-s * 0.055, -s * 0.21, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.065, -s * 0.21, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    // Curled tail
+    ctx.strokeStyle = '#4896c8'; ctx.lineWidth = s * 0.07; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.16, s * 0.25);
+    ctx.bezierCurveTo(s * 0.42, s * 0.36, s * 0.46, s * 0.14, s * 0.32, s * 0.02);
+    ctx.stroke();
+  }
+
+  function drawMeowth(ctx: CanvasRenderingContext2D, s: number) {
+    ctx.fillStyle = '#d4b896';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.10, s * 0.20, s * 0.26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f5e8d8';
+    ctx.beginPath(); ctx.ellipse(0, s * 0.12, s * 0.12, s * 0.18, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#d4b896';
+    ctx.beginPath(); ctx.arc(0, -s * 0.17, s * 0.18, 0, Math.PI * 2); ctx.fill();
+    // Ears
+    for (const sx of [-1, 1]) {
+      ctx.fillStyle = '#d4b896';
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.14, -s * 0.28);
+      ctx.lineTo(sx * s * 0.22, -s * 0.42);
+      ctx.lineTo(sx * s * 0.06, -s * 0.30);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#f0a8b8';
+      ctx.beginPath();
+      ctx.moveTo(sx * s * 0.13, -s * 0.30);
+      ctx.lineTo(sx * s * 0.20, -s * 0.41);
+      ctx.lineTo(sx * s * 0.07, -s * 0.31);
+      ctx.closePath(); ctx.fill();
+    }
+    // Gold coin
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath(); ctx.arc(0, -s * 0.28, s * 0.065, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#b8860b'; ctx.lineWidth = s * 0.02; ctx.stroke();
+    // Eyes
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.ellipse(-s * 0.07, -s * 0.17, s * 0.04, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(s * 0.07, -s * 0.17, s * 0.04, s * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(-s * 0.065, -s * 0.19, s * 0.015, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s * 0.075, -s * 0.19, s * 0.015, 0, Math.PI * 2); ctx.fill();
+    // Whiskers
+    ctx.strokeStyle = '#888'; ctx.lineWidth = s * 0.015;
+    ctx.beginPath(); ctx.moveTo(-s * 0.08, -s * 0.12); ctx.lineTo(-s * 0.30, -s * 0.10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-s * 0.08, -s * 0.09); ctx.lineTo(-s * 0.30, -s * 0.08); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.08, -s * 0.12); ctx.lineTo(s * 0.30, -s * 0.10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s * 0.08, -s * 0.09); ctx.lineTo(s * 0.30, -s * 0.08); ctx.stroke();
+    // Curled tail
+    ctx.strokeStyle = '#d4b896'; ctx.lineWidth = s * 0.07; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s * 0.16, s * 0.28);
+    ctx.bezierCurveTo(s * 0.44, s * 0.36, s * 0.46, s * 0.04, s * 0.30, -s * 0.06);
+    ctx.stroke();
+  }
+
+  // Register all built-in Pokemon
+  function registerBuiltinPokemon() {
+    arCharacters.length = 0;
+    arCharacters.push({ name: 'Pikachu', url: '', color: '#ffd700', drawFn: drawPikachu });
+    arCharacters.push({ name: 'Charizard', url: '', color: '#f08030', drawFn: drawCharizard });
+    arCharacters.push({ name: 'Charmander', url: '', color: '#ff8800', drawFn: drawCharmander });
+    arCharacters.push({ name: 'Squirtle', url: '', color: '#4896c8', drawFn: drawSquirtle });
+    arCharacters.push({ name: 'Meowth', url: '', color: '#d4b896', drawFn: drawMeowth });
+  }
+  registerBuiltinPokemon();
+
+  // Add image-based character (keeps built-ins in place)
+  function addArCharacter(name: string, url: string) {
+    const ch: ArCharacter = { name, url };
+    const img = new Image();
+    img.src = url;
+    img.onload = () => { ch.img = img; };
+    arCharacters.push(ch);
+  }
+  (window as any).addArCharacter = addArCharacter;
+
+  // Switch to a Pokemon by name or index (callable by AI assistant)
+  function switchArPokemon(nameOrIdx: string | number) {
+    if (arCharacters.length === 0) return;
+    if (typeof nameOrIdx === 'number') {
+      arCharIdx = ((nameOrIdx % arCharacters.length) + arCharacters.length) % arCharacters.length;
+    } else {
+      const lo = nameOrIdx.toLowerCase();
+      const idx = arCharacters.findIndex(c => c.name.toLowerCase().includes(lo));
+      arCharIdx = idx >= 0 ? idx : (arCharIdx + 1) % arCharacters.length;
+    }
+    arCharAnim = 0;
+    arPokeballPhase = 'fly';
+    arPokeballT = 0;
+    arPokeballFrom = { x: 0.5, y: 0.85 };
+    if (!arOrbDispelled) {
+      arOrbDispelled = true;
+      document.getElementById('stage')?.classList.add('stage-dispelled');
+    }
+  }
+  (window as any).switchArPokemon = switchArPokemon;
+  (window as any).dispelOrb = () => {
+    if (!arOrbDispelled) {
+      arOrbDispelled = true;
+      document.getElementById('stage')?.classList.add('stage-dispelled');
+    }
+  };
+
+  // ── Main assistant character (the orb avatar) ───────────────
+  // The orb's main character is Pikachu by default and can be swapped for the
+  // other models the user provided. Persisted so it survives reloads.
+  const MAIN_CHAR_KEY = 'alpha_main_character';
+  const MAIN_CHARACTERS = [
+    // Not a Pokemon — no Dex sprite, so its summon-dock thumbnail is blank
+    // (falls back to the pokeball + name, same as any failed sprite fetch).
+    { id: 'robot',      label: 'רובוט',      words: /(רובוט|robot)/i },
+    { id: 'pikachu',    label: 'פיקאצ\'ו',   words: /(פיקאצ'?ו|פיקצ'?ו|פיקא|pikachu|pika)/i },
+    { id: 'charmander', label: 'צ\'רמנדר',   words: /(צ'?רמנדר|צ'?ארמנדר|charmander|charm)/i },
+    { id: 'squirtle',   label: 'סקווירטל',   words: /(סקווירטל|סקוירטל|squirtle|squirt)/i },
+    { id: 'meowth',     label: 'מיאוט\'',    words: /(מיאו?את'?|מיואו|meowth|meow)/i },
+    { id: 'bulbasaur',  label: 'בולבסאור',   words: /(בולב|bulbasaur|bulba)/i },
+    { id: 'eevee',      label: 'איווי',       words: /(איווי|אאיווי|eevee|evee)/i },
+    { id: 'mewtwo',     label: 'מיוטו',      words: /(מיוטו|mewtwo|mew\s?two)/i },
+    { id: 'articuno',   label: 'ארטיקונו',   words: /(ארטיקונו|articuno)/i },
+    { id: 'suicune',    label: 'סויקון',      words: /(סויקון|suicune)/i },
+    { id: 'raikou',     label: 'ריאיקו',     words: /(ריאיקו|raikou)/i },
+    { id: 'entei',      label: 'אנטיי',      words: /(אנטיי|entei)/i },
+    { id: 'moltres',    label: 'מולטרס',     words: /(מולטרס|moltres)/i },
+    { id: 'zapdos',     label: 'זאפדוס',     words: /(זאפדוס|zapdos)/i },
+    { id: 'lugia',      label: 'לוגיה',      words: /(לוגיה|lugia)/i },
+    { id: 'ho-oh',      label: 'הו-אוה',     words: /(הו.?אוה|ho.?oh)/i },
+    // Imported Gen-1 pack (untextured, type-tinted) — selectable like the rest.
+    ...GEN1.map(g => ({ id: g.id, label: g.label, words: new RegExp(g.words, 'i') })),
+  ];
+
+  function setMainCharacter(id: string): string {
+    const ch = MAIN_CHARACTERS.find(c => c.id === id) || MAIN_CHARACTERS[0];
+    // Bringing a character in ALWAYS un-dispels the orb. Without this, a Pokémon
+    // summoned while the orb was dispelled (palm-release gesture) loads invisibly —
+    // you'd hear its cry and see the ambient colours but not the model itself.
+    arOrbDispelled = false;
+    document.getElementById('stage')?.classList.remove('stage-dispelled');
+    orb.setCharacter(ch.id);
+    localStorage.setItem(MAIN_CHAR_KEY, ch.id);
+    document.body.dataset.char = ch.id;   // per-character ambient (fire/water/hypnosis)
+    applyCharacterVoice(ch.id);
+    orb.pikaEmote('excited');
+    (window as any).__crpSyncIfOpen?.();
+    return ch.label;
+  }
+  (window as any).setMainCharacter = setMainCharacter;
+
+  // Voice handoff: when the active character is NOT Pikachu, mute Pikachu's
+  // voice and let that character do its own synthesized cries. Switching back
+  // to Pikachu restores his voice (respecting the user's voice on/off setting).
+  // Per-character colouring of the assistant's spoken (TTS) voice. Meowth
+  // "talks", so when he's the avatar the assistant speaks in his deep raspy
+  // voice; Charmander/Squirtle get subtler tints; Pikachu = normal.
+  const CHAR_TTS: Record<string, { pitch?: number; rate?: number } | null> = {
+    pikachu: null,
+    charmander: { pitch: 0.7, rate: 0.97 },
+    squirtle: { pitch: 1.3, rate: 1.06 },
+    meowth: { pitch: 0.4, rate: 0.9 },
+  };
+  function applyCharacterVoice(id: string) {
+    unlockCharacterAudio();
+    setCharacterVolume(state.pikaVolume);
+    voice.charVoice = CHAR_TTS[id] || null;   // colour the assistant's speech
+    if (id === 'none' || id === 'robot' || id === 'alphabrain') {
+      // No character / the robot / the Alpha Brain hologram → no Pokémon cries.
+      setPikaEnabled(false);
+      stopCharacterVoice();
+      return;
+    }
+    if (id === 'pikachu') {
+      stopCharacterVoice();
+      setActiveCharacter('pikachu');
+      setPikaEnabled(state.pikaVoiceOn);       // restore Pikachu per user setting
+    } else if (id === 'meowth') {
+      // Meowth talks (via the TTS voice above) rather than doing animal cries.
+      setPikaEnabled(false);
+      stopCharacterVoice();
+      if (state.pikaVoiceOn) setTimeout(() => playCharacterCry('meowth'), 200); // one greeting cry
+    } else {
+      setPikaEnabled(false);                   // mute Pikachu
+      setActiveCharacter(id);                  // start this character's idle cries
+      if (state.pikaVoiceOn) setTimeout(() => playCharacterCry(id), 200);
+    }
+  }
+
+  // Default centerpiece on every open is the ALPHA BRAIN hologram (no Pokémon/
+  // robot unless the user picks one). The orb scene itself now boots straight
+  // on it, so no swap call is needed here — calling setCharacter again reloaded
+  // the model and caused the pikachu→robot flash the owner asked to remove.
+  document.body.dataset.char = 'alphabrain';
+  setTimeout(() => applyCharacterVoice('alphabrain'), 600);
+
+  // ── Animated main-character swap (red-laser dispel + pokeball summon) ──
+  // Plays over the orb on the main screen: a red laser strikes the current
+  // character → it vanishes → a pokeball flies in, wobbles, cracks open with a
+  // laser burst → the new character emerges (loaded into the orb).
+  let charSwapBusy = false;
+
+  // Swap the main character with: red-laser dispel → real 3D Pokéball flies in,
+  // wobbles, opens with a burst → new character loads. Runs over the orb stage.
+  function swapMainCharacterAnimated(nextId: string) {
+    if (charSwapBusy) return;
+    const cvs = $<HTMLCanvasElement>('charSwapFx');
+    const stage = document.getElementById('stage');
+    const ctx = cvs.getContext('2d');
+    // If the orb was dispelled (e.g. via the palm gesture) the stage is faded
+    // to opacity:0 — restore it so the pokeball fly-in AND the summoned model
+    // are visible, not just the sound and ambient colors.
+    arOrbDispelled = false;
+    stage?.classList.remove('stage-dispelled');
+    if (!ctx || !stage) { setMainCharacter(nextId); return; }
+    charSwapBusy = true;
+    $('charSwapBtn')?.classList.add('busy');
+    cvs.classList.add('active');
+    const rect = stage.getBoundingClientRect();
+    cvs.width = rect.width; cvs.height = rect.height;
+    const W = cvs.width, H = cvs.height;
+    const cx = W / 2, cy = H * 0.46;
+    const start = performance.now();
+    let handedOff = false;
+    function laser(now: number) {
+      const t = (now - start) / 1000;
+      ctx!.clearRect(0, 0, W, H);
+      // Note: we do NOT hide #stage — the 3D pokeball renders inside the orb
+      // scene, so the stage must stay visible. orb.throwPokeball hides just the
+      // character mesh at the right moment.
+      if (t < 0.7) {
+        // red laser beam bottom → orb centre, with an electric crackle along it
+        const p = Math.min(1, t / 0.45);
+        const ex = cx, ey = H + (cy - H) * p;
+        ctx!.save(); ctx!.lineCap = 'round';
+        const layers = [[26, .08], [15, .2], [6, .5], [2, 1]] as const;
+        const cols = ['rgba(255,40,40,1)','rgba(255,70,40,1)','rgba(255,130,60,1)','#fff'];
+        layers.forEach((L, i) => {
+          ctx!.beginPath(); ctx!.moveTo(cx, H); ctx!.lineTo(ex, ey);
+          ctx!.lineWidth = L[0]; ctx!.globalAlpha = L[1]; ctx!.strokeStyle = cols[i];
+          ctx!.shadowColor = '#ff2200'; ctx!.shadowBlur = i === 3 ? 30 : 0; ctx!.stroke();
+        });
+        // jagged electric arc overlaid on the beam (energy crackle)
+        ctx!.globalAlpha = 0.85; ctx!.strokeStyle = '#ffd9c0'; ctx!.lineWidth = 1.4; ctx!.shadowColor = '#ff6a3c'; ctx!.shadowBlur = 8;
+        ctx!.beginPath(); ctx!.moveTo(cx, H);
+        const segs = 9;
+        for (let s = 1; s <= segs; s++) {
+          const f = s / segs; const bx = cx + (ex - cx) * f, by = H + (ey - H) * f;
+          ctx!.lineTo(bx + (Math.random() - 0.5) * 16, by + (Math.random() - 0.5) * 10);
+        }
+        ctx!.stroke();
+        // impact burst near the end + radiating sparks
+        if (p >= 1) {
+          const bp = (t - 0.45) / 0.25, rr = Math.min(W, H) * 0.28 * bp;
+          const g = ctx!.createRadialGradient(cx, cy, 0, cx, cy, rr);
+          g.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - bp)})`);
+          g.addColorStop(0.4, `rgba(255,60,30,${0.7 * (1 - bp)})`);
+          g.addColorStop(1, 'rgba(255,0,0,0)');
+          ctx!.globalAlpha = 1; ctx!.fillStyle = g;
+          ctx!.beginPath(); ctx!.arc(cx, cy, rr, 0, Math.PI * 2); ctx!.fill();
+          ctx!.strokeStyle = '#ffe0c0'; ctx!.lineWidth = 2; ctx!.shadowColor = '#ff5a2a'; ctx!.shadowBlur = 12; ctx!.globalAlpha = 1 - bp;
+          for (let k = 0; k < 12; k++) {
+            const a = (k / 12) * Math.PI * 2 + bp; const r0 = rr * 0.5, r1 = rr * (0.9 + Math.random() * 0.4);
+            ctx!.beginPath(); ctx!.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); ctx!.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx!.stroke();
+          }
+        }
+        ctx!.restore();
+        requestAnimationFrame(laser);
+      } else if (!handedOff) {
+        handedOff = true;
+        ctx!.clearRect(0, 0, W, H);
+        cvs.classList.remove('active');
+        // Hand off to the real 3D pokeball rendered INSIDE the orb scene
+        // (always visible — same context that renders the characters).
+        orb.throwPokeball(
+          () => { setMainCharacter(nextId); },
+          () => { charSwapBusy = false; $('charSwapBtn')?.classList.remove('busy'); },
+        );
+      }
+    }
+    requestAnimationFrame(laser);
+  }
+  (window as any).swapMainCharacterAnimated = swapMainCharacterAnimated;
+
+  // Summon dock — a macOS-style row of Pokéballs (small artwork above the ball,
+  // name below). Opens on summon; the mic listens and the user picks a Pokémon
+  // by saying its name → it arrives with the wild swap animation.
+  {
+    const dock = document.getElementById('summonDock') as HTMLDivElement;
+    const row = document.getElementById('summonDockRow') as HTMLDivElement;
+    const hint = document.getElementById('summonDockHint') as HTMLDivElement;
+    let dockOpen = false;
+    let dockTimer: number | undefined;
+    let dockRec: any = null;
+    let restoreWake = false;
+
+    // PokeAPI National-Dex numbers → official artwork sprites (via jsdelivr).
+    const DEX: Record<string, number> = {
+      pikachu: 25, charmander: 4, squirtle: 7, meowth: 52, bulbasaur: 1,
+      eevee: 133, mewtwo: 150, articuno: 144, suicune: 245, raikou: 243,
+      entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
+    };
+    for (const g of GEN1) DEX[g.id] = g.dex;   // imported pack → PokeAPI artwork sprites
+    const SPRITE = (id: string) =>
+      `https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${DEX[id]}.png`;
+
+    function buildDock() {
+      const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
+      row.innerHTML = MAIN_CHARACTERS.map((c, i) => `
+        <button class="sd-item${c.id === cur ? ' sd-current' : ''}" data-id="${c.id}" style="--d:${i * 0.04}s">
+          <div class="sd-holo-wrap">
+            <img class="sd-holo" src="${SPRITE(c.id)}" alt="${c.label}" loading="eager"
+                 onerror="this.style.opacity='0'" />
+          </div>
+          <span class="sd-ball"><span class="sd-ball-btn"></span></span>
+          <span class="sd-name">${c.label}</span>
+        </button>`).join('');
+      row.querySelectorAll<HTMLButtonElement>('.sd-item').forEach(btn => {
+        btn.addEventListener('click', () => selectPokemon(btn.dataset.id!));
+      });
+    }
+
+    // Fade-arrow scroll indicators — hide left/right fade when at the edge.
+    // The page is RTL, and modern browsers give an RTL scroll container a
+    // NEGATIVE scrollLeft range (0 at the logical start/rightmost item, down
+    // to -(scrollWidth-clientWidth) at the end) — not the 0..max LTR range.
+    const sdWrap = row.parentElement as HTMLDivElement;
+    function updateScrollFades() {
+      const max = row.scrollWidth - row.clientWidth;
+      sdWrap.classList.toggle('at-start', row.scrollLeft >= -4);
+      sdWrap.classList.toggle('at-end', row.scrollLeft <= -max + 4);
+    }
+    row.addEventListener('scroll', updateScrollFades, { passive: true });
+    updateScrollFades();
+
+    // macOS dock magnification — items swell toward the cursor.
+    function magnify(clientX: number) {
+      const items = Array.from(row.querySelectorAll<HTMLElement>('.sd-item'));
+      const MAX = 150;
+      items.forEach(it => {
+        const r = it.getBoundingClientRect();
+        const c = r.left + r.width / 2;
+        const d = Math.abs(clientX - c);
+        const scale = d > MAX ? 1 : 1 + 0.55 * (1 - d / MAX);
+        it.style.setProperty('--scale', scale.toFixed(3));
+      });
+    }
+    function resetMagnify() {
+      row.querySelectorAll<HTMLElement>('.sd-item').forEach(it => it.style.setProperty('--scale', '1'));
+    }
+    row.addEventListener('pointermove', e => { if (e.pointerType !== 'touch') magnify(e.clientX); });
+    row.addEventListener('pointerleave', resetMagnify);
+
+    function startDockVoice() {
+      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SR) { hint.innerHTML = '👆 בחר פוקימון מהשורה'; return; }
+      try {
+        dockRec = new SR();
+        dockRec.lang = state.micLang === 'he' ? 'he-IL' : state.micLang === 'es' ? 'es-ES' : 'en-US';
+        dockRec.continuous = true; dockRec.interimResults = true; dockRec.maxAlternatives = 3;
+        dockRec.onresult = (e: any) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const res = e.results[i];
+            for (let a = 0; a < res.length; a++) {
+              const t = (res[a].transcript || '').toLowerCase();
+              const match = MAIN_CHARACTERS.find(c => c.words.test(t));
+              if (match) { selectPokemon(match.id); return; }
+            }
+          }
+        };
+        dockRec.onerror = () => {};
+        dockRec.start();
+      } catch {}
+    }
+    function stopDockVoice() {
+      if (dockRec) { try { dockRec.stop(); } catch {} dockRec = null; }
+    }
+
+    // Spectacular summon burst: white core flash + expanding shockwave ring.
+    function summonFlash() {
+      const f = document.createElement('div');
+      f.className = 'summon-flash';
+      const ring = document.createElement('div');
+      ring.className = 'summon-shock';
+      document.body.appendChild(f);
+      document.body.appendChild(ring);
+      setTimeout(() => { f.remove(); ring.remove(); }, 1100);
+    }
+
+    // Real 3D Pokéball in the screen centre while choosing — its own tiny WebGL
+    // scene rendering the uploaded pokeball.glb, spinning. Launches up off-screen
+    // when a Pokémon is picked.
+    let sbRenderer: THREE.WebGLRenderer | null = null;
+    let sbScene: THREE.Scene | null = null, sbCamera: THREE.PerspectiveCamera | null = null;
+    let sbBall: THREE.Object3D | null = null, sbRaf = 0;
+    async function initSummonBall3D() {
+      if (sbRenderer) return;
+      const canvas = document.getElementById('summonOrbCanvas') as HTMLCanvasElement | null;
+      if (!canvas) return;
+      try {
+        THREE_RT ??= await import('three');
+        const THREE = THREE_RT;
+        sbRenderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+        sbRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+        sbRenderer.setSize(240, 240, false);
+        sbScene = new THREE.Scene();
+        sbCamera = new THREE.PerspectiveCamera(38, 1, 0.1, 100); sbCamera.position.set(0, 0, 4.0);
+        sbScene.add(new THREE.AmbientLight(0xffffff, 0.95));
+        const d = new THREE.DirectionalLight(0xffffff, 1.25); d.position.set(2, 3, 4); sbScene.add(d);
+        const d2 = new THREE.DirectionalLight(0xffe0a0, 0.5); d2.position.set(-3, 1, -2); sbScene.add(d2);
+        import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
+          new GLTFLoader().load((import.meta.env.BASE_URL || '/') + 'ar-models/pokeball.glb', (g: any) => {
+            const m: THREE.Object3D = g.scene;
+            m.traverse((o: any) => { if (o.isMesh) o.geometry.computeVertexNormals(); });
+            // Tilt so the equator (red/white split + band + button) faces the
+            // camera (red on top, classic), THEN centre/scale in the tilted frame.
+            m.rotation.x = -Math.PI / 2;
+            m.updateMatrixWorld(true);
+            const bb = new THREE.Box3().setFromObject(m);
+            const sz = bb.getSize(new THREE.Vector3()); const c = bb.getCenter(new THREE.Vector3());
+            const s = 1.7 / Math.max(sz.x, sz.y, sz.z);
+            const inner = new THREE.Group(); inner.add(m);
+            m.scale.setScalar(s); m.position.set(-c.x * s, -c.y * s, -c.z * s);
+            sbScene!.add(inner); sbBall = inner;
+          }, undefined, () => {});
+        });
+      } catch { sbRenderer = null; }
+    }
+    function startSummonBall() {
+      initSummonBall3D();
+      if (sbRaf || !sbRenderer) return;
+      const tick = () => {
+        sbRaf = requestAnimationFrame(tick);
+        if (sbBall) { sbBall.rotation.y += 0.03; sbBall.rotation.z = Math.sin(performance.now() / 1100) * 0.08; }
+        if (sbRenderer && sbScene && sbCamera) sbRenderer.render(sbScene, sbCamera);
+      };
+      tick();
+    }
+    function stopSummonBall() { cancelAnimationFrame(sbRaf); sbRaf = 0; }
+
+    // Laser fired DOWN from the rising pokéball onto the orb centre, which then
+    // reveals the chosen Pokémon. Drawn on the full-stage charSwapFx canvas.
+    function summonBeam(id: string) {
+      const cvs = $<HTMLCanvasElement>('charSwapFx');
+      const stage = document.getElementById('stage');
+      const ctx = cvs.getContext('2d');
+      if (!ctx || !stage) { setMainCharacter(id); return; }
+      cvs.classList.add('active');
+      const rect = stage.getBoundingClientRect();
+      cvs.width = rect.width; cvs.height = rect.height;
+      const W = cvs.width, H = cvs.height, cx = W / 2, cy = H * 0.46;
+      const start = performance.now();
+      let done = false;
+      const frame = (now: number) => {
+        const t = (now - start) / 1000;
+        ctx.clearRect(0, 0, W, H);
+        if (t < 0.6) {
+          const p = Math.min(1, t / 0.4);            // beam grows top → centre
+          const endY = -30 + (cy + 30) * p;
+          ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          // Electric lightning core — jagged path from the top to the beam tip,
+          // re-randomised each frame so it crackles.
+          const jag = () => {
+            ctx.beginPath(); ctx.moveTo(cx, -30);
+            const segs = 9;
+            for (let s = 1; s <= segs; s++) {
+              const yy = -30 + (endY + 30) * (s / segs);
+              const amp = 18 * (1 - p * 0.4);
+              ctx.lineTo(cx + (s === segs ? 0 : (Math.random() - 0.5) * amp), yy);
+            }
+          };
+          const layers = [[26, .08], [15, .2], [6, .5], [2.5, 1]] as const;
+          const cols = ['rgba(255,55,55,1)', 'rgba(255,90,55,1)', 'rgba(255,150,80,1)', '#fff'];
+          layers.forEach((L, i) => {
+            jag();
+            ctx.lineWidth = L[0]; ctx.globalAlpha = L[1]; ctx.strokeStyle = cols[i];
+            ctx.shadowColor = '#ff2a18'; ctx.shadowBlur = i === 3 ? 30 : 10; ctx.stroke();
+          });
+          // Forked branches off the bolt
+          ctx.globalAlpha = 0.5; ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,180,120,.9)';
+          for (let b = 0; b < 3; b++) {
+            const by = -30 + (endY + 30) * (0.3 + Math.random() * 0.6);
+            ctx.beginPath(); ctx.moveTo(cx, by);
+            ctx.lineTo(cx + (Math.random() - 0.5) * 70, by + (Math.random() - 0.3) * 50);
+            ctx.stroke();
+          }
+          if (p >= 1) {                               // impact burst at the centre
+            const bp = (t - 0.4) / 0.2, rr = Math.min(W, H) * 0.32 * bp;
+            const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
+            g.addColorStop(0, `rgba(255,255,255,${0.95 * (1 - bp)})`);
+            g.addColorStop(0.4, `rgba(255,90,40,${0.7 * (1 - bp)})`);
+            g.addColorStop(1, 'rgba(255,0,0,0)');
+            ctx.globalAlpha = 1; ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.fill();
+            // Radial spark streaks shooting out of the impact
+            ctx.strokeStyle = '#ffd9a0'; ctx.lineWidth = 2; ctx.globalAlpha = 1 - bp;
+            for (let k = 0; k < 14; k++) {
+              const a = (k / 14) * Math.PI * 2 + bp;
+              const r0 = rr * 0.5, r1 = rr * (1.1 + Math.random() * 0.4);
+              ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+              ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx.stroke();
+            }
+          }
+          ctx.restore();
+          requestAnimationFrame(frame);
+        } else if (!done) {
+          done = true; ctx.clearRect(0, 0, W, H); cvs.classList.remove('active');
+          setMainCharacter(id);                       // the chosen Pokémon arrives
+        }
+      };
+      requestAnimationFrame(frame);
+    }
+
+    // Wild ambient effects while the dock is open — floating gold sparks + rings
+    function startDockWild() {
+      const el = document.getElementById('dockWild'); if (!el) return;
+      el.removeAttribute('hidden'); el.innerHTML = '';
+      // 3 concentric animated rings
+      for (let i = 0; i < 3; i++) {
+        const r = document.createElement('div'); r.className = 'dw-ring';
+        const sz = 160 + i * 120;
+        Object.assign(r.style, { width: sz+'px', height: sz+'px', left:'50%', top:'40%',
+          animationDelay: (i*0.7)+'s', animationDuration: (2.4 + i*0.5)+'s' });
+        el.appendChild(r);
+      }
+      // Vertical light beams
+      const beamCount = 8;
+      for (let i = 0; i < beamCount; i++) {
+        const b = document.createElement('div'); b.className = 'dw-beam';
+        Object.assign(b.style, { left: (8 + i*(100/beamCount))+'%',
+          animationDelay: (i*0.22)+'s', height:'0' });
+        el.appendChild(b);
+      }
+      // Floating sparks
+      for (let i = 0; i < 22; i++) {
+        const s = document.createElement('div'); s.className = 'dw-spark';
+        const hue = 30 + Math.random() * 30;
+        Object.assign(s.style, {
+          left: Math.random()*100+'%', top: (50 + Math.random()*50)+'%',
+          background: `hsl(${hue},100%,${50+Math.random()*30}%)`,
+          width: (2+Math.random()*4)+'px', height: (2+Math.random()*4)+'px',
+          animationDelay: (Math.random()*3)+'s', animationDuration: (2+Math.random()*2.5)+'s',
+        });
+        el.appendChild(s);
+      }
+      requestAnimationFrame(() => el.classList.add('on'));
+    }
+    function stopDockWild() {
+      const el = document.getElementById('dockWild'); if (!el) return;
+      el.classList.remove('on');
+      setTimeout(() => { el.setAttribute('hidden', ''); el.innerHTML = ''; }, 350);
+    }
+
+    // Gesture-based hover: the hand overlay X position maps to dock items
+    let gestureHoverIdx = -1;
+    let gestureSelectTimer: number | undefined;
+    function dockGestureMove(normX: number) {
+      if (!dockOpen) return;
+      const items = Array.from(row.querySelectorAll<HTMLElement>('.sd-item'));
+      if (!items.length) return;
+      // Map screen normX → item index
+      const idx = Math.min(items.length - 1, Math.max(0, Math.floor(normX * items.length)));
+      if (idx !== gestureHoverIdx) {
+        items.forEach(it => it.classList.remove('gesture-hover'));
+        items[idx]?.classList.add('gesture-hover');
+        magnify(idx / (items.length - 1) * window.innerWidth);
+        gestureHoverIdx = idx;
+        clearTimeout(gestureSelectTimer);
+        // Auto-select after 1.5s of stable hover
+        gestureSelectTimer = window.setTimeout(() => {
+          if (dockOpen && gestureHoverIdx === idx) {
+            const id = items[idx]?.dataset.id;
+            if (id) selectPokemon(id);
+          }
+        }, 1500);
+      }
+    }
+    (window as any).__dockGestureMove = dockGestureMove;
+
+    // Pinch-drag horizontal scroll (thumb + index finger together) while the
+    // dock is open. Exposes a LOGICAL scroll coordinate (0 = start/first
+    // item, max = end/last item, increasing = further into the list) so the
+    // gesture code doesn't need to know this is an RTL container — the row's
+    // actual scrollLeft runs 0..-(max) in RTL (0 at the start), so we negate.
+    // Uses scrollTo({behavior:'instant'}) — .sd-row has CSS scroll-behavior:
+    // smooth for momentum/click scrolls, which would fight a live per-frame
+    // pinch-drag (each frame would kick off a new easing animation that never
+    // catches up to the hand), so a drag must bypass it explicitly.
+    (window as any).__dockScrollLeft = () => -row.scrollLeft;
+    (window as any).__dockScrollTo = (logicalX: number) => {
+      const max = row.scrollWidth - row.clientWidth;
+      row.scrollTo({ left: -Math.max(0, Math.min(max, logicalX)), behavior: 'instant' });
+      updateScrollFades();
+    };
+
+    function openSummonDock() {
+      if (dockOpen) return;
+      buildDock();
+      resetMagnify();
+      requestAnimationFrame(updateScrollFades); // fades after layout
+      dock.removeAttribute('hidden');
+      const bdrop = document.getElementById('dockBackdrop');
+      if (bdrop) { bdrop.removeAttribute('hidden'); requestAnimationFrame(() => bdrop.classList.add('on')); }
+      const orbEl = document.getElementById('summonOrb');
+      orbEl?.classList.remove('launch');
+      orbEl?.removeAttribute('hidden');
+      startSummonBall();
+      startDockWild();
+      requestAnimationFrame(() => dock.classList.add('open'));
+      dockOpen = true;
+      gestureHoverIdx = -1;
+      hint.innerHTML = '<span class="sd-mic">🎙️</span> אמור שם של פוקימון…';
+      restoreWake = voice.wakeOn;
+      if (restoreWake) voice.setWake(false);
+      startDockVoice();
+      clearTimeout(dockTimer);
+      dockTimer = window.setTimeout(() => closeSummonDock(), 18000);
+    }
+    function closeSummonDock() {
+      if (!dockOpen) return;
+      dockOpen = false;
+      clearTimeout(dockTimer);
+      clearTimeout(gestureSelectTimer);
+      gestureHoverIdx = -1;
+      stopDockVoice();
+      stopSummonBall();
+      stopDockWild();
+      const orbEl = document.getElementById('summonOrb');
+      orbEl?.setAttribute('hidden', ''); orbEl?.classList.remove('launch');
+      dock.classList.remove('open');
+      const bdrop = document.getElementById('dockBackdrop');
+      if (bdrop) { bdrop.classList.remove('on'); setTimeout(() => bdrop.setAttribute('hidden', ''), 300); }
+      setTimeout(() => dock.setAttribute('hidden', ''), 320);
+      if (restoreWake) { restoreWake = false; setTimeout(() => voice.setWake(true), 350); }
+    }
+    function selectPokemon(id: string) {
+      if (!dockOpen) return;
+      clearTimeout(dockTimer);
+      stopDockVoice();
+      const el = row.querySelector<HTMLElement>(`.sd-item[data-id="${id}"]`);
+      el?.classList.add('sd-chosen');
+      // The 3D pokéball rises up toward the top of the screen…
+      document.getElementById('summonOrb')?.classList.add('launch');
+      // …and as it rises, fires a laser straight down onto the orb, which
+      // reveals the chosen Pokémon. The dock + ball clear once it's off-screen.
+      setTimeout(() => { summonFlash(); summonBeam(id); }, 300);
+      setTimeout(() => closeSummonDock(), 780);
+    }
+
+    // The thumbs-up gesture (and the pokeball button) open this dock.
+    (window as any).openSummonDock = openSummonDock;
+    (window as any).closeSummonDock = closeSummonDock;
+
+    $('charSwapBtn').onclick = (e) => {
+      e.stopPropagation();
+      if (dockOpen) closeSummonDock(); else openSummonDock();
+    };
+    document.addEventListener('click', (e) => {
+      if (dockOpen && !(e.target as Element).closest('#summonDock, #charSwapBtn')) closeSummonDock();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && dockOpen) closeSummonDock(); });
+  }
+
+  // Character transform panel — full rotation, scale and position control per model.
+  {
+    const panel = document.getElementById('charRotPanel') as HTMLDivElement;
+    const crpX  = $<HTMLInputElement>('crpX');
+    const crpY  = $<HTMLInputElement>('crpY');
+    const crpZ  = $<HTMLInputElement>('crpZ');
+    const crpS  = $<HTMLInputElement>('crpS');
+    const crpPX = $<HTMLInputElement>('crpPX');
+    const crpPY = $<HTMLInputElement>('crpPY');
+    const crpPZ = $<HTMLInputElement>('crpPZ');
+    const toRad = (d: string) => parseFloat(d) * Math.PI / 180;
+    const toDeg = (r: number) => Math.round(r * 180 / Math.PI);
+
+    function crpSync() {
+      const xf = orb.getCharacterTransform();
+      crpX.value  = String(toDeg(xf.x));
+      crpY.value  = String(toDeg(xf.y));
+      crpZ.value  = String(toDeg(xf.z));
+      crpS.value  = String(Math.round(xf.s * 100));
+      crpPX.value = String(Math.round(xf.px * 100));
+      crpPY.value = String(Math.round(xf.py * 100));
+      crpPZ.value = String(Math.round(xf.pz * 100));
+      $('crpXv').textContent  = crpX.value + '°';
+      $('crpYv').textContent  = crpY.value + '°';
+      $('crpZv').textContent  = crpZ.value + '°';
+      $('crpSv').textContent  = (xf.s).toFixed(2) + '×';
+      $('crpPXv').textContent = crpPX.value;
+      $('crpPYv').textContent = crpPY.value;
+      $('crpPZv').textContent = crpPZ.value;
+    }
+
+    function crpApply() {
+      orb.setCharacterTransform(
+        toRad(crpX.value), toRad(crpY.value), toRad(crpZ.value),
+        parseFloat(crpS.value) / 100,
+        parseFloat(crpPX.value) / 100, parseFloat(crpPY.value) / 100, parseFloat(crpPZ.value) / 100
+      );
+    }
+
+    $('charPoseBtn').onclick = (e) => {
+      e.stopPropagation();
+      if (panel.hasAttribute('hidden')) { crpSync(); crpUpdatePinBadge(); panel.removeAttribute('hidden'); }
+      else panel.setAttribute('hidden', '');
+    };
+    document.addEventListener('click', (e) => {
+      if (!panel.contains(e.target as Node) && e.target !== $('charPoseBtn')) panel.setAttribute('hidden', '');
+    });
+
+    crpX.oninput  = () => { $('crpXv').textContent  = crpX.value + '°'; crpApply(); };
+    crpY.oninput  = () => { $('crpYv').textContent  = crpY.value + '°'; crpApply(); };
+    crpZ.oninput  = () => { $('crpZv').textContent  = crpZ.value + '°'; crpApply(); };
+    crpS.oninput  = () => { $('crpSv').textContent  = (parseFloat(crpS.value)/100).toFixed(2) + '×'; crpApply(); };
+    crpPX.oninput = () => { $('crpPXv').textContent = crpPX.value; crpApply(); };
+    crpPY.oninput = () => { $('crpPYv').textContent = crpPY.value; crpApply(); };
+    crpPZ.oninput = () => { $('crpPZv').textContent = crpPZ.value; crpApply(); };
+
+    function crpUpdatePinBadge() {
+      const badge = $('crpPinBadge') as HTMLElement;
+      if (orb.hasPinnedTransform()) badge.removeAttribute('hidden');
+      else badge.setAttribute('hidden', '');
+    }
+
+    $('crpPin').onclick = () => {
+      orb.pinCharacterTransform();
+      crpUpdatePinBadge();
+      const btn = $('crpPin') as HTMLButtonElement;
+      btn.textContent = '✓ נשמר!';
+      setTimeout(() => { btn.textContent = 'שמור ככיוון ברירת מחדל'; }, 1500);
+    };
+
+    $('crpReset').onclick = () => {
+      orb.resetCharacterTransform();
+      crpSync();
+    };
+
+    // Auto-center: drop the object back to the dead-centre of the orb (zero position
+    // offset) at the default fit scale, keeping the current rotation. One tap to
+    // recover from a model that drifted off-centre or got scaled out of view.
+    $('crpAuto').onclick = () => {
+      crpPX.value = '0'; crpPY.value = '0'; crpPZ.value = '0'; crpS.value = '100';
+      $('crpPXv').textContent = '0';
+      $('crpPYv').textContent = '0';
+      $('crpPZv').textContent = '0';
+      $('crpSv').textContent = '1.00×';
+      crpApply();
+    };
+
+    // Re-sync panel values after character swap (model loads async, so delay)
+    (window as any).__crpSyncIfOpen = () => {
+      if (!panel.hasAttribute('hidden')) setTimeout(() => { crpSync(); crpUpdatePinBadge(); }, 1400);
+    };
+  }
+
+  // Voice/chat command → swap the MAIN assistant character (the orb avatar).
+  // Returns a reply string if it handled the command, else null.
+  function tryArVoiceCommand(text: string): string | null {
+    const low = text.trim().toLowerCase();
+
+    const mentionsChar = /(דמות|דמויות|פוקימון|פוקמון|אוויטר|avatar|character|pokemon|pokémon)/i.test(low);
+    const hasSwitchVerb = /(החלף|תחליף|שנה|תשנה|הבא|הבאה|הראה|תראה|תביא|הצג|switch|change|next|show|bring|turn into|be)/i.test(low);
+    const named = MAIN_CHARACTERS.find(c => c.words.test(low));
+
+    // Named character with a switch verb or "character" context → swap it
+    // with the pokeball + red-laser animation.
+    if (named && (hasSwitchVerb || mentionsChar)) {
+      swapMainCharacterAnimated(named.id);
+      return `הדמות הראשית מתחלפת ל${named.label} ⚡`;
+    }
+
+    // Generic next/switch ("החלף דמות" / "הדמות הבאה") → cycle to next.
+    if (hasSwitchVerb && mentionsChar) {
+      const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
+      const idx = MAIN_CHARACTERS.findIndex(c => c.id === cur);
+      const next = MAIN_CHARACTERS[(idx + 1) % MAIN_CHARACTERS.length];
+      swapMainCharacterAnimated(next.id);
+      return `הדמות הראשית מתחלפת ל${next.label} ⚡`;
+    }
+
+    return null;
+  }
+
   let arFxCtx: CanvasRenderingContext2D | null = null;
 
   interface FxParticle {
@@ -1589,6 +6869,192 @@ export function mountApp(root: HTMLElement) {
     if (arHandPos.x >= 0 && arCurrentFx !== 'none') {
       const cvs2 = arFxCtx.canvas;
       spawnFxParticles(arHandPos.x, arHandPos.y, cvs2.width, cvs2.height);
+    }
+  }
+
+  // ── Beam + character canvas draw ─────────────────────────────
+  function drawArCharLayer() {
+    if (!arCharCtx) return;
+    const cvs = arCharCtx.canvas;
+    const ctx = arCharCtx;
+    const w = cvs.width, h = cvs.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Laser beam flying from hand toward orb center
+    if (arBeamFiring) {
+      arBeamProgress = Math.min(1, arBeamProgress + 0.045);
+      const bx1 = arBeamOrigin.x * w;
+      const by1 = arBeamOrigin.y * h;
+      const bx2 = 0.5 * w;
+      const by2 = 0.5 * h;
+      const endX = bx1 + (bx2 - bx1) * arBeamProgress;
+      const endY = by1 + (by2 - by1) * arBeamProgress;
+      ctx.save();
+      ctx.lineCap = 'round';
+      // Outer glow
+      for (let layer = 3; layer >= 0; layer--) {
+        const widths = [24, 14, 6, 2];
+        const alphas = [0.06, 0.15, 0.45, 1];
+        const colors = ['rgba(255,40,40,1)', 'rgba(255,80,40,1)', 'rgba(255,140,60,1)', '#fff'];
+        ctx.beginPath();
+        ctx.moveTo(bx1, by1);
+        ctx.lineTo(endX, endY);
+        ctx.lineWidth = widths[layer];
+        ctx.strokeStyle = colors[layer];
+        ctx.globalAlpha = alphas[layer];
+        ctx.shadowColor = '#ff2200';
+        ctx.shadowBlur = layer === 0 ? 40 : 0;
+        ctx.stroke();
+      }
+      // Tip flare
+      ctx.globalAlpha = 0.9;
+      const grad = ctx.createRadialGradient(endX, endY, 0, endX, endY, 30);
+      grad.addColorStop(0, 'rgba(255,200,100,0.9)');
+      grad.addColorStop(0.5, 'rgba(255,80,20,0.4)');
+      grad.addColorStop(1, 'rgba(255,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(endX, endY, 30, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // When beam reaches orb center — trigger dispel
+      if (arBeamProgress >= 1 && !arOrbDispelled) {
+        arBeamFiring = false;
+        arOrbDispelled = true;
+        // Disintegration burst at center
+        for (let i = 0; i < 60; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = 3 + Math.random() * 10;
+          arFxParticles.push({
+            x: bx2, y: by2,
+            vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+            life: 1, maxLife: 0.4 + Math.random() * 0.6,
+            size: 3 + Math.random() * 12,
+            color: ['#ff4400','#ff7700','#ffaa00','#daa520','#fff','#ff2288'][Math.floor(Math.random()*6)],
+            alpha: 1,
+          });
+        }
+        // Hide stage
+        const stageEl = document.getElementById('stage');
+        if (stageEl) stageEl.classList.add('stage-dispelled');
+      }
+    }
+
+    // Palm hold indicator — circular charge-up ring around hand
+    if (arHandPos.x >= 0 && !arOrbDispelled && !arBeamFiring && arPalmHoldTime > 0.1) {
+      const progress = Math.min(1, arPalmHoldTime / 0.7);
+      const hx = arHandPos.x * w, hy = arHandPos.y * h;
+      ctx.save();
+      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = `hsl(${10 + progress * 30},100%,${50 + progress * 20}%)`;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#ff4400';
+      ctx.shadowBlur = 20;
+      ctx.beginPath();
+      ctx.arc(hx, hy, 48, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // ── Pokeball animation ────────────────────────────────────
+    const pbCX = w * 0.5, pbCY = h * 0.45;
+    const pbR = Math.min(w, h) * 0.08;
+
+    if (arPokeballPhase === 'fly') {
+      arPokeballT++;
+      const t = Math.min(1, arPokeballT / 28);
+      const ease = 1 - Math.pow(1 - t, 3);
+      const bx = arPokeballFrom.x * w + (pbCX - arPokeballFrom.x * w) * ease;
+      const by = arPokeballFrom.y * h + (pbCY - arPokeballFrom.y * h) * ease;
+      const r = pbR * (0.5 + 0.5 * ease);
+      drawPokeballAt(ctx, bx, by, r);
+      if (t >= 1) { arPokeballPhase = 'wobble'; arPokeballT = 0; }
+    } else if (arPokeballPhase === 'wobble') {
+      arPokeballT++;
+      const wobble = Math.sin(arPokeballT * 0.55) * 0.36 * Math.max(0, 1 - arPokeballT / 25);
+      drawPokeballAt(ctx, pbCX, pbCY, pbR, wobble);
+      if (arPokeballT >= 28) { arPokeballPhase = 'open'; arPokeballT = 0; }
+    } else if (arPokeballPhase === 'open') {
+      arPokeballT++;
+      const t = arPokeballT / 15;
+      // Two halves of pokeball flying apart
+      const halfOff = pbR * 2 * t;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - t * 1.2);
+      // Top half flies up
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pbCX, pbCY - halfOff, pbR, Math.PI, 0);
+      ctx.fillStyle = '#e63835'; ctx.fill();
+      ctx.strokeStyle = '#111'; ctx.lineWidth = pbR * 0.06; ctx.stroke();
+      ctx.restore();
+      // Bottom half flies down
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pbCX, pbCY + halfOff, pbR, 0, Math.PI);
+      ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.strokeStyle = '#111'; ctx.lineWidth = pbR * 0.06; ctx.stroke();
+      ctx.restore();
+      ctx.restore();
+      // White expansion flash
+      const flashR = pbR * 3 * t;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 0.8 - t);
+      const grad = ctx.createRadialGradient(pbCX, pbCY, 0, pbCX, pbCY, flashR);
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.4, 'rgba(255,230,120,0.7)');
+      grad.addColorStop(1, 'rgba(255,180,40,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(pbCX, pbCY, flashR, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      if (arPokeballT >= 15) { arPokeballPhase = 'done'; arPokeballT = 0; }
+    }
+
+    // ── Character display after pokeball opens ────────────────
+    if (arOrbDispelled && arCharIdx >= 0 && arCharacters[arCharIdx] && arPokeballPhase === 'done') {
+      const ch = arCharacters[arCharIdx];
+      arCharAnim = Math.min(1, arCharAnim + 0.04);
+      const scale = 0.6 + arCharAnim * 0.4;
+      const alpha = arCharAnim;
+      const cx = w * 0.5;
+      const cy = h * 0.45;
+      const fromX = arCharFromDir.x * w * (1 - arCharAnim) * 0.3;
+      const fromY = arCharFromDir.y * h * (1 - arCharAnim) * 0.3;
+      const size = Math.min(w, h) * 0.52;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cx + fromX, cy + fromY);
+      ctx.scale(scale, scale);
+      // Type glow
+      if (ch.color) {
+        ctx.shadowColor = ch.color;
+        ctx.shadowBlur = 60;
+      }
+      if (ch.drawFn) {
+        ch.drawFn(ctx, size * 0.5);
+      } else if (ch.img) {
+        ctx.drawImage(ch.img, -size / 2, -size / 2, size, size);
+      } else {
+        ctx.font = `${Math.round(size * 0.35)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = ch.color || '#daa520';
+        ctx.fillText(ch.name[0] || '?', 0, 0);
+      }
+      ctx.restore();
+      // Name label
+      if (ch.name && arCharAnim > 0.5) {
+        ctx.save();
+        ctx.globalAlpha = (arCharAnim - 0.5) * 2;
+        ctx.font = `bold ${Math.round(w * 0.028)}px "Space Grotesk", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = ch.color || '#daa520';
+        ctx.shadowColor = ch.color || '#daa520';
+        ctx.shadowBlur = 18;
+        ctx.fillText(ch.name, w * 0.5, h * 0.78);
+        ctx.restore();
+      }
     }
   }
 
@@ -2031,8 +7497,60 @@ export function mountApp(root: HTMLElement) {
       ftCtx.restore();
     }
 
+    drawArCharSwitchZone(w, h, dt);
+
     drawFxParticles();
+    drawArCharLayer();
     arAnimFrame = requestAnimationFrame(drawArObjects);
+  }
+
+  // Dashed "place your hand here" zone — hold your hand inside to switch the
+  // main character. Far more reliable than gesture classification.
+  function drawArCharSwitchZone(w: number, h: number, dt: number) {
+    if (!arObjCtx) return;
+    const ctx = arObjCtx;
+    const zx = AR_ZONE.x * w, zy = AR_ZONE.y * h, zr = AR_ZONE.r * Math.min(w, h);
+    arZoneCooldown = Math.max(0, arZoneCooldown - dt);
+
+    const hand = arHandPos.x >= 0;
+    const dist = hand ? Math.hypot(arHandPos.x * w - zx, arHandPos.y * h - zy) : Infinity;
+    const inside = hand && dist < zr && arZoneCooldown <= 0;
+    if (inside) arZoneDwell = Math.min(1, arZoneDwell + dt / 0.8); // 0.8s to fill
+    else arZoneDwell = Math.max(0, arZoneDwell - dt * 1.5);
+
+    ctx.save();
+    // dashed ring
+    ctx.setLineDash([12, 9]);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = inside ? 'rgba(255,210,90,0.95)' : 'rgba(218,165,32,0.6)';
+    ctx.shadowColor = '#daa520'; ctx.shadowBlur = inside ? 18 : 8;
+    ctx.beginPath(); ctx.arc(zx, zy, zr, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    // dwell progress arc
+    if (arZoneDwell > 0.01) {
+      ctx.lineWidth = 6; ctx.strokeStyle = '#ffcc33'; ctx.shadowBlur = 22;
+      ctx.beginPath(); ctx.arc(zx, zy, zr, -Math.PI / 2, -Math.PI / 2 + arZoneDwell * Math.PI * 2); ctx.stroke();
+    }
+    // label
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${Math.round(zr * 0.5)}px sans-serif`;
+    ctx.fillText('🖐️', zx, zy - zr * 0.1);
+    ctx.fillStyle = inside ? '#ffe08a' : 'rgba(245,230,200,0.9)';
+    ctx.font = `bold ${Math.round(zr * 0.2)}px "Space Grotesk", sans-serif`;
+    ctx.fillText('החלף דמות', zx, zy + zr * 0.45);
+    ctx.restore();
+
+    if (arZoneDwell >= 1 && arZoneCooldown <= 0) {
+      arZoneDwell = 0; arZoneCooldown = 4;
+      const cur = localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu';
+      const idx = MAIN_CHARACTERS.findIndex(c => c.id === cur);
+      const next = MAIN_CHARACTERS[(idx + 1) % MAIN_CHARACTERS.length];
+      addFloatingText(AR_ZONE.x, AR_ZONE.y - 0.14, '⚡ ' + next.label, '#ffcc33');
+      const vp = document.getElementById('arViewport');
+      if (vp) throwPokeball(vp, { onOpen: () => setMainCharacter(next.id) });
+      else setMainCharacter(next.id);
+    }
   }
 
   function openArCamera() {
@@ -2044,6 +7562,8 @@ export function mountApp(root: HTMLElement) {
     const ctx = canvas.getContext('2d')!;
     arObjCtx = objCanvas.getContext('2d')!;
     arFxCtx = fxCanvas.getContext('2d')!;
+    const charCanvas = $<HTMLCanvasElement>('arCharCanvas');
+    arCharCtx = charCanvas.getContext('2d')!;
     const statusEl = $('arStatus');
     const handIndicator = $('arHandIndicator');
     const buttonsEl = $('arButtons');
@@ -2051,6 +7571,27 @@ export function mountApp(root: HTMLElement) {
     const arBtns = [
       { label: 'חיפוש רכב', icon: '🔍', action: () => { const q = prompt('מספר רישוי:'); if (q) hgSearchLicense(q); } },
       { label: 'הכנסות', icon: '💰', action: () => hgShowEarnings('', new Date().toISOString().slice(0, 7)) },
+      { label: 'החלף דמות', icon: '⚡', action: () => {
+        if (!arOrbDispelled) {
+          // First tap: dispel the main orb and summon the first Pokemon.
+          arOrbDispelled = true;
+          document.getElementById('stage')?.classList.add('stage-dispelled');
+          if (arCharacters.length > 0) {
+            arCharIdx = 0;
+            arCharAnim = 0;
+            arPokeballPhase = 'fly'; arPokeballT = 0;
+            arPokeballFrom = { x: 0.5, y: 0.85 };
+            arThrowCooldown = 3.0;
+          }
+        } else if (arCharacters.length > 0 && arPokeballPhase !== 'fly' && arPokeballPhase !== 'wobble' && arPokeballPhase !== 'open') {
+          // Subsequent taps: cycle to the next Pokemon.
+          arCharIdx = (arCharIdx + 1) % arCharacters.length;
+          arCharAnim = 0;
+          arPokeballPhase = 'fly'; arPokeballT = 0;
+          arPokeballFrom = { x: 0.5, y: 0.85 };
+          arThrowCooldown = 3.0;
+        }
+      }},
       { label: 'צלם', icon: '📸', action: () => captureArPhoto() },
       { label: 'סגור', icon: '✕', action: closeArCamera },
     ];
@@ -2064,33 +7605,67 @@ export function mountApp(root: HTMLElement) {
       buttonsEl.appendChild(btn);
     });
 
-    statusEl.textContent = 'מאתחל מצלמה…';
+    statusEl.textContent = 'מבקש הרשאה למצלמה…';
     statusEl.style.opacity = '1';
 
-    navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'user',
-        width: { ideal: 1920, min: 1280 },
-        height: { ideal: 1080, min: 720 },
-        frameRate: { ideal: 30 },
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+    // On phones, ask for a lighter stream WITHOUT hard min-resolution
+    // constraints (many front cameras reject 1280×720 minimums and the
+    // whole request fails). We progressively fall back to the most basic
+    // request so the permission prompt always succeeds.
+    const constraintLevels: MediaStreamConstraints[] = isMobile
+      ? [
+          { video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } },
+          { video: { facingMode: 'user' } },
+          { video: true },
+        ]
+      : [
+          { video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } },
+          { video: { facingMode: 'user' } },
+          { video: true },
+        ];
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      statusEl.textContent = 'הדפדפן לא תומך במצלמה';
+      return;
+    }
+
+    const tryGetStream = async (): Promise<MediaStream | null> => {
+      for (const c of constraintLevels) {
+        try { return await navigator.mediaDevices.getUserMedia(c); }
+        catch (e: any) {
+          // Permission denied is final — stop trying other resolutions.
+          if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) throw e;
+        }
       }
-    }).then(stream => {
+      return null;
+    };
+
+    tryGetStream().then(stream => {
+      if (!stream) { statusEl.textContent = 'לא נמצאה מצלמה זמינה'; return; }
       arStream = stream;
       video.srcObject = stream;
-      video.onloadedmetadata = () => {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        objCanvas.width = video.videoWidth;
-        objCanvas.height = video.videoHeight;
-        fxCanvas.width = video.videoWidth;
-        fxCanvas.height = video.videoHeight;
-        statusEl.textContent = 'מצלמה פעילה';
+      // iOS Safari needs an explicit play() after metadata loads.
+      const onReady = () => {
+        const vw = video.videoWidth || 1280;
+        const vh = video.videoHeight || 720;
+        canvas.width = vw; canvas.height = vh;
+        objCanvas.width = vw; objCanvas.height = vh;
+        fxCanvas.width = vw; fxCanvas.height = vh;
+        charCanvas.width = vw; charCanvas.height = vh;
+        statusEl.textContent = 'מצלמה פעילה ✓';
         setTimeout(() => { statusEl.style.opacity = '0'; }, 2000);
         drawArObjects();
         startHandTracking(video, canvas, ctx, handIndicator, arBtns);
       };
-    }).catch(() => {
-      statusEl.textContent = 'שגיאה: לא ניתן לגשת למצלמה';
+      video.onloadedmetadata = () => { video.play().catch(() => {}); onReady(); };
+    }).catch((e: any) => {
+      if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
+        statusEl.textContent = 'נדחתה הרשאת מצלמה — אשר גישה בהגדרות הדפדפן';
+      } else {
+        statusEl.textContent = 'שגיאה: לא ניתן לגשת למצלמה';
+      }
     });
   }
 
@@ -2098,15 +7673,25 @@ export function mountApp(root: HTMLElement) {
     $('arOverlay').classList.remove('show');
     if (arStream) { arStream.getTracks().forEach(t => t.stop()); arStream = null; }
     cancelAnimationFrame(arAnimFrame);
-    arObjects = []; arGrabbed = null; arObjCtx = null; arFxCtx = null;
+    cancelAnimationFrame(arHandLoop);
+    arObjects = []; arGrabbed = null; arObjCtx = null; arFxCtx = null; arCharCtx = null;
     arFxParticles = []; arLaserTrail = []; arCurrentFx = 'none';
     arGravityZones = []; arTrampoline = null; arFloatingTexts = [];
     arScore = 0; arCombo = 0; arGameActive = false; arGesture = 'none';
     arHand2Pos = { x: -1, y: -1, pinching: false };
+    // Reset dispel/summon state
+    arOrbDispelled = false; arBeamFiring = false; arBeamProgress = 0;
+    arPalmHoldTime = 0; arCharAnim = 0; arThrowCooldown = 0;
+    arPrevGesture = 'none';
+    arPokeballPhase = 'idle'; arPokeballT = 0;
+    document.getElementById('stage')?.classList.remove('stage-dispelled');
     document.querySelectorAll('.ar-fx-btn').forEach(b => b.classList.remove('ar-fx-active'));
     $('arStatus').style.opacity = '1';
+    const hi = document.getElementById('arHandIndicator');
+    if (hi) { hi.classList.remove('ar-detecting', 'ar-searching'); hi.textContent = ''; }
   }
   $('calBtn').onclick = () => openCalendar();
+  $('walletBtn').onclick = () => openWallet();
   $('arClose').onclick = closeArCamera;
   $('arAddBall').onclick = () => addArObject('ball');
   $('arAddCube').onclick = () => addArObject('cube');
@@ -2190,37 +7775,54 @@ export function mountApp(root: HTMLElement) {
     pointerEl.className = 'ar-pointer';
     $('arViewport').appendChild(pointerEl);
 
-    const mpScript = document.createElement('script');
-    mpScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js';
-    mpScript.onload = () => {
-      const camScript = document.createElement('script');
-      camScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.min.js';
-      camScript.onload = () => initMediaPipeHands(video, canvas, ctx, pointerEl, handIndicator, arBtns);
-      document.head.appendChild(camScript);
-    };
-    document.head.appendChild(mpScript);
+    handIndicator.textContent = '⏳ טוען זיהוי…';
+    handIndicator.classList.add('ar-searching');
+    // Reuse the script if AR was opened before in this session.
+    if ((window as any).Hands) {
+      initMediaPipeHands(video, canvas, ctx, pointerEl, handIndicator, arBtns);
+    } else {
+      const mpScript = document.createElement('script');
+      mpScript.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js';
+      mpScript.onerror = () => { handIndicator.textContent = 'נכשלה טעינת זיהוי היד — בדוק חיבור'; };
+      mpScript.onload = () => initMediaPipeHands(video, canvas, ctx, pointerEl, handIndicator, arBtns);
+      document.head.appendChild(mpScript);
+    }
 
     function initMediaPipeHands(
       vid: HTMLVideoElement, cvs: HTMLCanvasElement, c: CanvasRenderingContext2D,
       ptr: HTMLElement, indicator: HTMLElement, btns: { label: string; action: () => void }[]
     ) {
       const Hands = (window as any).Hands;
-      const Camera = (window as any).Camera;
-      if (!Hands || !Camera) {
+      if (!Hands) {
         indicator.textContent = 'Hand tracking unavailable';
         return;
       }
       const hands = new Hands({ locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}` });
-      hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.6 });
+      // Lighter model + single hand on phones so it runs smoothly.
+      // Highest-quality detection on every device. Lower confidence
+      // thresholds so a hand is picked up readily even in poor lighting.
+      hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.4,
+        minTrackingConfidence: 0.4,
+        selfieMode: true,
+      });
+      // Frame-rate-independent gesture timing.
+      let lastFrameT = performance.now();
 
       hands.onResults((results: any) => {
+        const nowT = performance.now();
+        const frameDt = Math.min(0.2, (nowT - lastFrameT) / 1000); // seconds, capped
+        lastFrameT = nowT;
         c.clearRect(0, 0, cvs.width, cvs.height);
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
           for (let h = 0; h < results.multiHandLandmarks.length; h++) {
             const landmarks = results.multiHandLandmarks[h];
             const isRight = h === 0;
-            indicator.textContent = results.multiHandLandmarks.length > 1 ? '✋✋ שתי ידיים' : '✋ יד מזוהה';
-            indicator.style.color = '#daa520';
+            indicator.textContent = results.multiHandLandmarks.length > 1 ? '🟢 מזהה אותך — שתי ידיים' : '🟢 מזהה אותך — יד אחת';
+            indicator.classList.add('ar-detecting');
+            indicator.classList.remove('ar-searching');
 
             c.strokeStyle = isRight ? 'rgba(218,165,32,0.6)' : 'rgba(200,149,106,0.6)';
             c.lineWidth = 2;
@@ -2275,7 +7877,42 @@ export function mountApp(root: HTMLElement) {
               else if (indexUp && !middleUp && !ringUp && !pinkyUp) arGesture = 'pointUp';
               else arGesture = 'none';
 
-              // Gesture-triggered actions
+              // ── Dispel & Summon logic ──────────────────────────────
+              // Palm held 0.7s → fire laser beam at orb
+              if (arGesture === 'palm' && !arOrbDispelled && !arBeamFiring) {
+                arPalmHoldTime += frameDt;
+                if (arPalmHoldTime >= 0.7) {
+                  arBeamFiring = true;
+                  arBeamProgress = 0;
+                  arBeamOrigin = { x: hx, y: hy };
+                  arPalmHoldTime = 0;
+                }
+              } else if (arGesture !== 'palm') {
+                arPalmHoldTime = 0;
+              }
+
+              // Fist → open quickly = "throw" → summon next character via pokeball
+              if (arGesture === 'fist' && arPrevGesture !== 'fist') {
+                arFistStartTime = Date.now();
+              }
+              if ((arGesture === 'palm' || arGesture === 'none') && arPrevGesture === 'fist') {
+                const fistDur = Date.now() - arFistStartTime;
+                if (fistDur < 400 && arOrbDispelled && arThrowCooldown <= 0 && arCharacters.length > 0) {
+                  arCharIdx = (arCharIdx + 1) % arCharacters.length;
+                  arCharAnim = 0;
+                  arCharFromDir = { x: hx - 0.5, y: hy - 0.5 };
+                  arThrowCooldown = 3.0;
+                  arPokeballPhase = 'fly';
+                  arPokeballT = 0;
+                  arPokeballFrom = { x: hx, y: hy };
+                  addFloatingText(hx, hy, '⚡ ' + (arCharacters[arCharIdx]?.name || 'Pokemon'), arCharacters[arCharIdx]?.color || '#daa520');
+                }
+              }
+              arPrevGesture = arGesture;
+              arThrowCooldown = Math.max(0, arThrowCooldown - frameDt);
+              // ──────────────────────────────────────────────────────
+
+              // Gesture-triggered actions (objects in sandbox)
               if (arGesture === 'palm' && arCurrentFx === 'none') {
                 for (const obj of arObjects) {
                   if (!obj.grabbed) {
@@ -2342,19 +7979,30 @@ export function mountApp(root: HTMLElement) {
             }
           }
         } else {
-          indicator.textContent = '👋 הראה יד למצלמה';
-          indicator.style.color = 'var(--dim)';
+          indicator.textContent = '🟡 מחפש… הראה יד למצלמה';
+          indicator.classList.add('ar-searching');
+          indicator.classList.remove('ar-detecting');
           ptr.style.opacity = '0';
           arHandPos = { x: -1, y: -1, pinching: false };
           if (arGrabbed) { arGrabbed.grabbed = false; arGrabbed = null; }
         }
       });
 
-      const cam = new Camera(vid, {
-        onFrame: async () => { await hands.send({ image: vid }); },
-        width: vid.videoWidth || 1920, height: vid.videoHeight || 1080,
-      });
-      cam.start();
+      // Drive MediaPipe from OUR existing camera stream via a manual frame
+      // loop instead of MediaPipe's Camera util — the util opens a *second*
+      // getUserMedia stream, which fails on phones that allow only one
+      // camera consumer at a time.
+      let sending = false;
+      const pump = async () => {
+        if (!arStream) return; // camera closed
+        if (!sending && vid.readyState >= 2 && vid.videoWidth > 0) {
+          sending = true;
+          try { await hands.send({ image: vid }); } catch {}
+          sending = false;
+        }
+        arHandLoop = requestAnimationFrame(pump);
+      };
+      pump();
     }
   }
 
@@ -2391,9 +8039,9 @@ export function mountApp(root: HTMLElement) {
     $<HTMLInputElement>('nameInput').value = state.name;
     $<HTMLInputElement>('keyInput').value = state.key;
     $<HTMLInputElement>('grokKeyInput').value = state.grokKey;
+    $<HTMLInputElement>('groqKeyInput').value = state.groqKey;
     $<HTMLInputElement>('openaiKeyInput').value = state.openaiKey;
     $<HTMLSelectElement>('providerSel').value = state.provider;
-    $<HTMLSelectElement>('puterModelSel').value = state.puterModel;
     $<HTMLSelectElement>('micSel').value = state.micLang;
     $<HTMLSelectElement>('replySel').value = state.replyLang;
     $<HTMLSelectElement>('textLangSel').value = state.textLang;
@@ -2408,6 +8056,8 @@ export function mountApp(root: HTMLElement) {
     $('voiceVolVal').textContent = Math.round((state.voiceVolume != null ? state.voiceVolume : 1) * 100) + '%';
     $<HTMLInputElement>('sfxCheck').checked = state.sfxOn;
     $<HTMLInputElement>('hapticsCheck').checked = state.haptics;
+    $<HTMLInputElement>('fastModeCheck').checked = localStorage.getItem('alpha_fast_mode') === '1';
+    $<HTMLSelectElement>('displayModeSel').value = localStorage.getItem('alpha_display_mode') || 'auto';
     $<HTMLInputElement>('autoSpeakCheck').checked = state.autoSpeak;
     $<HTMLInputElement>('pikaVoiceCheck').checked = state.pikaVoiceOn;
     $<HTMLInputElement>('pikaVolSlider').value = String(Math.round(state.pikaVolume * 100));
@@ -2466,14 +8116,19 @@ export function mountApp(root: HTMLElement) {
 
   // ── Cloud Sync handlers ──
   function updateDriveUI() {
-    const connected = driveSync.isConnected();
+    // "Connected" = we can sync without asking the user again: either a live
+    // token OR prior consent we can silently refresh from. (Before, this was
+    // just the live token, so an hour after sign-in it flipped to "disconnected"
+    // even though sync would auto-reconnect fine.)
+    const connected = driveSync.canAutoConnect();
     const btn = $('driveConnectBtn');
-    btn.textContent = connected ? '✓ Connected' : 'Connect Google Drive';
+    btn.textContent = connected ? '✓ מחובר' : 'חבר Google Drive';
     btn.classList.toggle('cloud-connected', connected);
     ($('driveUploadBtn') as HTMLButtonElement).disabled = !connected;
     ($('driveDownloadBtn') as HTMLButtonElement).disabled = !connected;
     const last = driveSync.lastSyncTime();
-    $('driveStatus').textContent = last ? `Last sync: ${new Date(last).toLocaleString()}` : '';
+    const autoNote = connected ? ' · גיבוי אוטומטי כל 5 דקות' : '';
+    $('driveStatus').textContent = last ? `סנכרון אחרון: ${new Date(last).toLocaleTimeString('he-IL')}${autoNote}` : (connected ? autoNote.trim() : '');
   }
   $('driveConnectBtn').onclick = async () => {
     const id = $<HTMLInputElement>('driveClientId').value.trim();
@@ -2505,6 +8160,74 @@ export function mountApp(root: HTMLElement) {
     if (r.ok) { alert(`שוחזרו ${r.tables} טבלאות. טוען מחדש…`); location.reload(); }
     else alert('ייבוא נכשל: ' + r.error);
   };
+
+  // ── Puter / Google sync ──
+  function updatePuterUI() {
+    const signedIn = puterSync.isSignedIn();
+    $('puterSignedOut').style.display = signedIn ? 'none' : 'flex';
+    $('puterSignedIn').style.display = signedIn ? 'flex' : 'none';
+    if (signedIn) {
+      puterSync.getUser().then(u => {
+        if (u) $('puterUserLabel').textContent = `מחובר: ${u.username || u.email || 'Google'}`;
+      }).catch(() => {});
+      const err = puterSync.getLastSyncError();
+      const last = puterSync.lastSyncTime();
+      if (err) {
+        // Same "looks connected but hasn't actually synced" case the top-bar
+        // indicator now catches — surfaced here too since this panel is where
+        // the owner actually goes looking when a sync seems stuck.
+        $('puterStatus').innerHTML = `<span style="color:#ff8a80">⚠ הסנכרון האחרון נכשל: ${escHtml(err)}</span>${last ? ` · הצליח לאחרונה ב-${new Date(last).toLocaleTimeString('he-IL')}` : ''}`;
+      } else {
+        $('puterStatus').textContent = last
+          ? `סנכרון אחרון: ${new Date(last).toLocaleTimeString('he-IL')} · אוטומטי כל 2 דקות`
+          : 'סנכרון אוטומטי כל 2 דקות';
+      }
+    }
+  }
+  $('puterSignInBtn').onclick = async () => {
+    $('puterSignInBtn').textContent = 'מתחבר…';
+    ($('puterSignInBtn') as HTMLButtonElement).disabled = true;
+    const ok = await puterSync.signIn();
+    ($('puterSignInBtn') as HTMLButtonElement).disabled = false;
+    $('puterSignInBtn').innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84z"/></svg> התחבר עם Google`;
+    if (ok) {
+      updatePuterUI();
+      puterSync.syncToCloud(m => { $('puterStatus').textContent = m; });
+    }
+  };
+  $('puterSyncNowBtn').onclick = async () => {
+    ($('puterSyncNowBtn') as HTMLButtonElement).disabled = true;
+    $('puterStatus').textContent = 'מסנכרן…';
+    const r = await puterSync.syncToCloud(m => { $('puterStatus').textContent = m; });
+    if (!r.ok) $('puterStatus').textContent = 'שגיאה: ' + r.error;
+    ($('puterSyncNowBtn') as HTMLButtonElement).disabled = false;
+    updatePuterUI();
+  };
+  $('puterRestoreBtn').onclick = async () => {
+    if (!confirm('שחזור יחליף את הנתונים המקומיים בגיבוי מהענן. להמשיך?')) return;
+    const r = await puterSync.syncFromCloud(m => { $('puterStatus').textContent = m; });
+    if (!r.ok) $('puterStatus').textContent = 'שגיאה: ' + r.error;
+    else setTimeout(() => location.reload(), 1500);
+  };
+  $('puterSignOutBtn').onclick = async () => {
+    await puterSync.signOut();
+    updatePuterUI();
+  };
+
+  // Sync role selector
+  const syncRoleSel = $<HTMLSelectElement>('syncRoleSel');
+  syncRoleSel.value = puterSync.getSyncRole();
+  syncRoleSel.addEventListener('change', () => {
+    puterSync.setSyncRole(syncRoleSel.value as 'primary' | 'secondary' | 'auto');
+  });
+
+  // Refresh Puter UI when settings open
+  $('settingsBtn').addEventListener('click', () => {
+    setTimeout(() => {
+      updatePuterUI();
+      syncRoleSel.value = puterSync.getSyncRole();
+    }, 50);
+  });
 
   // ── Universal Search ──
   const searchOverlay = $('searchOverlay');
@@ -2576,7 +8299,12 @@ export function mountApp(root: HTMLElement) {
     fabOpen = false; fabMenu.classList.remove('show'); fabBtn.textContent = '+'; fabBtn.style.transform = '';
     if (action === 'task') {
       const text = prompt('Quick task:');
-      if (text?.trim()) { addTask(text.trim()); addMsg(`✅ Task added: "${text.trim()}"`, 'sys'); }
+      if (text?.trim()) {
+        addTask(text.trim());
+        addMsg(`✅ Task added: "${text.trim()}"`, 'sys');
+        puterSync.markDirty();
+        puterSync.scheduleSync(() => updateCloudIndicator());
+      }
     } else if (action === 'note') {
       const text = prompt('Quick note:');
       if (text?.trim()) { saveNote(text.trim()); addMsg(`📝 ${t('noteSaved', state.uiLang)}`, 'sys'); }
@@ -2694,9 +8422,15 @@ export function mountApp(root: HTMLElement) {
   };
   $('pikaSpeakBtn').onclick = () => { pikaSpeak(); };
   $<HTMLInputElement>('pikaVoiceCheck').onchange = (e) => {
-    state.pikaVoiceOn = (e.target as HTMLInputElement).checked;
-    setPikaEnabled(state.pikaVoiceOn);
-    localStorage.setItem('alpha_pikavoice', state.pikaVoiceOn ? '1' : '0');
+    const on = (e.target as HTMLInputElement).checked;
+    state.pikaVoiceOn = on;
+    // One switch controls EVERY character's voice (Pikachu + all cries).
+    setPikaEnabled(on);
+    setCharacterVoiceEnabled(on);
+    setCryEnabled(on);
+    if (on) applyCharacterVoice(localStorage.getItem(MAIN_CHAR_KEY) || 'pikachu');
+    else stopCharacterVoice();
+    localStorage.setItem('alpha_pikavoice', on ? '1' : '0');
   };
   $<HTMLInputElement>('pikaVolSlider').oninput = (e) => {
     const v = +((e.target as HTMLInputElement).value) / 100;
@@ -2734,9 +8468,9 @@ export function mountApp(root: HTMLElement) {
     state.name = $<HTMLInputElement>('nameInput').value.trim() || 'ALPHA';
     state.key = $<HTMLInputElement>('keyInput').value.trim();
     state.grokKey = $<HTMLInputElement>('grokKeyInput').value.trim();
+    state.groqKey = $<HTMLInputElement>('groqKeyInput').value.trim();
     state.openaiKey = $<HTMLInputElement>('openaiKeyInput').value.trim();
     state.provider = $<HTMLSelectElement>('providerSel').value as AIProvider;
-    state.puterModel = $<HTMLSelectElement>('puterModelSel').value;
     state.micLang = $<HTMLSelectElement>('micSel').value as any;
     state.replyLang = $<HTMLSelectElement>('replySel').value as any;
     state.textLang = $<HTMLSelectElement>('textLangSel').value as TextLang;
@@ -2748,12 +8482,17 @@ export function mountApp(root: HTMLElement) {
     state.voiceVolume = +$<HTMLInputElement>('voiceVolSlider').value / 100;
     state.sfxOn = $<HTMLInputElement>('sfxCheck').checked;
     state.haptics = $<HTMLInputElement>('hapticsCheck').checked;
+    const fast = $<HTMLInputElement>('fastModeCheck').checked;
+    localStorage.setItem('alpha_fast_mode', fast ? '1' : '0');
+    orb.setPerfMode(fast);
     state.autoSpeak = $<HTMLInputElement>('autoSpeakCheck').checked;
     audio.sfxOn = state.sfxOn;
     state.pikaVoiceOn = $<HTMLInputElement>('pikaVoiceCheck').checked;
     state.pikaVolume = +$<HTMLInputElement>('pikaVolSlider').value / 100;
     state.pikaPitch = +$<HTMLInputElement>('pikaPitchSlider').value / 100;
     setPikaEnabled(state.pikaVoiceOn);
+    setCharacterVoiceEnabled(state.pikaVoiceOn);   // one switch for all character voices
+    setCryEnabled(state.pikaVoiceOn);
     setPikaVolume(state.pikaVolume);
     setPikaPitch(state.pikaPitch);
     voice.setMicLang(state.micLang);
@@ -2769,10 +8508,17 @@ export function mountApp(root: HTMLElement) {
     localStorage.setItem('alpha_social_insta', socials.insta);
     localStorage.setItem('alpha_social_fb', socials.fb);
     updateConnIndicators();
+    // Display mode (mobile/desktop/auto) — needs a reload to re-mount the orb scene.
+    const prevDisplayMode = localStorage.getItem('alpha_display_mode') || 'auto';
+    const newDisplayMode = $<HTMLSelectElement>('displayModeSel').value;
+    localStorage.setItem('alpha_display_mode', newDisplayMode);
     saveState(state);
     updateAIDisplay();
     $('overlay').classList.remove('show');
     if (state.history.length === 0) addMsg(state.name + ' ' + t('onlineMsg', state.uiLang), 'al');
+    if (newDisplayMode !== prevDisplayMode) {
+      setTimeout(() => location.reload(), 150);
+    }
   };
 
   function pad(n: number) { return String(n).padStart(2, '0'); }
@@ -2784,12 +8530,52 @@ export function mountApp(root: HTMLElement) {
     if (h < 21) return 'GOOD EVENING';
     return 'GOOD NIGHT';
   }
+  // Midnight Protocol (02:00–06:00 Israel time): the whole UI dims toward a
+  // deeper, cooler palette — matching proactive.ts's parallel decision to
+  // silence routine notifications during the same window.
+  function isMidnightProtocol(): boolean {
+    try {
+      const h = parseInt(
+        new Intl.DateTimeFormat('en-US', { hour: '2-digit', hour12: false, timeZone: 'Asia/Jerusalem' }).format(new Date()),
+        10
+      );
+      return h >= 2 && h < 6;
+    } catch { return false; }
+  }
+  let midnightScrim = document.getElementById('midnightScrim');
+  if (!midnightScrim) {
+    midnightScrim = document.createElement('div');
+    midnightScrim.id = 'midnightScrim';
+    document.body.appendChild(midnightScrim);
+  }
+  document.documentElement.classList.toggle('midnight-protocol', isMidnightProtocol());
+
   setInterval(() => {
     const d = new Date();
     $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
     const wmEl = document.querySelector('.wm');
     if (wmEl) wmEl.textContent = getGreeting();
+    document.documentElement.classList.toggle('midnight-protocol', isMidnightProtocol());
   }, 1000);
+
+  // Global click-ripple (AlphaCorePalette interaction guideline: a subtle
+  // water-drop pulse from the click point). Delegated on the document so it
+  // covers every .chip/.fab without per-element wiring; the target just
+  // needs position:relative-or-fixed + overflow:hidden (both already true
+  // for chips and fabs).
+  document.addEventListener('pointerdown', (e) => {
+    const target = (e.target as HTMLElement)?.closest('.chip, .fab') as HTMLElement | null;
+    if (!target) return;
+    const r = target.getBoundingClientRect();
+    const size = Math.max(r.width, r.height) * 1.6;
+    const span = document.createElement('span');
+    span.className = 'ac-ripple-span';
+    span.style.width = span.style.height = `${size}px`;
+    span.style.left = `${e.clientX - r.left}px`;
+    span.style.top = `${e.clientY - r.top}px`;
+    target.appendChild(span);
+    span.addEventListener('animationend', () => span.remove());
+  });
 
   // ===== LEFT PANEL ANIMATIONS =====
 
@@ -2856,8 +8642,9 @@ export function mountApp(root: HTMLElement) {
     }
     setTimeout(drawNeural, 66);
   }
-  initNeural();
-  drawNeural();
+  const perfLite = document.documentElement.classList.contains('perf-lite');
+  if (!perfLite) { initNeural(); drawNeural(); }
+  else { neuralCanvas.style.display = 'none'; }
 
   // --- Wave Canvas ---
   const waveCanvas = $<HTMLCanvasElement>('waveCanvas');
@@ -2892,8 +8679,8 @@ export function mountApp(root: HTMLElement) {
     }
     setTimeout(drawWave, 66);
   }
-  initWave();
-  drawWave();
+  if (!perfLite) { initWave(); drawWave(); }
+  else { waveCanvas.style.display = 'none'; }
 
   // --- Metric Bars Animation ---
   setInterval(() => {
@@ -2966,14 +8753,25 @@ export function mountApp(root: HTMLElement) {
       'gemini-2.0-flash': 'GEMINI 2.0 FLASH',
     };
     const providerNames: Record<string, string> = {
-      'puter': 'VIA PUTER',
+      'groq': 'VIA GROQ',
       'gemini': 'VIA GOOGLE',
       'grok': 'VIA XAI',
       'openai': 'VIA OPENAI',
+      'lmstudio': 'LOCAL · LM STUDIO',
     };
-    const pm = (state as any).puterModel as string || 'gpt-4o-mini';
-    $('aiModelDisplay').textContent = modelNames[pm] || pm.toUpperCase();
-    $('aiProviderDisplay').textContent = providerNames[state.provider] || state.provider.toUpperCase();
+    const modelByProvider: Record<string, string> = {
+      'groq': 'LLAMA 3.3 70B',
+      'gemini': 'GEMINI 2.0 FLASH',
+      'grok': 'GROK-3 MINI',
+      'openai': 'GPT-4O MINI',
+      'lmstudio': 'LOCAL BRAIN',
+    };
+    // When the owner's LM Studio machine is connected it answers first
+    // (free-first chain in gemini.ts) — reflect that in the header display
+    // regardless of which cloud provider is nominally selected.
+    const shown = lmsConfigured() ? 'lmstudio' : state.provider;
+    $('aiModelDisplay').textContent = modelByProvider[shown] || (modelNames[shown] || '');
+    $('aiProviderDisplay').textContent = providerNames[shown] || shown.toUpperCase();
   }
   updateAIDisplay();
 
@@ -2987,19 +8785,10 @@ export function mountApp(root: HTMLElement) {
   function personalGreeting(): string {
     const nm = loadMemory().profile.name;
     if (!nm) return `${state.name} ${t('onlineMsg', state.uiLang)}`;
-    const tasks = loadTasks();
-    const openCount = tasks.filter(t => !t.done).length;
-    const today = new Date().toISOString().slice(0, 10);
-    const todayEvents = loadEvents().filter(e => e.date === today).length;
-    const bits: string[] = [`${greetingPrefix()}, ${nm}.`];
-    if (openCount > 0 || todayEvents > 0) {
-      const parts: string[] = [];
-      if (todayEvents) parts.push(`${todayEvents} ${t('eventsToday', state.uiLang)}`);
-      if (openCount) parts.push(`${openCount} ${t('openTasks', state.uiLang)}`);
-      bits.push(`${t('youHave', state.uiLang)} ${parts.join(` ${t('and', state.uiLang)} `)}.`);
-    }
-    bits.push(t('howCanIHelp', state.uiLang));
-    return bits.join(' ');
+    // Fixed, always-English opening line per owner request — a short,
+    // consistent "I'm awake" moment right as the boot veil drops, rather
+    // than a longer localized briefing.
+    return `I'm awake, ${nm}. How can I help?`;
   }
 
   // ── First-run welcome: ask the user's name so the AI can address them ──
@@ -3034,6 +8823,308 @@ export function mountApp(root: HTMLElement) {
     nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') finish(nameInput.value); });
   }
 
+  // ── Cloud sync status indicator ──
+  function addCloudIndicator() {
+    if ($('cloudIndicator')) return;
+    const ind = document.createElement('button');
+    ind.id = 'cloudIndicator';
+    ind.title = 'סנכרון ענן';
+    // Live inside the header button row (a flex row) so it never overlaps the
+    // settings button — it used to be a fixed element pinned at right:220px which
+    // landed on top of the gear on phones.
+    ind.className = 'chip ghost';
+    ind.style.cssText = 'font-size:11px;gap:5px;color:rgba(201,168,76,.7);letter-spacing:.5px;padding:0 8px;';
+    ind.innerHTML = '☁ <span id="cloudStatus">לא מחובר</span>';
+    ind.onclick = async () => {
+      if (!puterSync.isSignedIn()) {
+        showLoginScreen();
+        return;
+      }
+      const hadPriorError = !!puterSync.getLastSyncError();
+      (ind as HTMLElement).innerHTML = '🔄 <span id="cloudStatus">מסנכרן…</span>';
+      const action = await puterSync.smartSync();
+      if (action === 'downloaded') {
+        (ind as HTMLElement).innerHTML = '✓ <span id="cloudStatus">עודכן מהענן</span>';
+        setTimeout(() => location.reload(), 800);
+      } else if (action === 'uploaded') {
+        (ind as HTMLElement).innerHTML = '✓ <span id="cloudStatus">הועלה לענן</span>';
+        setTimeout(updateCloudIndicator, 2500);
+      } else {
+        (ind as HTMLElement).innerHTML = '⚠ <span id="cloudStatus">שגיאה</span>';
+        // A retry that fails again while the client still thinks it's signed
+        // in usually means a stale/expired session isSignedIn() can't detect
+        // on its own — offer to reconnect instead of silently retrying forever.
+        if (hadPriorError && puterSync.getLastSyncError()) {
+          const reconnect = confirm(`הסנכרון לענן ממשיך להיכשל (${puterSync.getLastSyncError()}). לרוב זה קורה כשההתחברות פגה. להתחבר מחדש עכשיו?`);
+          if (reconnect) {
+            await puterSync.signOut();
+            await showLoginScreen();
+            return;
+          }
+        }
+        setTimeout(updateCloudIndicator, 2500);
+      }
+    };
+    const topR = document.querySelector('.chrome.topR');
+    if (topR) topR.appendChild(ind); else document.body.appendChild(ind);
+  }
+
+  function updateCloudIndicator() {
+    const ind = $('cloudIndicator');
+    if (!ind) return;
+    if (puterSync.isSignedIn()) {
+      const err = puterSync.getLastSyncError();
+      if (err) {
+        // The client still thinks it's signed in (isSignedIn() is a local
+        // check), but the last actual sync attempt failed — most likely a
+        // stale/expired session the client can't detect on its own. Showing
+        // the old "✓ connected, last sync HH:MM" here would hide a sync
+        // that's been silently failing for hours (exactly what happened:
+        // periodic sync every 2 min kept failing quietly with no visible sign).
+        ind.innerHTML = '⚠ <span id="cloudStatus">סנכרון נכשל — לחץ להתחבר מחדש</span>';
+        (ind as HTMLElement).style.borderColor = 'rgba(224,71,63,.5)';
+        (ind as HTMLElement).style.color = 'rgba(255,138,128,.9)';
+        return;
+      }
+      const ts = puterSync.lastSyncTime();
+      const ago = ts ? new Date(ts).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '';
+      ind.innerHTML = `✓ <span id="cloudStatus">${ago || 'מחובר'}</span>`;
+      (ind as HTMLElement).style.borderColor = 'rgba(76,175,80,.4)';
+      (ind as HTMLElement).style.color = 'rgba(76,175,80,.85)';
+    } else {
+      ind.innerHTML = '☁ <span id="cloudStatus">לא מחובר</span>';
+      (ind as HTMLElement).style.borderColor = 'rgba(201,168,76,.25)';
+      (ind as HTMLElement).style.color = 'rgba(201,168,76,.7)';
+    }
+  }
+
+  // ── Login screen — private app: Google sign-in is mandatory, there is no
+  // "continue without account" path. The overlay only resolves once the user
+  // is signed in (access itself is restricted to the owner's Google account by
+  // the OAuth consent screen's test-user list). ──
+  async function showLoginScreen(): Promise<void> {
+    return new Promise((resolve) => {
+      const ov = document.createElement('div');
+      ov.id = 'loginScreen';
+      ov.style.cssText = [
+        'position:fixed;inset:0;z-index:99999',
+        'background:linear-gradient(135deg,#0a0806 0%,#130f07 50%,#0d0a05 100%)',
+        'display:flex;flex-direction:column;align-items:center;justify-content:center',
+        'padding:24px;transition:opacity .5s',
+      ].join(';');
+      ov.innerHTML = `
+        <div style="text-align:center;max-width:360px;width:100%">
+          <img src="${import.meta.env.BASE_URL}heavyguard-logo.png" alt="Alpha"
+               style="height:56px;margin-bottom:8px;filter:drop-shadow(0 0 18px rgba(218,165,32,.5))" />
+          <h1 style="font-size:26px;font-weight:700;color:#daa520;margin:0 0 4px;letter-spacing:2px">ALPHA</h1>
+          <p style="font-size:12px;color:rgba(218,165,32,.5);letter-spacing:4px;margin:0 0 36px">העוזר האישי שלך</p>
+
+          <div style="background:rgba(218,165,32,.06);border:1px solid rgba(218,165,32,.18);border-radius:16px;padding:28px 24px;margin-bottom:16px">
+            <p style="font-size:13px;color:rgba(255,255,255,.7);margin:0 0 20px;line-height:1.7">
+              התחבר עם חשבון Google כדי לשמור את הנתונים שלך ולסנכרן בין כל המכשירים
+            </p>
+            <button id="loginGoogleBtn" style="
+              display:flex;align-items:center;justify-content:center;gap:10px;
+              width:100%;padding:13px 20px;border-radius:10px;
+              background:#fff;color:#1a1a1a;border:none;
+              font-size:15px;font-weight:600;cursor:pointer;
+              box-shadow:0 2px 12px rgba(0,0,0,.3);transition:transform .15s,box-shadow .15s
+            ">
+              <svg width="20" height="20" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              המשך עם Google
+            </button>
+            <div id="loginStatus" style="font-size:11px;color:rgba(218,165,32,.7);margin-top:12px;min-height:16px;text-align:center"></div>
+
+            <button id="loginCidToggle" type="button" style="
+              background:none;border:none;color:rgba(218,165,32,.55);
+              font-size:11px;cursor:pointer;margin-top:12px;text-decoration:underline
+            ">בעיה בהתחברות? הגדר Client ID</button>
+            <div id="loginCidBox" style="display:none;margin-top:10px;text-align:right">
+              <input id="loginCidInput" type="text" dir="ltr" placeholder="xxxx.apps.googleusercontent.com"
+                style="width:100%;box-sizing:border-box;padding:9px 10px;border-radius:8px;
+                       border:1px solid rgba(218,165,32,.3);background:rgba(0,0,0,.3);color:#fff;font-size:11px" />
+              <button id="loginCidSave" style="
+                width:100%;margin-top:8px;padding:10px;border-radius:8px;
+                border:1px solid rgba(218,165,32,.4);background:rgba(218,165,32,.12);
+                color:#daa520;font-size:13px;font-weight:600;cursor:pointer
+              ">שמור ונסה שוב</button>
+              <button id="loginCidReset" style="
+                width:100%;margin-top:8px;padding:10px;border-radius:8px;
+                border:1px solid rgba(76,175,80,.4);background:rgba(76,175,80,.12);
+                color:#8fe38f;font-size:13px;font-weight:600;cursor:pointer
+              ">🔄 אפס Client ID לברירת המחדל (מומלץ בטלפון)</button>
+              <p style="font-size:10px;color:rgba(255,255,255,.4);margin:8px 0 0;line-height:1.5">
+                אם במחשב מתחבר ובטלפון לא — קרוב לוודאי שבמכשיר הזה שמור Client ID ישן.
+                לחץ "אפס" כדי לחזור לברירת המחדל התקינה. ה-Client ID חייב להיות מסוג
+                "Web application" ב-Google Cloud, עם כתובת האפליקציה רשומה תחת Authorized JavaScript origins.
+              </p>
+            </div>
+          </div>
+
+          <p style="font-size:11px;color:rgba(255,255,255,.28);margin:6px 0 0;line-height:1.6">
+            🔒 אפליקציה פרטית — הגישה דרך חשבון Google המורשה בלבד.
+          </p>
+        </div>`;
+
+      document.body.appendChild(ov);
+
+      // Pre-load Google's client now so the tap on "המשך עם Google" opens the
+      // OAuth popup inside the gesture (mobile blocks popups opened after the
+      // script finishes downloading — the "works on computer, fails on phone"
+      // symptom). Fire-and-forget; signIn() still works if this hasn't finished.
+      driveSync.prewarm();
+
+      const dismiss = () => {
+        ov.style.opacity = '0';
+        setTimeout(() => { ov.remove(); resolve(); updateCloudIndicator(); }, 500);
+      };
+
+      // Client-ID escape hatch — shows the ID the app is actually sending
+      // (which may be a stale/corrupt value cached on this device) and lets the
+      // user correct it. Reload after saving so the cached GIS token client is
+      // rebuilt with the new id instead of the old one.
+      const cidBox = ov.querySelector('#loginCidBox') as HTMLElement;
+      const cidInput = ov.querySelector('#loginCidInput') as HTMLInputElement;
+      cidInput.value = driveSync.getClientId();
+      (ov.querySelector('#loginCidToggle') as HTMLButtonElement).onclick = () => {
+        cidBox.style.display = cidBox.style.display === 'none' ? 'block' : 'none';
+      };
+      (ov.querySelector('#loginCidSave') as HTMLButtonElement).onclick = () => {
+        const v = cidInput.value.trim();
+        if (!v) return;
+        driveSync.setClientId(v);
+        const status = ov.querySelector('#loginStatus') as HTMLElement;
+        status.textContent = '✓ נשמר — טוען מחדש…';
+        setTimeout(() => location.reload(), 500);
+      };
+      (ov.querySelector('#loginCidReset') as HTMLButtonElement).onclick = () => {
+        driveSync.resetClientId();
+        const status = ov.querySelector('#loginStatus') as HTMLElement;
+        status.textContent = '✓ אופס לברירת המחדל — טוען מחדש…';
+        setTimeout(() => location.reload(), 500);
+      };
+
+      (ov.querySelector('#loginGoogleBtn') as HTMLButtonElement).onclick = async () => {
+        const btn = ov.querySelector('#loginGoogleBtn') as HTMLButtonElement;
+        const status = ov.querySelector('#loginStatus') as HTMLElement;
+        btn.disabled = true;
+        btn.style.opacity = '0.7';
+        status.textContent = 'מתחבר…';
+        const ok = await puterSync.signIn();
+        if (!ok) {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          status.textContent = 'ההתחברות לא הושלמה. בדוק שה-Client ID תקין ורשום ב-Google Cloud ונסה שוב.';
+          cidBox.style.display = 'block'; // surface the fixer so the user isn't stuck
+          return;
+        }
+        status.textContent = 'מחובר! מוריד נתונים…';
+        const hasCloud = await puterSync.hasCloudBackup();
+        if (hasCloud) {
+          const r = await puterSync.syncFromCloud(m => { status.textContent = m; });
+          if (r.ok && (r.tables ?? 0) > 0) {
+            status.textContent = `✓ שוחזרו ${r.tables} טבלאות`;
+            setTimeout(() => dismiss(), 900);
+            setTimeout(() => location.reload(), 1500);
+            return;
+          }
+        }
+        status.textContent = '✓ מחובר — הנתונים יסתנכרנו אוטומטית';
+        setTimeout(() => dismiss(), 800);
+      };
+    });
+  }
+
+  // ── Cloud init — wait for puter.js async load, then login + sync ──
+  addCloudIndicator();
+  (async () => {
+    const puterReady = await puterSync.waitForPuter(10_000);
+    updateCloudIndicator();
+
+    if (puterReady) {
+      // Locked app — Google sign-in is required to get in. Keep showing the
+      // login gate until the user is actually signed in; there is no skip.
+      while (!puterSync.isSignedIn()) {
+        await showLoginScreen();
+      }
+
+      if (puterSync.isSignedIn()) {
+        // Smart sync: compare cloud timestamp vs local — pull if cloud is newer, push if local is newer
+        const action = await puterSync.smartSync();
+        // Reload once after a cloud download so the UI picks up fresh data.
+        // Guard with sessionStorage: the "secondary" device role ALWAYS returns
+        // 'downloaded', so without this guard the page reloads in an infinite
+        // loop (download → reload → download → reload…).
+        const RELOAD_GUARD = 'alpha_synced_reload_done';
+        if (action === 'downloaded' && !sessionStorage.getItem(RELOAD_GUARD)) {
+          sessionStorage.setItem(RELOAD_GUARD, '1');
+          updateCloudIndicator();
+          setTimeout(() => location.reload(), 600);
+          return;
+        }
+        updateCloudIndicator();
+
+        // Periodic sync every 2 min — pick up changes from other devices.
+        setInterval(async () => {
+          if (puterSync.isSignedIn()) {
+            await puterSync.smartSync();
+            updateCloudIndicator();
+          }
+        }, 2 * 60 * 1000);
+      }
+    }
+
+    // ── Immediate upload when HeavyGuard saves (photos / installs / edits) ──
+    // HeavyGuard runs in a same-origin iframe; when it writes hg2:* keys to
+    // localStorage, THIS window receives a 'storage' event. Mark dirty and
+    // upload (debounced) so photos and changes reach the other devices right
+    // away instead of waiting for the periodic timer. 'secondary' devices only
+    // download, so they don't upload here.
+    let hgUploadTimer: ReturnType<typeof setTimeout> | null = null;
+    window.addEventListener('storage', (e) => {
+      if (!e.key || !e.key.startsWith('hg2:')) return;
+      puterSync.markDirty();
+      if (puterSync.getSyncRole() === 'secondary') return;
+      if (hgUploadTimer) clearTimeout(hgUploadTimer);
+      hgUploadTimer = setTimeout(() => {
+        if (puterSync.isSignedIn()) {
+          puterSync.syncToCloud().then(() => updateCloudIndicator());
+        }
+      }, 3500); // debounce bursts (e.g. several photos at once)
+    });
+
+    // Google Drive fallback — gate on canAutoConnect() (consent granted before)
+    // rather than isConnected() (a live, unexpired token). GIS access tokens
+    // die after ~1h, so isConnected() went false an hour after sign-in and the
+    // whole periodic sync never restarted — the "synced at 13:04 then stopped"
+    // bug. ensureToken() silently mints a fresh token before each sync.
+    if (driveSync.canAutoConnect()) {
+      const ok = await driveSync.ensureToken();
+      if (ok) {
+        // Always merge-pull on boot. This used to be gated on "no local data",
+        // which meant a PC that already had dashboard data NEVER pulled the
+        // phone's Heavy Guard installs — and 30s later its upload clobbered
+        // them in the cloud. Restores are record-level merges now, so pulling
+        // over local data can only add records, never wipe them. Reload once
+        // per session, and only when the pull actually changed something.
+        const r = await driveSync.syncFromCloud();
+        const RELOAD_GUARD = 'alpha_drive_reload_done';
+        if (r.ok && (r.changed ?? 0) > 0 && !sessionStorage.getItem(RELOAD_GUARD)) {
+          sessionStorage.setItem(RELOAD_GUARD, '1');
+          setTimeout(() => location.reload(), 500);
+          return;
+        }
+      }
+      setTimeout(() => { driveSync.ensureToken().then(t => { if (t) driveSync.syncToCloud(); }); }, 30_000);
+      setInterval(() => { driveSync.ensureToken().then(t => { if (t) driveSync.syncToCloud(); }); }, 5 * 60 * 1000);
+    }
+  })();
+
   // ── Restore chat history ──
   const prevHistory = loadChatHistory();
   if (prevHistory.length > 0) {
@@ -3051,19 +9142,43 @@ export function mountApp(root: HTMLElement) {
   }
 
   const knownName = loadMemory().profile.name;
-  if (!knownName) showWelcome();
+  // Skip while a locked Oriki session is booting: the overlay would only be
+  // CSS-hidden (body.oriki-mode), not dismissed, and would pop back up the
+  // moment the parent exits the lock — a name-onboarding prompt is not
+  // something the locked session should ever be carrying underneath it.
+  if (!knownName && localStorage.getItem('alpha:oriki:on') !== '1') showWelcome();
   else if (prevHistory.length === 0) addMsg(personalGreeting(), 'al');
 
-  // ── 3D Depth — perspective-based UI panel transforms ──
+  // (Spoken "מה המצב" entry greeting removed per user request — the app no
+  //  longer speaks a greeting on entry.)
+
+  // ── Holographic 3D depth — perspective-based UI panel parallax ──
+  // Desktop: driven by mouse position. Mobile/tablet: driven by device tilt
+  // (gyroscope). The .topL/.topR containers additionally use
+  // transform-style:preserve-3d with per-child translateZ steps (style.css),
+  // so the wordmark/clock/badge layers shift independently inside the tilt —
+  // real multi-layer depth, not a flat monolith rotating.
+  //
+  // The gyro path only spins up its rAF loop after the FIRST real
+  // deviceorientation reading arrives, so devices that never fire one
+  // (no sensor, iOS permission not granted) never pay for an idle loop.
+  // A slow-tracking baseline high-passes the tilt signal: holding the phone
+  // at any sustained angle relaxes back to neutral, so panels react to
+  // *changes* in tilt rather than staying stuck tilted (the iPad bug that
+  // got the old always-on version disabled on touch devices entirely).
+  // NOTE: deliberately NOT gated on perf-lite — perf-lite exists to strip
+  // backdrop-filter blur (its real cost driver), and it's auto-on for every
+  // touch phone/tablet, i.e. exactly the devices the gyro path serves. Five
+  // composited transform writes per frame are negligible next to the WebGL
+  // scene, and with blur already stripped there's no re-blur amplification.
   {
-    const isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
-    if (!isMob) {
-      let uiMX = 0, uiMY = 0;
-      let uiSX = 0, uiSY = 0;
-      document.addEventListener('mousemove', (e) => {
-        uiMX = (e.clientX / window.innerWidth - 0.5) * 2;
-        uiMY = (e.clientY / window.innerHeight - 0.5) * 2;
-      });
+    const reduced = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const isTouch = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
+    const isMob = isTouch || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 900;
+    if (!reduced) {
+      let uiMX = 0, uiMY = 0; // target, -1..1
+      let uiSX = 0, uiSY = 0; // smoothed
+      let running = false;
       const lp = root.querySelector('.left-panel') as HTMLElement;
       const rp = root.querySelector('.right-panel') as HTMLElement;
       const dk = root.querySelector('.dock') as HTMLElement;
@@ -3072,16 +9187,73 @@ export function mountApp(root: HTMLElement) {
       function uiDepthTick() {
         uiSX += (uiMX - uiSX) * 0.06;
         uiSY += (uiMY - uiSY) * 0.06;
-        const rx = uiSY * -0.8;
-        const ry = uiSX * 1.2;
-        if (lp) lp.style.transform = `perspective(1200px) rotateY(${ry * 0.6}deg) rotateX(${rx * 0.5}deg) translateZ(8px)`;
-        if (rp) rp.style.transform = `perspective(1200px) rotateY(${ry * 0.5}deg) rotateX(${rx * 0.4}deg) translateZ(6px)`;
-        if (dk) dk.style.transform = `translateX(-50%) perspective(1200px) rotateX(${rx * -1.2}deg) translateZ(12px)`;
-        if (tl) tl.style.transform = `perspective(1200px) rotateY(${ry * 0.3}deg) translateZ(4px)`;
-        if (tr) tr.style.transform = `perspective(1200px) rotateY(${ry * 0.3}deg) translateZ(4px)`;
+        // Rest gate: once the smoothed value settles, STOP touching style —
+        // rewriting a transform on a backdrop-filter panel forces the
+        // compositor to re-raster the blurred layer every frame, which reads
+        // as "everything feels slightly stuck" on desktop. Static panels are
+        // free; we only pay while the parallax is actually moving.
+        const moved = Math.abs(uiMX - uiSX) + Math.abs(uiMY - uiSY) > 0.0015;
+        if (moved) {
+          const rx = uiSY * -0.8;
+          const ry = uiSX * 1.2;
+          if (lp) lp.style.transform = `perspective(1200px) rotateY(${ry * 0.6}deg) rotateX(${rx * 0.5}deg) translateZ(8px)`;
+          if (rp) rp.style.transform = `perspective(1200px) rotateY(${ry * 0.5}deg) rotateX(${rx * 0.4}deg) translateZ(6px)`;
+          if (dk) dk.style.transform = `translateX(-50%) perspective(1200px) rotateX(${rx * -1.2}deg) translateZ(12px)`;
+          if (tl) tl.style.transform = `perspective(1200px) rotateY(${ry * 0.3}deg) translateZ(4px)`;
+          if (tr) tr.style.transform = `perspective(1200px) rotateY(${ry * 0.3}deg) translateZ(4px)`;
+        }
         requestAnimationFrame(uiDepthTick);
       }
-      requestAnimationFrame(uiDepthTick);
+      const start = () => { if (!running) { running = true; requestAnimationFrame(uiDepthTick); } };
+      if (!isMob) {
+        document.addEventListener('mousemove', (e) => {
+          uiMX = (e.clientX / window.innerWidth - 0.5) * 2;
+          uiMY = (e.clientY / window.innerHeight - 0.5) * 2;
+        });
+        start();
+      } else {
+        let baseB: number | null = null, baseG = 0;
+        window.addEventListener('deviceorientation', (e) => {
+          if (e.beta == null || e.gamma == null) return;
+          if (baseB === null) { baseB = e.beta; baseG = e.gamma; }
+          // slow-follow baseline (~3s time constant at 60Hz): sustained tilt
+          // becomes the new "neutral", only tilt *changes* drive parallax
+          baseB += (e.beta - baseB) * 0.005;
+          baseG += (e.gamma - baseG) * 0.005;
+          uiMX = Math.max(-1, Math.min(1, (e.gamma - baseG) / 18));
+          uiMY = Math.max(-1, Math.min(1, (e.beta - baseB) / 18));
+          start();
+        });
+      }
     }
+  }
+
+  // ── Revenue Data-Tornado feed — real HeavyGuard numbers ─────────────────
+  // The gold particle helix around the core fills to this month's install
+  // revenue (hg2:index rows, written by heavyguard.html to localStorage) vs.
+  // a monthly target. A cross-tab storage event on hg2:index means a new
+  // install was just logged → fire the ingestion light-burst live.
+  {
+    const REV_TARGET = () => {
+      const t = Number(localStorage.getItem('alpha:rev_target'));
+      return Number.isFinite(t) && t > 0 ? t : 40000; // ₪/month default
+    };
+    const feedRevenue = () => {
+      try {
+        const idx = JSON.parse(localStorage.getItem('hg2:index') || '[]');
+        if (!Array.isArray(idx)) return;
+        const mKey = new Date().toISOString().slice(0, 7);
+        const monthly = idx.reduce((s: number, x: any) =>
+          s + (String(x?.date || '').slice(0, 7) === mKey ? (Number(x?.price) || 0) : 0), 0);
+        orb.setRevenueFill?.(Math.min(1, monthly / REV_TARGET()));
+      } catch {}
+    };
+    feedRevenue();
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'hg2:index') {
+        feedRevenue();
+        try { orb.revenueIngest?.(); } catch {}
+      }
+    });
   }
 }

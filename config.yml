@@ -1,0 +1,91 @@
+# ═══════════════════════════════════════════════════════════════════════
+# ALPHA — Cloudflare Tunnel Architecture (cloudflared) — "OmniMatrix"
+# ═══════════════════════════════════════════════════════════════════════
+# Wraps the 13-agent system in one secure HTTPS tunnel from your PC:
+#
+#   https://matrix.YOUR-DOMAIN.com      → Alpha 3D frontend  (local Vite server)
+#   https://api.matrix.YOUR-DOMAIN.com  → LM Studio API      (localhost:1234)
+#
+# ⚠️ CORRECTED FROM THE ORIGINAL DRAFT — two things changed on purpose:
+#
+# 1) PORT: this repo has no server on 3000. `npm run dev` (Vite) serves on
+#    5173; `npm run build && npm run preview` serves the production build on
+#    4173. The frontend ingress below points at 4173 — build once, then run
+#    that server continuously behind the tunnel. For live-editing from the
+#    phone instead, swap the service line to `http://localhost:5173` and run
+#    `npm run dev` (with TUNNEL_HOST set — see the vite.config.ts note below).
+#
+# 2) NO EXPRESS MIDDLEWARE: this repo has no Node/Express server anywhere —
+#    it's a static Vite SPA; every LLM call (Claude/Groq/LM Studio) fires
+#    directly from the browser in agents/App.jsx. There is nowhere to attach
+#    an `app.use(...)` gate, and even if there were, checking `req.headers
+#    .host` is NOT real access control — the Host header is just a string the
+#    client sends, trivially spoofed by anyone hitting the origin directly
+#    (bypassing the tunnel). It would give a false sense of security, not
+#    real security. The actual bank-grade mechanism is Cloudflare Access
+#    (below) — it authenticates the PERSON at Cloudflare's edge, before any
+#    request reaches your PC at all.
+#
+# ── התקנה חד-פעמית (במחשב שמריץ את LM Studio) ─────────────────────────
+#   1) התקן cloudflared:  winget install Cloudflare.cloudflared
+#      (mac: brew install cloudflared)
+#   2) cloudflared tunnel login              ← נפתח דפדפן, בחר את הדומיין
+#   3) cloudflared tunnel create OmniMatrix  ← שומר קובץ credentials (.json)
+#   4) עדכן למטה את credentials-file ו-YOUR-DOMAIN.com לפי הפלט של שלב 3
+#   5) הפנה DNS (פעם אחת לכל hostname):
+#        cloudflared tunnel route dns OmniMatrix matrix.YOUR-DOMAIN.com
+#        cloudflared tunnel route dns OmniMatrix api.matrix.YOUR-DOMAIN.com
+#   6) הרצה:  cloudflared tunnel --config config.yml run OmniMatrix
+#      (כשירות קבוע:  cloudflared service install)
+#   7) הרם את שרת ה-frontend המקומי (build אחד, שרת קבוע):
+#        npm run build
+#        TUNNEL_HOST=matrix.YOUR-DOMAIN.com npx vite preview --port 4173
+#      (הגנת ה-Host header של Vite נשארת מלאה — TUNNEL_HOST מרשה בדיוק את
+#      השם הזה ולא יותר; בלי המשתנה, השרת חסום לגמרי מבחוץ כברירת מחדל.)
+#
+# ── הגדרות באפליקציה אחרי שהטאנל רץ ───────────────────────────────────
+#   • LM Studio: הפעל את השרת (Developer → Start Server) + הדלק CORS
+#     (Settings → Enable CORS), ואז במרכז הסוכנים ⚙ הגדרות → מנוע AI →
+#     כתובת LM Studio הדבק:  https://api.matrix.YOUR-DOMAIN.com/v1
+#     מעכשיו גם הטלפון מדבר עם המוח המקומי שלך — חינם, בלי מפתחות API.
+#   • Google Login דרך הטאנל: אם נכנסים לאפליקציה דרך matrix.YOUR-DOMAIN.com,
+#     חובה להוסיף אותו ב-Google Cloud Console → Credentials → ה-OAuth
+#     client → Authorized JavaScript origins, אחרת invalid_client — בדיוק
+#     כמו שקרה עם onrender.
+#   • מגע בטלפון: הפרונטאנד מלא-מגע נטיבית כבר עכשיו (ג'ויסטיק כפול קבוע:
+#     ימני תנועה / שמאלי מצלמה, טאפ לבחירת סוכן, God-Mode gizmo במגע) —
+#     חוויה 1:1 מול הדסקטופ מכל קישור HTTPS, כולל דרך הטאנל.
+#
+# ── אבטחה אמיתית (לא Host-header check) ────────────────────────────────
+#   שים את שני ה-hostnames מאחורי Cloudflare Access:
+#     Zero Trust → Access → Applications → Self-hosted
+#     Policy: Include → Emails → האימייל שלך בלבד.
+#   זה אימות אמיתי בקצה של Cloudflare, שרץ לפני שהבקשה בכלל מגיעה למחשב
+#   שלך — לא סימולציה של בדיקת header שכל אחד יכול לזייף.
+# ═══════════════════════════════════════════════════════════════════════
+
+tunnel: OmniMatrix
+credentials-file: ~/.cloudflared/<YOUR_TUNNEL_ID>.json   # מהפלט של שלב 3
+
+ingress:
+  # Alpha 3D frontend — local production build (npm run build && vite preview)
+  - hostname: matrix.YOUR-DOMAIN.com
+    service: http://localhost:4173
+
+  # LM Studio — OpenAI-compatible API (המוח המקומי של 13 הסוכנים)
+  - hostname: api.matrix.YOUR-DOMAIN.com
+    service: http://localhost:1234
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+
+  # (רשות) ALPHA HOME WORKER — ה-outbox של סבבי העבודה האוטונומיים
+  # (worker/alpha-worker.mjs). נחוץ רק כדי שהטלפון ימשוך תוצרים דרך המנהרה;
+  # בלי זה הם נקלטים בכניסה הבאה מהמחשב הביתי. אם מפעילים: route dns +
+  # Cloudflare Access גם עליו, ובאפליקציה localStorage:
+  # alpha:agents:workerUrl = https://worker.matrix.YOUR-DOMAIN.com
+  # - hostname: worker.matrix.YOUR-DOMAIN.com
+  #   service: http://localhost:8799
+
+  # everything else
+  - service: http_status:404

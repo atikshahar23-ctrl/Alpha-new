@@ -1,0 +1,168 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --phosphor: #39ff14;
+    --violet-deep: #4c0f7a;
+    --violet-glow: #a855f7;
+    --amber: #ffb000;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-void text-phosphor font-mono antialiased;
+    overscroll-behavior: none;
+  }
+
+  /* Tabular figures everywhere — readouts must not jitter as digits change. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  ::selection {
+    background: var(--phosphor);
+    color: #000;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--phosphor);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #000;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1f8c0c;
+  }
+}
+
+@layer components {
+  /* ── Typographic signature ─────────────────────────────────────────
+     Tiny, wide, uppercase labels against huge tight numerals.
+     That contrast is the whole personality of the type system.        */
+  .label {
+    @apply font-mono text-[10px] uppercase tracking-[0.24em] text-ash;
+  }
+  .label-live {
+    @apply font-mono text-[10px] uppercase tracking-[0.24em] text-phosphor-dim;
+  }
+  .readout {
+    @apply font-display font-bold tabular-nums tracking-tight;
+    text-shadow: 0 0 12px rgba(57, 255, 20, 0.5);
+  }
+
+  .glow-text {
+    text-shadow:
+      0 0 6px rgba(57, 255, 20, 0.75),
+      0 0 22px rgba(57, 255, 20, 0.28);
+  }
+  .glow-amber {
+    color: var(--amber);
+    text-shadow:
+      0 0 6px rgba(255, 176, 0, 0.8),
+      0 0 22px rgba(255, 176, 0, 0.3);
+  }
+  .glow-violet {
+    text-shadow:
+      0 0 8px rgba(168, 85, 247, 0.8),
+      0 0 26px rgba(168, 85, 247, 0.35);
+  }
+
+  .hairline {
+    @apply border-phosphor/15;
+  }
+
+  /* Instrument bay panel — hairline box with cut corners */
+  .bay {
+    @apply relative border border-phosphor/15 bg-black;
+    background-image: radial-gradient(
+      120% 100% at 50% 0%,
+      rgba(76, 15, 122, 0.16) 0%,
+      transparent 62%
+    );
+  }
+
+  .btn-hud {
+    @apply border border-phosphor/30 px-3 py-1.5 font-mono text-[10px] uppercase
+           tracking-[0.18em] text-phosphor-dim transition-colors duration-150;
+  }
+  .btn-hud:hover:not(:disabled) {
+    @apply border-phosphor/70 bg-phosphor/10 text-phosphor;
+  }
+  .btn-hud:disabled {
+    @apply cursor-not-allowed border-ash/30 text-ash;
+  }
+  .btn-hud[data-active='true'] {
+    @apply border-phosphor bg-phosphor/15 text-phosphor;
+    box-shadow: inset 0 0 18px rgba(57, 255, 20, 0.14);
+  }
+}
+
+@layer utilities {
+  /* CRT scanlines — sits above content, ignores pointer events */
+  .crt::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0px,
+      rgba(0, 0, 0, 0) 2px,
+      rgba(0, 0, 0, 0.28) 3px,
+      rgba(0, 0, 0, 0.28) 4px
+    );
+    mix-blend-mode: multiply;
+  }
+
+  /* Vignette — pulls the eye to the instrument bay */
+  .crt::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 59;
+    pointer-events: none;
+    background: radial-gradient(
+      ellipse at center,
+      transparent 52%,
+      rgba(0, 0, 0, 0.72) 100%
+    );
+  }
+
+  .clip-corner {
+    clip-path: polygon(
+      10px 0,
+      100% 0,
+      100% calc(100% - 10px),
+      calc(100% - 10px) 100%,
+      0 100%,
+      0 10px
+    );
+  }
+}
+
+/* Accessibility floor: kill ambient motion, keep the data flowing. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .crt::after {
+    display: none;
+  }
+}

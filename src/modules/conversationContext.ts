@@ -25,10 +25,10 @@ const TOPIC_PATTERNS: [RegExp, string][] = [
   [/\b(health|sleep|mood|water|wellness)\b/i, 'Wellness'],
   [/\b(contact|phone|email|company)\b/i, 'Contacts'],
   [/\b(quote|proposal|offer)\b/i, 'Quotes'],
-  [/\b(לקוח|ליד|מכירה|עסקה)\b/, 'Sales/Leads'],
-  [/\b(חשבונית|תשלום|חוב)\b/, 'Invoicing'],
-  [/\b(משימה|מטלה)\b/, 'Tasks'],
-  [/\b(מצלמה|מערכת|התקנה|משאית)\b/, 'HeavyGuard'],
+  [/לקוח|ליד|מכירה|עסקה/, 'Sales/Leads'],
+  [/חשבונית|תשלום|חוב/, 'Invoicing'],
+  [/משימה|מטלה/, 'Tasks'],
+  [/מצלמה|מערכת|התקנה|משאית/, 'HeavyGuard'],
 ];
 
 export function extractTopics(messages?: ChatMessage[]): ConversationTopic[] {

@@ -5,6 +5,8 @@
 // assistant and the HeavyGuard OS see the same numbers.
 // ============================================================
 
+import { BOOKS_LAST_KEY, bookedIncome, cumulativeIncome } from './books';
+
 export type LeadStatus = 'lead' | 'contacted' | 'quoted' | 'won' | 'lost';
 
 export interface Lead {
@@ -127,10 +129,15 @@ export function revenueStats(): RevenueStats {
   const openLeads = leads.filter(l => l.status === 'lead' || l.status === 'contacted' || l.status === 'quoted');
   const acceptedQuotes = quotes.filter(q => q.status === 'accepted');
 
-  const realised =
-    wonLeads.reduce((s, l) => s + (l.value || 0), 0) +
-    acceptedQuotes.reduce((s, q) => s + (q.total || 0), 0) +
-    installs.reduce((s, r) => s + (r.price || 0), 0);
+  // Realised income is anchored to the accountant's books (modules/books.ts):
+  // months the bookkeeper closed use the exact booked figure; only activity
+  // after the last statement adds on top, so the KPI matches the real books.
+  const monthOf = (s: string | undefined) => String(s || '').slice(0, 7);
+  const liveAfterBooks =
+    wonLeads.reduce((s, l) => s + (monthOf(new Date(l.created).toISOString()) > BOOKS_LAST_KEY ? (l.value || 0) : 0), 0) +
+    acceptedQuotes.reduce((s, q) => s + (monthOf(q.date) > BOOKS_LAST_KEY ? (q.total || 0) : 0), 0) +
+    installs.reduce((s, r) => s + (monthOf(r.date) > BOOKS_LAST_KEY ? (r.price || 0) : 0), 0);
+  const realised = cumulativeIncome(liveAfterBooks);
 
   const pipeline = openLeads.reduce((s, l) => s + (l.value || 0), 0);
   const decided = wonLeads.length + lostLeads.length;
@@ -146,7 +153,7 @@ export function revenueStats(): RevenueStats {
     for (const r of installs) if ((r.date || '').startsWith(key)) total += r.price || 0;
     for (const l of wonLeads) if (new Date(l.created).toISOString().slice(0, 7) === key) total += l.value || 0;
     for (const q of acceptedQuotes) if ((q.date || '').startsWith(key)) total += q.total || 0;
-    byMonth.push({ month: key, total });
+    byMonth.push({ month: key, total: bookedIncome(key, total) });
   }
 
   return { realised, pipeline, winRate, openLeads: openLeads.length, byMonth };

@@ -6,19 +6,33 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:render": "tsc && VITE_BASE_PATH=/ VITE_OUT_DIR=dist-render VITE_COMBINED_DEPLOY=1 vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@gltf-transform/cli": "^4.4.0",
+    "autoprefixer": "^10.5.4",
+    "obj2gltf": "^3.2.0",
     "playwright": "^1.61.1",
+    "postcss": "^8.5.25",
+    "tailwindcss": "^3.4.19",
     "typescript": "~6.0.2",
     "vite": "^8.0.12"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.109.1",
     "@types/three": "^0.184.1",
+    "cannon-es": "^0.20.0",
+    "fbx2gltf": "^0.9.7-p1",
+    "firebase": "^12.15.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^1.21.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "recharts": "^3.10.1",
     "three": "^0.184.0",
+    "tone": "^15.1.22",
     "xlsx": "^0.18.5"
   }
 }

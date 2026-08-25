@@ -1,0 +1,3574 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ראדאר שווקים · Binance Futures</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<style>
+  /* smooth crossfade on same-origin navigation (ignored where unsupported) */
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
+</style>
+<style>
+:root{
+  --bg:#070709; --cyan:#38bdf8; --up:#00e676; --down:#ff5252; --gold:#ffb300;
+  --vio:#38bdf8; --txt:#e6e6ea; --dim:#8b8b98;
+  --line:#26262e;
+  --panel:#101014;
+  --glass:#101014;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
+  font-family:'Heebo',sans-serif;min-height:100dvh;
+  max-width:100vw;overflow-x:hidden}
+body{background:
+  linear-gradient(180deg,#0a0a0d 0%, #070709 30%, #070709 100%)}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;
+  padding:calc(9px + env(safe-area-inset-top)) 14px 8px;
+  background:#0a0a0d;
+  border-bottom:1px solid #1c1c22;
+  box-shadow:0 1px 0 rgba(255,179,0,.12)}
+header h1{margin:0;font-size:16px;font-weight:800;letter-spacing:1.5px;
+  font-family:'JetBrains Mono',monospace}
+header h1 b{color:var(--gold)}
+#tape{overflow:hidden;white-space:nowrap;direction:ltr;background:#0c0c10;
+  border-bottom:1px solid #1c1c22;padding:4px 0;font-family:'JetBrains Mono',monospace;font-size:11px}
+.tapein{display:inline-flex;gap:18px;padding-inline-start:8px;animation:tape 40s linear infinite;will-change:transform}
+@keyframes tape{to{transform:translateX(-50%)}}
+#tape b{color:var(--txt)} #tape i{font-style:normal} #tape .sep{color:#333340}
+@media (prefers-reduced-motion:reduce){ .tapein{animation:none} }
+#bnav{display:none}
+.hcount{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dim)}
+.hspace{flex:1}
+.hbtn{background:#141419;border:1px solid #2a2a33;color:var(--cyan);
+  border-radius:8px;padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit;
+  transition:transform .1s, border-color .15s}
+.hbtn:active{transform:scale(.94)}
+a.hbtn{text-decoration:none;color:var(--gold);border-color:rgba(255,179,0,.35)}
+#scanStat{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--gold)}
+main{max-width:900px;margin:0 auto;padding:10px 10px calc(20px + env(safe-area-inset-bottom))}
+.search{width:100%;background:#0e0e12;color:var(--txt);
+  border:1px solid #2a2a33;border-radius:10px;padding:11px 14px;
+  font-size:14px;font-family:inherit;margin-bottom:8px;
+  transition:border-color .15s, box-shadow .15s}
+.search:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 2px rgba(255,179,0,.14)}
+.tabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+.tabs button{padding:7px 13px;border-radius:8px;font-size:12px;cursor:pointer;
+  background:#121217;color:var(--dim);border:1px solid #26262e;
+  border-bottom:2px solid #26262e;
+  font-family:inherit;transition:transform .1s}
+.tabs button:active{transform:scale(.93)}
+.tabs button.on{color:var(--gold);background:#17171d;font-weight:800;
+  border-bottom-color:var(--gold)}
+/* seven data columns fit a desktop; on the phone the grid collapses per-cell */
+.mhead,.mrow{display:grid;gap:6px;align-items:center;
+  grid-template-columns:1.5fr .85fr .62fr .62fr .62fr .55fr .6fr .95fr}
+.mhead{padding:4px 10px 8px;position:sticky;top:56px;z-index:4;
+  background:#0a0a0d;border-bottom:1px solid #1c1c22}
+.mhead button{background:none;border:none;color:var(--dim);font-size:10.5px;cursor:pointer;
+  text-align:end;font-family:'Heebo',sans-serif;padding:0}
+.mhead button:first-child{text-align:start}
+.mhead button.on{color:var(--cyan);font-weight:700}
+.mrow{padding:10px;cursor:pointer;margin:6px 0;border-radius:10px;
+  background:#101014;
+  border:1px solid #1e1e26;
+  border-inline-start:3px solid #2a2a33;
+  content-visibility:auto;contain-intrinsic-size:auto 58px;
+  transition:border-color .15s, background .15s}
+.mrow:hover{border-color:#3a3a46;background:#131318}
+.mrow:active{background:#17171d}
+.mrow.v-go{border-inline-start-color:var(--up)}
+.mrow.v-wait,.mrow.v-late{border-inline-start-color:var(--gold)}
+.mrow.v-watch{border-inline-start-color:var(--cyan)}
+.tag.turfH{background:rgba(52,245,177,.16);color:var(--up)}
+.tag.turfC{background:rgba(251,92,126,.16);color:var(--down)}
+.mname{display:flex;align-items:center;gap:7px;min-width:0}
+.star{cursor:pointer;font-size:13px;color:#4a5b6b;flex:none}
+.star.on{color:var(--gold)}
+.nn{display:flex;flex-direction:column;min-width:0}
+.n1{display:flex;gap:5px;align-items:center;font-weight:700;font-size:13px}
+.n1 b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-size:8.5px;padding:1px 4px;border-radius:4px;background:rgba(0,240,255,.14);color:var(--cyan);flex:none}
+.sub{font-size:9.5px;color:var(--dim);font-family:'JetBrains Mono',monospace}
+.num{font-family:'JetBrains Mono',monospace;font-size:11.5px;text-align:end}
+.rec{text-align:end}
+.rec i{font-style:normal;font-weight:800;padding:2px 6px;border-radius:6px;font-size:11px;
+  font-family:'JetBrains Mono',monospace;background:rgba(255,255,255,.06);color:var(--dim);white-space:nowrap}
+.rec i.long{background:rgba(0,255,166,.14);color:var(--up)}
+.rec i.short{background:rgba(255,82,82,.15);color:var(--down)}
+.hor{text-align:end}
+.hor i{font-style:normal;font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:6px;white-space:nowrap}
+.hor .scalp{background:rgba(255,209,102,.16);color:var(--gold)}
+.hor .short{background:rgba(0,240,255,.1);color:var(--cyan)}
+.hor .intra{background:rgba(0,240,255,.16);color:#7dfbff}
+.hor .swing{background:rgba(183,148,244,.18);color:#c9a8ff}
+/* expanded detail row */
+.det{grid-column:1/-1;background:#0d0d11;
+  border:1px solid #22222a;
+  border-radius:10px;padding:11px 13px;font-size:12px;line-height:1.7;margin-top:8px}
+.det .why{color:var(--dim);font-family:'JetBrains Mono',monospace;font-size:10.5px}
+.det .lv{display:flex;gap:14px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:11.5px;margin-top:4px}
+.det .lv b{font-weight:600;color:var(--dim);font-size:10px;display:block}
+.empty{padding:26px 10px;text-align:center;color:var(--dim);font-size:13px}
+.acct{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px;
+  background:var(--panel);border:1px solid #22222a;border-radius:10px;padding:9px 13px}
+.acct label{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--dim)}
+.acct input{width:86px;background:rgba(2,10,18,.9);color:var(--txt);border:1px solid rgba(0,240,255,.25);
+  border-radius:7px;padding:5px 8px;font-size:12.5px;font-family:'JetBrains Mono',monospace}
+.acct-hint{font-size:10.5px;color:var(--dim)}
+.acct-hint b{color:var(--gold);font-family:'JetBrains Mono',monospace}
+.verdict{font-weight:800;font-size:13px;margin-bottom:4px}
+.checks{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}
+.checks i{font-style:normal;font-size:10px;padding:2px 7px;border-radius:999px;
+  background:rgba(255,255,255,.05);color:var(--dim);border:1px solid rgba(255,255,255,.1)}
+.checks i.ok{background:rgba(0,255,166,.1);color:var(--up);border-color:rgba(0,255,166,.3)}
+.plan{background:rgba(0,0,0,.28);border:1px solid rgba(0,240,255,.2);border-radius:9px;
+  padding:8px 10px;margin-top:7px}
+.plan .pr{display:flex;gap:14px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:11.5px}
+.plan .pr b{display:block;font-weight:600;color:var(--dim);font-size:9.5px}
+.copy{margin-top:8px;background:rgba(0,240,255,.12);border:1px solid var(--line);color:var(--cyan);
+  border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:inherit}
+.vdot{font-size:12px}
+.mins{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:7px;
+  background:rgba(255,209,102,.05);border:1px solid rgba(255,209,102,.22);border-radius:9px;
+  padding:6px 10px;font-size:11.5px}
+.mins .mt{font-weight:800;color:var(--gold);font-size:11px}
+.mins .mage{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim)}
+.mins b{font-family:'JetBrains Mono',monospace}
+.mtape{display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:6px;
+  font-family:'JetBrains Mono',monospace;font-size:10px}
+.mtape i{font-style:normal;padding:2px 5px;border-radius:5px;background:rgba(255,255,255,.04)}
+.mtape em{font-style:normal;color:var(--dim);font-size:9.5px;margin-inline-start:4px}
+#chModal{position:fixed;inset:0;z-index:60;background:rgba(2,8,18,.86);
+  display:flex;align-items:center;justify-content:center;padding:10px;
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+/* author display:flex beats the UA [hidden] rule — restore it explicitly,
+   otherwise the modal is stuck on screen from page load */
+#chModal[hidden]{display:none!important}
+#chModal{z-index:62}   /* trade forensics opens ABOVE the history screen */
+#histModal{position:fixed;inset:0;z-index:60;background:rgba(2,8,18,.86);
+  display:flex;align-items:center;justify-content:center;padding:10px;
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+#histModal[hidden]{display:none!important}
+#galModal{position:fixed;inset:0;z-index:61;background:rgba(2,8,18,.9);
+  display:flex;align-items:center;justify-content:center;padding:10px}
+#galModal[hidden]{display:none!important}
+#galCv{width:100%;height:64vh;display:block;border-radius:10px;background:#08080b;cursor:pointer}
+.palert{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:7px;font-size:11px}
+.palert input{width:110px;background:#0e0e12;color:var(--txt);border:1px solid #2a2a33;
+  border-radius:7px;padding:5px 8px;font-family:'JetBrains Mono',monospace;font-size:11.5px}
+.pchip{font-style:normal;font-family:'JetBrains Mono',monospace;font-size:10.5px;cursor:pointer;
+  background:rgba(255,179,0,.1);border:1px solid rgba(255,179,0,.4);color:var(--gold);
+  border-radius:999px;padding:3px 9px}
+.hstats{display:flex;gap:5px 14px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);margin-bottom:7px}
+.hstats b{font-family:'JetBrains Mono',monospace;color:var(--txt);margin-inline-start:4px}
+#eqCv{width:100%;height:110px;display:block;border-radius:10px;background:rgba(0,0,0,.25);margin-bottom:7px}
+#hInsights{display:flex;flex-direction:column;gap:3px;font-size:11.5px;margin:4px 0 7px}
+#hInsights .gl{color:var(--up)} #hInsights .bl{color:var(--down)} #hInsights .nl{color:var(--dim);font-size:10.5px}
+#hList{max-height:30vh;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--dim)}
+#hList span{display:block;padding:4px 2px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer}
+#hList i{font-style:normal}
+.hbtn2{background:rgba(0,240,255,.1);border:1px solid var(--line);color:var(--cyan);
+  border-radius:7px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:inherit;margin-inline-start:8px}
+.smx{display:flex;gap:6px 16px;flex-wrap:wrap;align-items:center;margin-top:6px;
+  background:#0f0f14;border:1px solid #24242c;border-radius:9px;padding:6px 10px;font-size:11px}
+.smx .mt{font-weight:800;color:var(--gold);font-size:11px}
+.smx b{font-family:'JetBrains Mono',monospace;margin-inline-start:4px}
+.g20{display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-top:2px}
+.g20 i{width:9px;height:9px;border-radius:2px;background:#3a2026;border:1px solid #57303a}
+.g20 i.k{background:rgba(0,230,118,.55);border-color:rgba(0,230,118,.8)}
+.g20 span{font-size:10px;color:var(--dim);font-family:'JetBrains Mono',monospace;margin-inline-start:5px}
+.glist{display:flex;flex-direction:column;gap:2px;margin:6px 0;background:#0f0f14;
+  border:1px solid #24242c;border-radius:9px;padding:6px 10px;font-size:10.5px}
+.glist span{color:var(--dim)} .glist span.ok{color:var(--up)} .glist span.no{color:var(--down)}
+.glist b{font-family:'JetBrains Mono',monospace;margin-inline-start:4px}
+.glist i{font-style:normal}
+#trainBar{display:flex;flex-direction:column;gap:6px;margin-top:7px;
+  background:#12100a;border:1px solid rgba(255,179,0,.35);border-radius:9px;padding:8px 10px}
+#trainBar[hidden]{display:none}
+.trStat{font-size:11px;color:var(--gold)}
+.trStat b{font-family:'JetBrains Mono',monospace}
+.trBtns{display:flex;gap:6px;flex-wrap:wrap}
+.trBtns button{background:#1a1710;border:1px solid rgba(255,179,0,.3);color:var(--txt);
+  border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit}
+.trBtns #trLongB{color:var(--up);border-color:rgba(0,230,118,.4)}
+.trBtns #trShortB{color:var(--down);border-color:rgba(255,82,82,.4)}
+/* ── PHONE LAYOUT — two-line cards, thumb bar ─────────────────────────── */
+@media (max-width:640px){
+  .mhead{display:none}
+  .mrow{display:flex;flex-wrap:wrap;align-items:center;gap:2px 12px;padding:11px 12px}
+  .mname{order:1;flex:1 1 auto;min-width:0}
+  .mrow>*:nth-child(2){order:2;font-size:16.5px;font-weight:700}
+  .rec{order:3}
+  .mrow::before{content:'';order:4;flex-basis:100%;height:2px}
+  .mrow>*:nth-child(3),.mrow>*:nth-child(4),.mrow>*:nth-child(5),
+  .mrow>.c-rsi,.mrow>.c-volx{order:5;font-size:11px;text-align:start}
+  .mrow>*:nth-child(3)::before{content:'24ש ';color:var(--dim);font-size:9px}
+  .mrow>*:nth-child(4)::before{content:'15ד ';color:var(--dim);font-size:9px}
+  .mrow>*:nth-child(5)::before{content:'5ד ';color:var(--dim);font-size:9px}
+  .mrow>.c-rsi::before{content:'RSI ';color:var(--dim);font-size:9px}
+  .mrow>.c-volx::before{content:'× ';color:var(--dim);font-size:9px}
+  .det{order:9;flex-basis:100%}
+  main{padding-bottom:calc(74px + env(safe-area-inset-bottom))}
+  #bnav{display:flex;position:fixed;bottom:0;inset-inline:0;z-index:8;
+    background:rgba(10,10,13,.96);border-top:1px solid #22222a;
+    padding:6px 8px calc(6px + env(safe-area-inset-bottom));
+    justify-content:space-around;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  #bnav button{background:none;border:none;color:var(--dim);font-family:inherit;
+    display:flex;flex-direction:column;align-items:center;gap:1px;font-size:17px;
+    cursor:pointer;padding:2px 12px;border-radius:9px}
+  #bnav button span{font-size:9.5px}
+  #bnav button.on{color:var(--gold);background:#17171d}
+  /* modals become full-screen sheets on the phone — nothing can overflow */
+  #chModal,#histModal,#galModal{padding:0;align-items:stretch}
+  #chModal .chBox,#histModal .chBox,#galModal .chBox{
+    width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;
+    padding-top:calc(10px + env(safe-area-inset-top));
+    padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  #galCv{height:calc(100dvh - 130px)}
+  #chCv{height:40vh}
+  header{flex-wrap:wrap;row-gap:4px;gap:6px}
+  .hbtn{padding:5px 9px;font-size:11px}
+  header h1{font-size:14px}
+}
+#geoLab{margin:6px 0}
+.geoRow{display:flex;flex-direction:column;gap:2px;padding:6px 8px;margin-top:4px;
+  border:1px solid var(--line);border-radius:8px;font-size:11px;color:var(--dim)}
+.geoRow b{font-family:'JetBrains Mono',monospace;color:var(--txt)}
+.geoRow.best{border-color:rgba(0,255,166,.45);background:rgba(0,255,166,.05)}
+.geoRow .onTag{font-style:normal;color:var(--up);font-weight:800;margin-inline-start:8px}
+.chBox{width:min(96vw,900px);max-height:94vh;overflow:auto;background:#071120;
+  border:1px solid rgba(0,240,255,.28);border-radius:14px;padding:10px 12px;
+  box-shadow:0 18px 60px rgba(0,0,0,.6)}
+.chHead{display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-bottom:6px}
+.chHead b{font-size:15px}
+.chHead span{color:var(--dim);font-size:11px}
+#chClose{margin-inline-end:auto;background:rgba(255,255,255,.06);border:1px solid var(--line);
+  color:var(--txt);border-radius:8px;padding:4px 12px;font-size:14px;cursor:pointer}
+#chCv{width:100%;height:44vh;display:block;border-radius:10px;background:rgba(0,0,0,.25)}
+.chTf{display:flex;gap:5px;justify-content:flex-end;margin:0 0 7px}
+.chTf button{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--dim);
+  border-radius:7px;padding:3px 10px;font-size:11px;cursor:pointer;font-family:'JetBrains Mono',monospace}
+.chTf button.on{background:rgba(0,240,255,.14);border-color:rgba(0,240,255,.5);color:var(--cyan)}
+.chInfo{display:flex;gap:6px 16px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:11.5px;color:var(--dim)}
+.chInfo b{font-family:'JetBrains Mono',monospace;color:var(--txt);margin-inline-start:4px}
+.perf .siglist span{cursor:pointer}
+.perf .siglist span:active{opacity:.6}
+.possbar{margin:0 0 8px;padding:8px 12px;border-radius:10px;font-size:12px;
+  background:#0d1210;border:1.5px solid rgba(0,230,118,.4)}
+.possbar .ph{font-weight:800;color:var(--up);font-size:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.possbar .ph b{font-family:'JetBrains Mono',monospace}
+.prow{display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;padding:6px 0;
+  border-top:1px solid #1b241f;font-family:'JetBrains Mono',monospace;font-size:11.5px}
+.prow b{font-size:12.5px}
+.prow .hitb{font-weight:800;padding:1px 8px;border-radius:6px;font-size:10.5px}
+.prow button{background:#141419;border:1px solid #2a2a33;color:var(--txt);border-radius:7px;
+  padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit}
+.possbar .shd{font-weight:800;color:var(--dim);font-size:10.5px;margin-top:6px;letter-spacing:.4px}
+.possbar .srow{display:flex;gap:8px 12px;flex-wrap:wrap;align-items:center;padding:5px 0;cursor:pointer;
+  border-top:1px dashed rgba(255,255,255,.08);font-family:'JetBrains Mono',monospace;font-size:11.5px}
+.possbar .srow:active{opacity:.6}
+.possbar .sbar{flex:1;min-width:64px;max-width:180px;height:6px;border-radius:3px;position:relative;
+  background:linear-gradient(90deg,rgba(255,82,82,.75),rgba(120,120,130,.5) 38%,rgba(0,230,118,.75))}
+.possbar .sbar i{position:absolute;top:-3px;width:2.5px;height:12px;background:#fff;
+  box-shadow:0 0 6px #fff;border-radius:1px}
+.tiltbar{margin:0 0 8px;padding:9px 12px;border-radius:10px;font-size:12.5px;
+  background:rgba(255,82,82,.1);border:1.5px solid rgba(255,82,82,.55);color:var(--txt)}
+/* ── v433: display lenses, radial command orb, network console ───────── */
+#lensBar{display:flex;gap:6px;margin:2px 0 6px}
+#lensBar button{flex:0 0 auto;background:#101016;border:1px solid #26262e;color:var(--dim);
+  border-radius:8px;padding:5px 12px;font-size:11.5px;cursor:pointer;font-family:inherit}
+#lensBar button.on{color:var(--gold);border-color:rgba(255,179,0,.55);background:rgba(255,179,0,.08)}
+#lensCv{width:100%;border:1px solid #1d1d24;border-radius:12px;background:#08080c;
+  touch-action:manipulation;display:block}
+#lensCv[hidden]{display:none!important}
+#orbBtn{position:fixed;z-index:70;left:14px;bottom:74px;width:52px;height:52px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#2b2410,#0c0a04 70%);
+  border:1.5px solid rgba(255,179,0,.7);color:var(--gold);font-size:22px;cursor:pointer;
+  box-shadow:0 0 18px rgba(255,179,0,.35);transition:transform .25s}
+#orbBtn.open{transform:rotate(45deg)}
+@media(min-width:641px){ #orbBtn{bottom:18px} }
+#radial{position:fixed;inset:0;z-index:69;background:rgba(2,4,10,.55);backdrop-filter:blur(2px)}
+#radial[hidden]{display:none!important}
+.radItem{position:fixed;z-index:71;width:58px;height:58px;border-radius:50%;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  background:#0d0d13;border:1px solid rgba(255,179,0,.4);color:var(--txt);cursor:pointer;
+  font-size:16px;box-shadow:0 0 14px rgba(0,0,0,.6);font-family:inherit;
+  transition:transform .28s cubic-bezier(.2,1.6,.4,1),opacity .2s;
+  transform:scale(.3);opacity:0}
+#radial.open .radItem{opacity:1}
+.radItem span{font-size:8.5px;color:var(--dim)}
+#diagModal{position:fixed;inset:0;z-index:62;background:rgba(2,8,18,.9);
+  display:flex;align-items:center;justify-content:center;padding:14px}
+#diagModal[hidden]{display:none!important}
+.diagBox{width:min(560px,100%);max-height:92dvh;overflow:auto;background:#0a0a10;
+  border:1px solid rgba(255,179,0,.35);border-radius:14px;padding:12px}
+.diagBox h3{margin:0 0 2px;color:var(--gold);font-size:15px}
+.diagBox .dsub{color:var(--dim);font-size:11px;margin-bottom:8px}
+.drow{display:flex;gap:8px;align-items:center;padding:7px 2px;border-top:1px solid #16161d;
+  font-size:12px;font-family:'JetBrains Mono',monospace}
+.drow b{flex:1;font-weight:600}
+.drow .dst{min-width:110px;text-align:left;white-space:nowrap}
+.dok{color:var(--up)} .dbad{color:var(--down)} .dwait{color:var(--dim)} .dna{color:#777}
+.diagBox .dbtns{display:flex;gap:8px;margin-top:10px}
+.diagBox .dbtns button{flex:1;background:#141419;border:1px solid #2a2a33;color:var(--txt);
+  border-radius:8px;padding:8px;font-size:12px;cursor:pointer;font-family:inherit}
+@media(max-width:640px){ #diagModal{padding:0;align-items:stretch}
+  .diagBox{width:100vw;max-height:100dvh;border-radius:0} }
+.tiltbar b{font-family:'JetBrains Mono',monospace;color:var(--down)}
+.jchips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;
+  padding:7px 10px;background:#0f0f14;border:1px solid #24242c;border-radius:9px;font-size:11px}
+.jchips button{background:#141419;border:1px solid #2a2a33;color:var(--dim);border-radius:999px;
+  padding:4px 11px;font-size:11px;cursor:pointer;font-family:inherit}
+.jchips button.on{color:var(--gold);border-color:var(--gold);background:#1a1710}
+.mdir{margin:0 0 8px;padding:7px 12px;border-radius:10px;font-size:12px;font-weight:700;
+  border:1px solid var(--line);color:var(--dim);background:rgba(255,255,255,.03)}
+.mdir b{font-family:'JetBrains Mono',monospace}
+.mdir.up{border-color:rgba(0,255,166,.4);color:var(--up)}
+.mdir.down{border-color:rgba(255,71,111,.45);color:var(--down)}
+.mdir.mixed{border-color:rgba(255,209,102,.35);color:var(--gold)}
+.scard{display:flex;flex-direction:column;gap:5px;margin-bottom:8px;padding:10px 12px;
+  border-radius:11px;border:1.5px solid var(--line);background:rgba(255,255,255,.03)}
+.scard.up{border-color:rgba(0,255,166,.55);background:rgba(0,255,166,.06)}
+.scard.gold{border-color:rgba(255,209,102,.5);background:rgba(255,209,102,.05)}
+.scard .sc1{font-size:17px;font-weight:900}
+.scard .sc2{font-size:12px;color:var(--txt)}
+.scard .scr{display:flex;gap:8px 16px;flex-wrap:wrap;font-size:12px}
+.scard .scr b{font-family:'JetBrains Mono',monospace;display:block;font-size:13px}
+.scard .sc3{font-size:11px;color:var(--dim)}
+.perf{margin:0 0 8px;padding:8px 12px;border-radius:10px;font-size:12px;
+  background:rgba(255,255,255,.03);border:1px solid var(--line);color:var(--dim);cursor:pointer}
+.perf b{font-family:'JetBrains Mono',monospace}
+.perf.good{border-color:rgba(0,255,166,.35);color:var(--txt)}
+.perf.bad{border-color:rgba(255,71,111,.45);color:var(--txt)}
+.perf .warn{margin-top:6px;font-weight:800;color:var(--down)}
+.perf .siglist{margin-top:7px;display:flex;flex-direction:column;gap:3px;
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--dim)}
+.perf .siglist i{font-style:normal}
+.micro{display:flex;gap:6px 14px;flex-wrap:wrap;align-items:center;margin-top:6px;
+  background:rgba(80,160,255,.05);border:1px solid rgba(120,200,255,.18);border-radius:9px;
+  padding:6px 10px;font-size:11px}
+.micro .mt{font-weight:800;color:var(--cyan);font-size:11px}
+.micro span b{font-family:'JetBrains Mono',monospace;font-weight:600;margin-inline-start:4px}
+.micro span i{font-style:normal;color:var(--dim);font-size:9.5px}
+.micro .mnote{color:var(--dim);font-size:10px}
+.traps{display:flex;flex-direction:column;gap:3px;margin-top:6px;
+  background:rgba(255,71,111,.05);border:1px solid rgba(255,71,111,.2);border-radius:9px;
+  padding:6px 10px;font-size:11px;color:var(--down)}
+.traps .cl{color:var(--dim)}
+.depth{display:flex;flex-direction:column;gap:4px;margin-top:6px;
+  background:rgba(0,255,166,.04);border:1px solid rgba(0,255,166,.16);border-radius:9px;
+  padding:6px 10px;font-size:11px}
+.depth .mt{font-weight:800;color:var(--up);font-size:11px}
+.deep{display:flex;flex-direction:column;gap:5px;margin-top:6px;
+  background:rgba(160,120,255,.06);border:1px solid rgba(160,120,255,.28);border-radius:9px;
+  padding:7px 10px;font-size:11px}
+.deep .dg{font-weight:800;font-size:12px}
+.deep .dg b{font-family:'JetBrains Mono',monospace;font-size:14px}
+.deep .df{display:flex;flex-direction:column;gap:2px}
+.deep .df span{color:var(--dim)} .deep .df span.ok{color:var(--up)} .deep .df span.no{color:var(--down)}
+.deep .df b{font-family:'JetBrains Mono',monospace;margin-inline-start:4px}
+.deep .dl{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--txt)}
+.deep .dt{color:var(--txt)}
+.deep .dn{color:var(--dim);font-size:9.5px}
+.dbar{height:8px;border-radius:5px;background:rgba(255,71,111,.35);overflow:hidden}
+.dbar i{display:block;height:100%;background:rgba(0,255,166,.6);width:50%;transition:width .25s}
+.dwalls{display:flex;flex-direction:column;gap:2px;font-family:'JetBrains Mono',monospace;font-size:10px}
+#nextScan{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim)}
+#liveStat{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--up)}
+#alertBtn.on{background:rgba(0,255,166,.14);border-color:rgba(0,255,166,.5);color:var(--up)}
+#strictBtn.on{background:rgba(255,209,102,.14);border-color:rgba(255,209,102,.55);color:var(--gold)}
+#goStrip{display:flex;gap:7px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}
+#goStrip::-webkit-scrollbar{display:none}
+#goStrip .go{flex:none;display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
+  cursor:pointer;font-size:12px;font-weight:800;font-family:'JetBrains Mono',monospace;
+  border:1px solid rgba(0,255,166,.45);background:rgba(0,255,166,.1);color:var(--up)}
+#goStrip .go.sh{border-color:rgba(255,61,110,.45);background:rgba(255,61,110,.1);color:var(--down)}
+@keyframes goPulse{0%,100%{box-shadow:0 0 0 rgba(0,255,166,0)}50%{box-shadow:0 0 14px rgba(0,255,166,.5)}}
+#goStrip .go.fresh{animation:goPulse 1.2s ease-in-out 3}
+.mrow.goFlash{animation:rowGo 1.4s ease-out 2}
+@keyframes rowGo{0%{background:rgba(0,255,166,.22)}100%{background:transparent}}
+.num.pf-up{color:var(--up)!important;text-shadow:0 0 8px rgba(0,255,166,.4)}
+.num.pf-down{color:var(--down)!important;text-shadow:0 0 8px rgba(255,61,110,.4)}
+#toastEl{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:99;
+  background:rgba(6,14,28,.95);border:1px solid var(--line);color:var(--txt);
+  padding:8px 18px;border-radius:999px;font-size:12.5px;opacity:0;transition:opacity .25s;pointer-events:none}
+footer{max-width:900px;margin:0 auto;padding:8px 14px 22px;color:var(--dim);font-size:10.5px;line-height:1.6}
+@media (max-width:620px){
+  /* phone: hide RSI + volume-surge columns; they live in the expanded row */
+  .mhead,.mrow{grid-template-columns:1.5fr .9fr .66fr .66fr .72fr .95fr}
+  .c-rsi,.c-volx{display:none}
+  .mhead{top:52px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>📡 ראדאר <b>שווקים</b></h1>
+  <span class="hcount" id="count">—</span>
+  <span id="scanStat"></span>
+  <span id="liveStat"></span>
+  <span id="nextScan"></span>
+  <span class="hspace"></span>
+  <button class="hbtn" id="alertBtn" title="התראה + צליל כשאיתות נהיה 🟢">🔔</button>
+  <button class="hbtn" id="strictBtn" title="מצב סלקטיבי: התראה רק על 20/20 בדיקות">🎯</button>
+  <button class="hbtn" id="autoBtn" title="טייס אוטומטי: כניסת נייר אוטומטית על כל איתות GO — קריפטו ומניות">🤖</button>
+  <button class="hbtn" id="voiceBtn" title="תקציר קולי: מצב השוק, האיתותים החמים והביצועים">🔊</button>
+  <button class="hbtn" id="galBtn" title="גלקסיית השוק — מפת חום חיה של כל היקום">🌌</button>
+  <button class="hbtn" id="refreshBtn">↻ רענן</button>
+  <a class="hbtn" href="./">⌂ אלפא</a>
+</header>
+<div id="tape" hidden></div>
+<nav id="bnav">
+  <button data-bn="all" class="on">📋<span>הכל</span></button>
+  <button data-bn="rec">🔥<span>חמים</span></button>
+  <button data-bn="my">🏠<span>שלי</span></button>
+  <button data-bn="hist">🗂<span>עסקאות</span></button>
+</nav>
+<button id="orbBtn" title="תפריט פקודות">✦</button>
+<div id="radial" hidden></div>
+<div id="diagModal" hidden>
+  <div class="diagBox">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <h3>📡 קונסולת רשת חיה</h3>
+      <button id="diagClose" style="background:none;border:none;color:var(--dim);font-size:18px;cursor:pointer">✕</button>
+    </div>
+    <div class="dsub">בודק כל נתיב נתונים מהמכשיר הזה ממש עכשיו — ירוק חי, אדום חסום. צלם מסך של התוצאה ושלח, וזה בדיוק מה שצריך כדי לתקן את המניות.</div>
+    <div id="diagList"><div class="dwait">⏳ מריץ בדיקות…</div></div>
+    <div class="dbtns"><button id="diagRun">🔄 בדוק שוב</button><button id="diagCopy">📋 העתק דוח</button></div>
+  </div>
+</div>
+<main>
+  <div class="acct">
+    <label>💰 גודל חשבון $<input id="acctSize" type="number" min="10" step="50" inputmode="decimal"></label>
+    <label>🎯 סיכון לעסקה %<input id="riskPct" type="number" min="0.1" max="100" step="0.25" inputmode="decimal"></label>
+    <label>💵 סכום בסיכון $<input id="riskAmt" type="number" min="0.1" step="0.5" inputmode="decimal"></label>
+    <span class="acct-hint" id="riskWarn"></span>
+    <div id="rwalRow" style="flex-basis:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+      margin-top:6px;padding:8px 10px;border:1px solid rgba(255,179,0,.3);border-radius:10px;
+      background:rgba(255,179,0,.05)"></div>
+  </div>
+  <div id="poss" class="possbar" hidden></div>
+  <div id="tilt" class="tiltbar" hidden></div>
+  <div id="mktDir" class="mdir" hidden></div>
+  <div id="perf" class="perf"></div>
+  <div id="goStrip" hidden></div>
+  <div class="tabs" id="mktMode">
+    <button data-m="stock">📈 מניות</button>
+    <button data-m="crypto" class="on">₿ קריפטו</button>
+  </div>
+  <input class="search" id="q" placeholder="חיפוש מטבע או שם…" autocomplete="off">
+  <div class="tabs" id="tabs">
+    <button data-f="all" class="on">הכול</button>
+    <button data-f="rec">🔥 מומלצים כרגע</button>
+    <button data-f="mov5">⚡ זזים ב-5 דק׳</button>
+    <button data-f="my">🏠 שלי</button>
+    <button data-f="fav">⭐ מועדפים</button>
+    <button data-f="gainers">עולים</button>
+    <button data-f="losers">יורדים</button>
+  </div>
+  <div id="lensBar">
+    <button data-lens="cards" class="on">🃏 כרטיסים</button>
+    <button data-lens="dna">🧬 ספקטרום</button>
+    <button data-lens="river">🌊 נהר</button>
+  </div>
+  <canvas id="lensCv" hidden></canvas>
+  <div class="mhead">
+    <button data-s="name">שם / מחזור ⇅</button>
+    <button data-s="price">מחיר ⇅</button>
+    <button data-s="chg">24ש ⇅</button>
+    <button data-s="m15">15ד ⇅</button>
+    <button data-s="m5">5ד ⇅</button>
+    <button data-s="rsi" class="c-rsi">RSI ⇅</button>
+    <button data-s="volx" class="c-volx">מחזור× ⇅</button>
+    <button data-s="rec" class="on">מומלץ + אופק ⇅</button>
+  </div>
+  <div id="list"><div class="empty">טוען את רשימת החוזים…</div></div>
+</main>
+<div id="chModal" hidden>
+  <div class="chBox">
+    <div class="chHead"><button id="chClose">✕</button><span id="chSub"></span><b id="chTitle"></b></div>
+    <div class="chTf" id="chTf">
+      <button data-tf="1d">1י׳</button><button data-tf="4h">4ש׳</button>
+      <button data-tf="1h">1ש׳</button><button data-tf="15m">15ד׳</button>
+      <button data-tf="5m">5ד׳</button><button data-tf="1m" class="on">1ד׳</button>
+      <button data-tf="1s">1שנ׳</button>
+      <button id="trGo" style="color:var(--gold)">🎬 אימון</button>
+    </div>
+    <canvas id="chCv"></canvas>
+    <div id="trainBar" hidden>
+      <div class="trStat" id="trStat"></div>
+      <div class="trBtns">
+        <button id="trNextB">▶ נר הבא</button>
+        <button id="trFast">⏩ 5 נרות</button>
+        <button id="trLongB">🟢 לונג</button>
+        <button id="trShortB">🔴 שורט</button>
+        <button id="trExitB" hidden>✋ סגור עסקה</button>
+        <button id="trQuitB">✕ סיום אימון</button>
+      </div>
+    </div>
+    <div class="chInfo" id="chInfo"></div>
+    <div class="jchips" id="sigJournal" hidden></div>
+  </div>
+</div>
+<div id="galModal" hidden>
+  <div class="chBox">
+    <div class="chHead"><button id="galClose">✕</button><span>גודל = מחזור · צבע = תנועת 15ד · טבעת = איתות 🟢 · לחיצה פותחת</span><b>🌌 גלקסיית השוק</b></div>
+    <canvas id="galCv"></canvas>
+  </div>
+</div>
+<div id="histModal" hidden>
+  <div class="chBox">
+    <div class="chHead"><button id="histClose">✕</button><span>כל איתות שנרשם — והאמת עליו</span><b>🗂 היסטוריית איתותים</b></div>
+    <div class="hstats" id="hStats"></div>
+    <canvas id="eqCv"></canvas>
+    <div class="chTf" id="hFilter">
+      <button data-hf="open">● פתוחים</button><button data-hf="exp">⌛ פג</button>
+      <button data-hf="stop">✗ סטופ</button><button data-hf="t1">✓ יעד</button>
+      <button data-hf="all" class="on">הכל</button>
+    </div>
+    <div id="hInsights"></div>
+    <div id="geoLab">
+      <button class="copy" id="geoRun">🎛 מעבדת גיאומטריה — בדוק יעד/סטופ אחרים על ההיסטוריה שלי</button>
+      <div id="geoOut"></div>
+    </div>
+    <div id="hList"></div>
+    <button class="copy" id="hCsv">⬇ ייצוא CSV</button>
+  </div>
+</div>
+<footer>
+  ⚠️ הציון וההמלצות מחושבים אוטומטית מנרות אמת (‏Binance לקריפטו · Yahoo Finance למניות · ‏EMA‏, RSI‏, MACD‏, מחזור) —
+  אין בכך ייעוץ השקעות. "אופק" הוא הערכת טווח הרלוונטיות של האיתות לפי אילו אותות מניעים אותו,
+  לא הבטחה. רמות הכניסה/סטופ בהרחבת שורה נגזרות מ-ATR של נרות דקה.
+</footer>
+<script>
+'use strict';
+// ════════════════════════════════════════════════════════════════════════
+//  MARKET RADAR — the arena's futures browser as its own app.
+//  Same engine, same honesty rule: every number on this page is computed
+//  from exchange candles; nothing is invented. What this page adds over
+//  the in-arena panel is ROOM — more columns (15m, RSI, volume surge), a
+//  recommendation HORIZON, and a tap-to-expand row with the reasoning and
+//  ATR-derived levels.
+// ════════════════════════════════════════════════════════════════════════
+const FAPI='https://fapi.binance.com';
+const $=(id)=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function fmtUsd(v){ if(v>=1e9) return '$'+(v/1e9).toFixed(2)+'B';
+  if(v>=1e6) return '$'+(v/1e6).toFixed(1)+'M';
+  if(v>=1e3) return '$'+(v/1e3).toFixed(1)+'K'; return '$'+(+v||0).toFixed(0); }
+function emaArr(v,p){ const k=2/(p+1), o=new Array(v.length); let e=v[0];
+  for(let i=0;i<v.length;i++){ e=i? v[i]*k+e*(1-k) : v[0]; o[i]=e; } return o; }
+function rsiArr(c,p){ const o=new Array(c.length).fill(50); let g=0,l=0;
+  for(let i=1;i<c.length;i++){ const d=c[i]-c[i-1];
+    if(i<=p){ if(d>0)g+=d; else l-=d; if(i===p){ g/=p; l/=p; o[i]=100-100/(1+g/(l||1e-9)); } }
+    else{ g=(g*(p-1)+Math.max(d,0))/p; l=(l*(p-1)+Math.max(-d,0))/p; o[i]=100-100/(1+g/(l||1e-9)); } }
+  return o; }
+function macdHistLast(c){ const e12=emaArr(c,12), e26=emaArr(c,26);
+  const m=c.map((_,i)=>e12[i]-e26[i]); const s=emaArr(m,9); return m[m.length-1]-s[s.length-1]; }
+function atrVal(cs,p){ let a=0,n=0;
+  for(let i=Math.max(1,cs.length-p);i<cs.length;i++){
+    const tr=Math.max(cs[i].h-cs[i].l,Math.abs(cs[i].h-cs[i-1].c),Math.abs(cs[i].l-cs[i-1].c));
+    a+=tr; n++; } return n? a/n : 0; }
+
+// ── universe ────────────────────────────────────────────────────────────
+let universe=[], universeAt=0;
+// the same favourites key the arena uses — a star here is a star there
+let favs=new Set();
+try{ favs=new Set(JSON.parse(localStorage.getItem('na:futfavs')||'[]')); }catch(e){}
+const saveFavs=()=>{ try{ localStorage.setItem('na:futfavs',JSON.stringify([...favs])); }catch(e){} };
+function decFromTick(t){ const s=String(t); if(s.indexOf('.')<0) return 0;
+  const d=s.replace(/0+$/,'').split('.')[1]; return d? d.length : 0; }
+// ── 📈 STOCK MARKET — same engine, Yahoo Finance data ───────────────────
+// The proven path the arena uses: Yahoo's v8 chart endpoint returns 1m
+// candles + the official quote in one call, no key needed. Stocks have
+// no tick/depth streams here, and the UI says so instead of pretending.
+const STOCKS=['AAPL','MSFT','NVDA','GOOGL','AMZN','META','TSLA','AVGO','AMD','INTC',
+  'QCOM','MU','SMCI','PLTR','NFLX','DIS','BA','JPM','GS','V','MA','PYPL','COIN','MSTR',
+  'HOOD','SHOP','UBER','ABNB','SNOW','CRM','ORCL','ADBE','CSCO','IBM','XOM','CVX','PFE',
+  'JNJ','UNH','LLY','WMT','COST','KO','PEP','MCD','NKE','SBUX','GME','AMC','RIVN','LCID',
+  'NIO','BABA','SPY','QQQ','DIA','IWM','TLT','GLD','TEVA','NICE','CHKP','WIX','MNDY','CYBR'];
+let mkt='crypto';
+try{ mkt=localStorage.getItem('na:radar:mkt')==='stock'?'stock':'crypto'; }catch(e){}
+const uniCache={crypto:null, stock:null};
+const scanCache={crypto:{}, stock:{}};
+const YQ='https://query1.finance.yahoo.com/v8/finance/chart/';
+// Yahoo blocks browser CORS on most networks — the reason stock mode
+// showed no data. Real fix, no fake data: try direct, then public CORS
+// bridges in order, remember whichever worked, and SAY so on screen.
+// If everything is blocked, stock mode says that too instead of dashes.
+// v430: a real phone showed the whole v425 chain (direct + 3 bridges) can
+// die at once. The chain is longer now — two direct Yahoo hosts + five
+// public bridges — each route remembers a recent failure so healthy routes
+// are tried first, the route that last carried data is saved across visits
+// (na:radar:yvia), bridges get a longer timeout than direct (cold starts
+// are slow; CORS blocks fail instantly), and a full blackout switches to a
+// cheap single-probe mode for 30s so a dead scan finishes fast instead of
+// burning 7 timeouts per symbol. Still zero fake data — if nothing
+// answers, the banner says so and the 45s kick keeps retrying.
+// v431: the platform's own bots backend — heavy-guard-simulator, the same
+// alpha:sim:url/apiKey the arena and assistant already read — joins as the
+// FIRST route: a server fetching Yahoo has no browser-CORS problem at all.
+// Contract: GET {base}/api/yahoo?url=<encoded yahoo url> returns the raw
+// Yahoo JSON (Bearer auth if a key is set). Until the backend implements
+// the endpoint the route fails fast and the chain moves on — never blocks.
+const simBase=()=>{ try{ return (localStorage.getItem('alpha:sim:url')||'').replace(/\/$/,''); }catch(e){ return ''; } };
+const simKey =()=>{ try{ return localStorage.getItem('alpha:sim:apiKey')||''; }catch(e){ return ''; } };
+const Y_VIAS=[
+  {n:'שרת Heavy Guard',  t:8000,  hg:1, f:u=>simBase()+'/api/yahoo?url='+encodeURIComponent(u),
+     h:()=>simKey()? {Authorization:'Bearer '+simKey()} : {}},
+  {n:'ישיר',             t:6000,  d:1,  f:u=>u},
+  {n:'ישיר 2',           t:6000,  d:1,  f:u=>u.replace('query1.','query2.')},
+  {n:'גשר allorigins',   t:12000, b:1,  f:u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u)},
+  {n:'גשר allorigins‑j', t:12000, b:1, w:1, f:u=>'https://api.allorigins.win/get?url='+encodeURIComponent(u)},
+  {n:'גשר corsproxy',    t:12000, b:1,  f:u=>'https://corsproxy.io/?url='+encodeURIComponent(u)},
+  {n:'גשר cors.lol',     t:12000, b:1,  f:u=>'https://api.cors.lol/?url='+encodeURIComponent(u)},
+  {n:'גשר codetabs',     t:12000, b:1,  f:u=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u)},
+];
+let yVia=0, yViaNoted=false, yAllDeadAt=0;
+try{ const v=+localStorage.getItem('na:radar:yvia');
+  if(Number.isInteger(v)&&v>=0&&v<Y_VIAS.length) yVia=v; }catch(e){}
+const yBad=new Array(Y_VIAS.length).fill(0);   // route -> last failure time
+const Y_BAD_MS=60000;
+async function yTry(i,url){
+  const v=Y_VIAS[i];
+  if(v.hg && !simBase()) return null;      // bots backend not configured — free skip
+  try{
+    const ctrl=new AbortController();
+    const to=setTimeout(()=>ctrl.abort(),v.t||9000);
+    const res=await fetch(v.f(url),{signal:ctrl.signal, headers: v.h? v.h() : undefined});
+    clearTimeout(to);
+    if(!res.ok) return null;
+    let j=await res.json();
+    if(v.w && j && typeof j.contents==='string') j=JSON.parse(j.contents);  // allorigins /get wraps the body
+    return (j && j.chart)? j : null;
+  }catch(e){ return null; }
+}
+function yWon(i){
+  yBad[i]=0;
+  if(i!==yVia || (!yViaNoted && !Y_VIAS[i].d)){
+    yViaNoted=true;
+    if(Y_VIAS[i].hg) toast('🤖 נתוני מניות אמיתיים דרך שרת ה־Heavy Guard שלך');
+    else if(!Y_VIAS[i].d) toast('📊 נתוני יאהו אמיתיים דרך '+Y_VIAS[i].n+' (הגישה הישירה חסומה ברשת הזו)');
+  }
+  yVia=i; try{ localStorage.setItem('na:radar:yvia',String(i)); }catch(e){}
+}
+async function yFetch(url){
+  if(Date.now()-yAllDeadAt<30000){
+    // recent total blackout: one cheap probe on the remembered route only;
+    // a success re-opens the full chain immediately
+    const j=await yTry(yVia,url);
+    if(!j) return null;
+    yAllDeadAt=0; yWon(yVia); return j;
+  }
+  const healthy=[], parked=[];
+  for(let k=0;k<Y_VIAS.length;k++){ const i=(yVia+k)%Y_VIAS.length;
+    (Date.now()-yBad[i]<Y_BAD_MS? parked : healthy).push(i); }
+  for(const i of healthy.concat(parked)){
+    const j=await yTry(i,url);
+    if(j){ yWon(i); return j; }
+    yBad[i]=Date.now();
+  }
+  yAllDeadAt=Date.now();
+  return null;
+}
+function parseYahoo(j){
+  const R=j && j.chart && j.chart.result && j.chart.result[0];
+  if(!R) return null;
+  const q=(R.indicators && R.indicators.quote && R.indicators.quote[0])||{};
+  const ts=R.timestamp||[], cs=[];
+  for(let i=0;i<ts.length;i++){
+    const c=q.close && q.close[i];
+    if(c==null || !(c>0)) continue;
+    cs.push({t:ts[i]*1000, o:+(q.open&&q.open[i]!=null?q.open[i]:c),
+      h:+(q.high&&q.high[i]!=null?q.high[i]:c), l:+(q.low&&q.low[i]!=null?q.low[i]:c),
+      c:+c, v:+(q.volume&&q.volume[i]||0)});
+  }
+  return {cs, meta:R.meta||{}};
+}
+// ── 📊 TradingView quote layer (v432) ───────────────────────────────────
+// TradingView's public screener endpoint answers browser fetches directly
+// (CORS-open, no key) and returns REAL close/change/volume for the whole
+// stock list in ONE POST. It has no minute candles, so it can't feed the
+// signal engine — but it means live prices, tape, galaxy and price alerts
+// keep working even when every Yahoo path is blocked. The body is sent
+// without a JSON content-type on purpose: that keeps the request
+// "simple" (no CORS preflight to get blocked).
+let tvState=0, tvNoted=false;            // 0 unknown · 1 carried data · -1 failed
+let stockSweep={candles:-1,tv:0,at:0};   // what the last full stock sweep achieved
+const TV_URL='https://scanner.tradingview.com/america/scan';
+// v433: the scanner itself can be blocked on some carriers — a POST-capable
+// bridge is the fallback; whichever answered last goes first next time
+const TV_VIAS=[u=>u, u=>'https://corsproxy.io/?url='+encodeURIComponent(u)];
+let tvVia=0;
+async function tvScan(){
+  const body=JSON.stringify({symbols:{query:{types:[]},tickers:[]},
+    filter:[{left:'name',operation:'in_range',right:STOCKS}],
+    columns:['name','close','change','volume'], range:[0,120]});
+  for(let k=0;k<TV_VIAS.length;k++){
+    const vi=(tvVia+k)%TV_VIAS.length;
+    try{
+      const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),10000);
+      const res=await fetch(TV_VIAS[vi](TV_URL),{method:'POST', signal:ctrl.signal, body});
+      clearTimeout(to);
+      if(!res.ok) continue;
+      const j=await res.json();
+      if(!j || !Array.isArray(j.data)) continue;
+      tvVia=vi;
+      let n=0; const seen=new Set();
+      for(const row of j.data){
+        const d=row.d||[]; const name=d[0], close=+d[1], chg=+d[2], vol=+d[3];
+        if(!name || seen.has(name) || !(close>0)) continue;
+        const r=universe.find(x=>x.market==='stock' && x.sym===name);
+        if(!r) continue;
+        seen.add(name);
+        // a fresh Yahoo reading (candles + official quote) outranks a screener
+        // quote — TV only fills symbols Yahoo hasn't reached this cycle
+        const sc=scan[r.sym];
+        if(sc && Date.now()-sc.at<SCAN_TTL) continue;
+        r.price=close; if(isFinite(chg)) r.chg=chg;
+        if(vol>0) r.vol=vol*close;           // share volume → USD notional
+        r.stale=false; n++;
+        try{ checkPalerts(r.sym,r.price); }catch(e){}
+      }
+      if(n>0) tvState=1;
+      return n;
+    }catch(e){}
+  }
+  tvState=-1; return 0;
+}
+// one candle fetcher for BOTH markets — every engine goes through here
+async function fetchKl(r,interval,opts){
+  opts=opts||{};
+  if(r.market==='stock'){
+    const map={'1m':['1m','1d'],'5m':['5m','5d'],'15m':['15m','5d'],'1h':['60m','1mo'],'4h':['60m','3mo'],'1d':['1d','1y']};
+    const [iv,rg]=map[interval]||['1d','1y'];
+    const url= opts.startTime
+      ? `${YQ}${encodeURIComponent(r.pair)}?interval=${iv}&period1=${Math.floor(opts.startTime/1000)}&period2=${Math.floor(Date.now()/1000)}`
+      : `${YQ}${encodeURIComponent(r.pair)}?interval=${iv}&range=${rg}`;
+    const j=await yFetch(url); if(!j) return null;
+    const p=parseYahoo(j); if(!p) return null;
+    if(interval==='1m' && !opts.startTime){
+      // the quote rides along — update the row honestly
+      if(p.meta.regularMarketPrice>0) r.price=+p.meta.regularMarketPrice;
+      const pc=+p.meta.chartPreviousClose||+p.meta.previousClose||0;
+      if(pc>0 && r.price>0) r.chg=(r.price/pc-1)*100;
+      r.vol=p.cs.reduce((a,c)=>a+c.v*c.c,0);
+      r.stale=p.cs.length? (Date.now()-p.cs[p.cs.length-1].t>20*60000) : true;
+    }
+    return opts.limit? p.cs.slice(-opts.limit) : p.cs;
+  }
+  let url=`${FAPI}/fapi/v1/klines?symbol=${r.pair}&interval=${interval}`;
+  url+= opts.startTime? `&startTime=${opts.startTime}&limit=${opts.limit||999}` : `&limit=${opts.limit||140}`;
+  const res=await fetch(url); if(!res.ok) return null;
+  const raw=await res.json(); if(!Array.isArray(raw)) return null;
+  return raw.map(a=>({t:+a[0],o:+a[1],h:+a[2],l:+a[3],c:+a[4],v:+a[5]}));
+}
+async function loadUniverse(force){
+  if(mkt==='stock'){
+    if(uniCache.stock && (universe===uniCache.stock)) return universe;
+    if(!uniCache.stock)
+      uniCache.stock=STOCKS.map(t=>({sym:t, pair:t, quote:'USD', market:'stock',
+        dec:2, price:0, chg:0, vol:0, stale:false}));
+    universe=uniCache.stock; universeAt=Date.now();
+    return universe;
+  }
+  if(!force && uniCache.crypto && uniCache.crypto.length && Date.now()-universeAt<120000){
+    universe=uniCache.crypto; return universe;
+  }
+  const [info,tick]=await Promise.all([
+    fetch(`${FAPI}/fapi/v1/exchangeInfo`).then(r=>r.ok?r.json():null).catch(()=>null),
+    fetch(`${FAPI}/fapi/v1/ticker/24hr`).then(r=>r.ok?r.json():null).catch(()=>null),
+  ]);
+  if(!info||!info.symbols) throw new Error('no exchangeInfo');
+  const byPair={}; (Array.isArray(tick)?tick:[]).forEach(t=>{ byPair[t.symbol]=t; });
+  const out=[], best={};
+  for(const s of info.symbols){
+    if(s.contractType!=='PERPETUAL' || s.status!=='TRADING') continue;
+    if(s.quoteAsset!=='USDT') continue;              // USDC twins made BTC/ETH appear twice
+    const t=byPair[s.symbol]||{};
+    const pf=(s.filters||[]).find(f=>f.filterType==='PRICE_FILTER');
+    const row={ sym:s.baseAsset, pair:s.symbol, quote:s.quoteAsset,
+      dec: pf? decFromTick(pf.tickSize) : (s.pricePrecision??2),
+      price:+t.lastPrice||0, chg:+t.priceChangePercent||0, vol:+t.quoteVolume||0 };
+    // one row per coin — keep the most liquid pair
+    const prev=best[row.sym];
+    if(!prev){ best[row.sym]=row; out.push(row); }
+    else if(row.vol>prev.vol) Object.assign(prev,row);
+  }
+  uniCache.crypto=out; universe=out; universeAt=Date.now();
+  return out;
+}
+function setMkt(m){
+  if(m!==mkt){ mkt=m; try{ localStorage.setItem('na:radar:mkt',m); }catch(e){}
+    scan=scanCache[m]; expanded=null; universe=uniCache[m]||[]; universeAt=0;
+    document.querySelectorAll('#mktMode button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+    render();
+    boot(true);
+    syncKlineSubs();     // crypto streams drop everything in stock mode
+  }
+}
+
+// ── the scan: 1-minute candles through the arena's indicators ───────────
+let scan=scanCache[mkt];           // sym -> reading (per-market cache)
+const candles={};                  // sym -> rolling 1m candle series (the live stream edits this in place)
+let scanState={running:false,done:0,total:0,at:0};
+const SCAN_MAX=120, SCAN_CONC=6, SCAN_TTL=90000;
+function scanScore(cs,vol24){
+  const n=cs.length; if(n<25) return null;
+  const closes=cs.map(c=>c.c), p=closes[n-1];
+  if(!(p>0)) return null;
+  const back=k=>closes[Math.max(0,n-1-k)];
+  const pct=f=> f>0? (p-f)/f*100 : 0;
+  const m5=pct(back(5)), m15=pct(back(15));
+  let R=rsiArr(closes,14)[n-1];
+  const win=closes.slice(-15);
+  if(Math.max(...win)===Math.min(...win)) R=50;   // a dead tape is neutral, not a max sell
+  const e9=emaArr(closes,9)[n-1], e21=emaArr(closes,21)[n-1];
+  const H=macdHistLast(closes)||0;
+  let recent=0; for(let i=n-5;i<n;i++) recent+=cs[i].v||0;
+  let base=0; for(let i=0;i<n-5;i++) base+=cs[i].v||0;
+  const avg5=(n-5)>0? base/(n-5)*5 : 0;
+  const volX=avg5>0? recent/avg5 : 1;
+  const gap=(e9-e21)/p*100;
+  let s=0;
+  s+=clamp(m15/1.5,-1.2,1.2)*22;
+  s+=clamp(m5/0.8,-1.2,1.2)*20;
+  s+=clamp(gap/0.18,-1,1)*16;
+  s+=clamp((R-50)/25,-1,1)*10;
+  s+=(H>0?1:H<0?-1:0)*6;
+  let q=clamp(0.55+volX*0.42,0.5,1.35);
+  if(R>80&&s>0) s*=0.45;
+  if(R<20&&s<0) s*=0.45;
+  if(vol24&&vol24<3e6) q*=0.45;
+  const score=Math.round(clamp(Math.abs(s)*q,0,99));
+  const atr=atrVal(cs,14);
+  // the last ten minutes, minute by minute — the raw material of timing
+  const mins=[];
+  for(let i=Math.max(1,n-10);i<n;i++){
+    const prev=closes[i-1];
+    mins.push(prev>0? (closes[i]-prev)/prev*100 : 0);
+  }
+  // how many ATRs the price already ran from its own mean — the chase meter
+  const ext=atr>0? (p-e21)/atr : 0;
+  return { m5,m15,rsi:R,volX,gap,score,atr,price:p,mins,ext,
+    dir:s>=0?'long':'short', macdUp:H>0,
+    why:`RSI ${Math.round(R)} · מחזור ×${volX.toFixed(1)} · 15ד ${(m15>=0?'+':'')+m15.toFixed(2)}% · EMA ${e9>=e21?'שורי':'דובי'} · MACD ${H>0?'חיובי':'שלילי'}` };
+}
+/**
+ * How long the signal is likely to stay relevant — derived from WHICH
+ * signals drive it, never asserted:
+ *   burst (fast 5m push on surging volume, no structure) → minutes
+ *   EMA structure + 24h trend agreeing                   → days (swing)
+ *   EMA structure                                        → hours (intraday)
+ *   otherwise                                            → up to an hour
+ */
+function horizonOf(s,chg24){
+  const dirSign = s.dir==='long'? 1 : -1;
+  const structure = Math.abs(s.gap)>=0.12 && Math.sign(s.gap)===dirSign;
+  const aligned24 = Math.sign(chg24)===dirSign && Math.abs(chg24)>=2;
+  const burst = Math.abs(s.m5)>=0.45 && s.volX>=1.6;
+  if(burst && !structure) return {k:'scalp', t:'⚡ דקות'};
+  if(structure && aligned24) return {k:'swing', t:'📅 ימים'};
+  if(structure) return {k:'intra', t:'🕐 שעות'};
+  return {k:'short', t:'⏱ עד שעה'};
+}
+/**
+ * The one-line answer a trader actually wants. Rules, not vibes:
+ *   strong score + supporting volume + RSI with room  -> enter
+ *   strong score but RSI already stretched            -> wait for a pullback
+ *   medium score                                      -> watch
+ *   anything else                                     -> no trade
+ */
+function verdictOf(s){
+  if(!s) return {k:'none', dot:'⚪', t:'⚪ אין עסקה', cls:''};
+  const rsiRoom = s.dir==='long' ? s.rsi<72 : s.rsi>28;
+  // anti-chase: a price that already ran >2.2 ATR from its own mean gives a
+  // late entry a structurally bad stop-to-target — that is not a 🟢
+  const chased = Math.abs(s.ext||0)>2.2;
+  if(s.score>=60 && s.volX>=1.3 && rsiRoom && chased)
+    return {k:'late', dot:'🟠', t:'🟠 מאוחר — המחיר כבר רץ '+Math.abs(s.ext).toFixed(1)+' ATR מהממוצע, כניסה עכשיו רודפת', cls:'gold'};
+  if(s.score>=60 && s.volX>=1.3 && rsiRoom) return {k:'go',   dot:'🟢', t:'🟢 כניסה — האיתות חם ונתמך במחזור', cls:'up'};
+  if(s.score>=60 && !rsiRoom)               return {k:'wait', dot:'🟡', t:'🟡 חכה לפולבאק — RSI מתוח, כניסה עכשיו רודפת', cls:'gold'};
+  if(s.score>=45)                            return {k:'watch',dot:'👁', t:'👁 מעקב — איתות בינוני, עוד לא עסקה', cls:''};
+  return {k:'none', dot:'⚪', t:'⚪ אין עסקה — הציון חלש מדי', cls:''};
+}
+/** Which of the six conditions the score is built from are actually met. */
+function checksOf(s,vol24){
+  const d=s.dir==='long'?1:-1;
+  return [
+    {t:'מגמת 15ד בכיוון', ok:Math.sign(s.m15)===d && Math.abs(s.m15)>=0.15},
+    {t:'דחיפת 5ד', ok:Math.sign(s.m5)===d && Math.abs(s.m5)>=0.2},
+    {t:'מבנה EMA', ok:Math.sign(s.gap)===d && Math.abs(s.gap)>=0.12},
+    {t:'RSI עם מקום', ok:s.dir==='long'? s.rsi<72 : s.rsi>28},
+    {t:'מחזור תומך ×1.3+', ok:s.volX>=1.3},
+    {t:'נזילות $10M+', ok:(vol24||0)>=1e7},
+    {t:'לא רדוף (עד 2.2 ATR)', ok:Math.abs(s.ext||0)<=2.2},
+  ];
+}
+// account + risk, persisted — the two inputs that turn a signal into a size
+let acct=+(localStorage.getItem('na:radar:acct')||1000);
+let riskPct=+(localStorage.getItem('na:radar:risk')||1);
+// trade geometry in ATR units — configurable since v416: the geometry
+// lab replays the trader's own ledger and lets them apply the winner
+let geom={stopK:3, t1K:4.5};
+try{ const g=JSON.parse(localStorage.getItem('na:radar:geom')||'null');
+  if(g && g.stopK>0 && g.t1K>0) geom=g; }catch(e){}
+function setGeom(stopK,t1K){
+  geom={stopK:+stopK, t1K:+t1K};
+  try{ localStorage.setItem('na:radar:geom',JSON.stringify(geom)); }catch(e){}
+}
+function planOf(s,r){
+  const entry=s.price;
+  const stop = s.dir==='long'? entry-s.atr*geom.stopK : entry+s.atr*geom.stopK;
+  const t1   = s.dir==='long'? entry+s.atr*geom.t1K : entry-s.atr*geom.t1K;
+  const t2   = s.dir==='long'? entry+s.atr*geom.t1K*5/3 : entry-s.atr*geom.t1K*5/3;
+  const dist=Math.abs(entry-stop);
+  const riskAmt=acct*riskPct/100;
+  const qty=dist>0? riskAmt/dist : 0;
+  const notional=qty*entry;
+  // leverage that keeps the used margin around 20% of the account — the
+  // stop always triggers long before liquidation at these numbers
+  const lev=Math.max(1,Math.min(20,Math.ceil(notional/(acct*0.2))));
+  return {entry,stop,t1,t2,qty,notional,lev,riskAmt,
+    rr1:+(Math.abs(t1-entry)/dist).toFixed(1), rr2:+(Math.abs(t2-entry)/dist).toFixed(1)};
+}
+/**
+ * Timing in MINUTES, computed, never asserted:
+ *   pace    — the net drift of the last five 1-minute candles, per minute
+ *   ETA     — target distance divided by that pace, IF the pace points the
+ *             signal's way; a target you are drifting away from has no ETA
+ * Both are estimates of "at the current pace" — the pace can change, and
+ * the label says so.
+ */
+function timingOf(s){
+  const dirSign = s.dir==='long'? 1 : -1;
+  const pace = s.m5/5;                              // %/minute, signed
+  const paceOk = Math.sign(pace)===dirSign && Math.abs(pace)>=0.02;
+  const targetPct = s.price>0? (s.atr*4.5)/s.price*100 : 0;
+  const stopPct   = s.price>0? (s.atr*3)/s.price*100 : 0;
+  let etaMin=null;
+  if(paceOk && targetPct>0){
+    etaMin=Math.round(targetPct/Math.abs(pace));
+    etaMin=Math.max(1,Math.min(180,etaMin));
+  }
+  return { pace, paceOk, etaMin, targetPct, stopPct,
+    paceTxt:(pace>=0?'+':'')+pace.toFixed(3)+'%/דק׳' };
+}
+async function runScan(force,onProgress,hotOnly){
+  if(scanState.running) return;
+  if(!hotOnly && !force && scanState.at && Date.now()-scanState.at<SCAN_TTL) return;
+  await loadUniverse();
+  const pool=universe.slice().sort((a,b)=>(b.vol||0)-(a.vol||0));
+  const must=new Set(favs);
+  const list=[], seen=new Set();
+  for(const r of pool) if(must.has(r.sym)&&!seen.has(r.pair)){ list.push(r); seen.add(r.pair); }
+  if(hotOnly){
+    // minute-resolution tier: favourites, everything currently 🟢, and the
+    // 20 most liquid — refreshed every 30s so the timing numbers stay
+    // minutes-fresh without re-sweeping all 120 contracts
+    for(const r of pool){ const sc=scan[r.sym];
+      if(sc && verdictOf(sc).k==='go' && !seen.has(r.pair)){ list.push(r); seen.add(r.pair); } }
+    for(const r of pool.slice(0,20)){ if(!seen.has(r.pair)){ list.push(r); seen.add(r.pair); } }
+  } else
+  for(const r of pool){ if(list.length>=SCAN_MAX) break; if(seen.has(r.pair)) continue; list.push(r); seen.add(r.pair); }
+  scanState={running:true,done:0,total:list.length,at:scanState.at};
+  // stock sweep: fire the one-POST TradingView quote pass in parallel —
+  // real prices paint in ~a second while the candle crawl works
+  const tvP = mkt==='stock' ? tvScan().then(n=>{ if(n && onProgress) onProgress(); return n; }) : null;
+  let okC=0;
+  let i=0;
+  const worker=async()=>{
+    while(i<list.length){
+      const r=list[i++];
+      try{
+        const cs=await fetchKl(r,'1m',{limit:90});
+        if(cs && cs.length){
+          const sc=scanScore(cs,r.vol);
+          if(sc){ scan[r.sym]=Object.assign(sc,{at:Date.now()}); candles[r.sym]=cs; }
+          if(r.market==='stock') okC++;
+          try{ checkPalerts(r.sym,r.price); }catch(e){}   // stock path has no tick stream
+        }
+        // public CORS bridges rate-limit (codetabs ~5 req/s) — pace stock
+        // requests instead of slamming them and getting the whole IP parked
+        if(r.market==='stock') await new Promise(s=>setTimeout(s,150));
+      }catch(e){}
+      scanState.done++;
+      if(onProgress && scanState.done%8===0) onProgress();
+    }
+  };
+  // stocks go through shared bridges: 3 lanes, not 6
+  const conc=Math.min(mkt==='stock'?3:SCAN_CONC, list.length);
+  try{ await Promise.all(Array.from({length:conc},worker)); }
+  finally{ scanState.running=false; if(!hotOnly) scanState.at=Date.now(); scanState.hotAt=Date.now(); }
+  if(tvP!==null){
+    const tvN=await tvP.catch(()=>0);
+    if(!hotOnly) stockSweep={candles:okC, tv:tvN, at:Date.now()};
+    if(okC===0 && tvN>0 && !tvNoted){ tvNoted=true;
+      toast('📊 מחירים אמיתיים דרך TradingView — ניתוח הנרות (יאהו) עדיין חסום ברשת הזו'); }
+  }
+  if(onProgress) onProgress();
+}
+
+// ── LIVE PRICES — one WebSocket, every contract ─────────────────────────
+// The REST universe refreshes every two minutes; a trader hunting fast
+// entries needs the tape moving. Binance's !miniTicker@arr stream pushes
+// every changed contract about once a second over a single socket — price
+// and 24h% update in place, with a green/red pulse on the cell that moved.
+// If the socket cannot connect (blocked network), REST keeps working and
+// nothing breaks.
+const priceFlash={};              // sym -> 'up'|'down', cleared on render
+let ws=null, wsRetry=0, wsRenderT=0;
+function applyTick(sym,price,chg){
+  const r=universe.find(x=>x.sym===sym);
+  if(!r) return;
+  if(price>0 && r.price>0 && price!==r.price) priceFlash[sym]=price>r.price?'up':'down';
+  if(price>0) r.price=price;
+  if(chg!=null && isFinite(chg)) r.chg=chg;
+  try{ checkPalerts(sym,price); }catch(e){}
+}
+function openWS(){
+  if(ws || document.hidden) return;
+  try{ ws=new WebSocket('wss://fstream.binance.com/ws/!miniTicker@arr'); }catch(e){ ws=null; return; }
+  ws.onmessage=ev=>{
+    let arr; try{ arr=JSON.parse(ev.data); }catch(e){ return; }
+    if(!Array.isArray(arr)) return;
+    for(const t of arr){
+      if(!t.s || !t.s.endsWith('USDT')) continue;
+      const o=+t.o, c=+t.c;
+      applyTick(t.s.slice(0,-4), c, o>0? (c/o-1)*100 : null);
+    }
+    // ~1 render/s: the socket ticks faster than eyes read
+    const now=Date.now();
+    if(now-wsRenderT>1100){ wsRenderT=now; render(); }
+  };
+  ws.onopen=()=>{ wsRetry=0; };
+  ws.onclose=()=>{ ws=null; setTimeout(openWS, Math.min(30000, 1500*Math.pow(2,wsRetry++))); };
+  ws.onerror=()=>{ try{ ws && ws.close(); }catch(e){} };
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ try{ ws && ws.close(); }catch(e){} ws=null;
+    try{ wsK && wsK.close(); }catch(e){} wsK=null; }
+  else { openWS(); syncKlineSubs(); }
+});
+openWS();
+
+// ── ⚡ LIVE ANALYSIS STREAM — the forming candle, four times a second ────
+// The REST sweep is only a baseline: by the time a trader reads a number it
+// can be 30-90s old, which is an eternity next to a live chart. Binance's
+// @kline_1m stream pushes the IN-PROGRESS 1-minute candle roughly every
+// 250ms, so the hot set — favourites, current 🟢 signals, and whichever row
+// is open on screen — subscribes live. Every push rewrites the last candle
+// in memory and re-runs the exact same scoring, so pace / ETA / RSI / score
+// move in real time. The header shows the measured push latency — a number,
+// not a promise.
+let wsK=null, wsKRetry=0, klineSubs=new Set(), liveDomT=0;
+const liveStat={lat:0,lastE:0};
+const seeding=new Set();
+function liveSet(){
+  if(mkt!=='crypto') return new Set();   // Binance streams are crypto-only
+  const out=[], seen=new Set();
+  const add=(sym)=>{ if(seen.has(sym)) return; const r=universe.find(x=>x.sym===sym);
+    if(r){ out.push(r.pair.toLowerCase()+'@kline_1m'); seen.add(sym); } };
+  if(expanded){ add(expanded);
+    // the open row also gets trades + best bid/ask + live 20-level depth
+    const r=universe.find(x=>x.sym===expanded);
+    if(r){ out.push(r.pair.toLowerCase()+'@aggTrade'); out.push(r.pair.toLowerCase()+'@bookTicker');
+      out.push(r.pair.toLowerCase()+'@depth20@100ms'); }
+  }
+  if(typeof chart!=='undefined' && chart.mode==='coin' && chart.sym){
+    add(chart.sym);
+    const rc=universe.find(x=>x.sym===chart.sym);
+    if(rc){ out.push(rc.pair.toLowerCase()+'@aggTrade'); out.push(rc.pair.toLowerCase()+'@bookTicker');
+      out.push(rc.pair.toLowerCase()+'@depth20@100ms'); }
+  }
+  for(const f of favs) add(f);
+  for(const r of universe){ const s=scan[r.sym]; if(s && verdictOf(s).k==='go') add(r.sym); }
+  return new Set(out.slice(0,27));   // well under Binance's per-socket cap
+}
+async function seedCandles(sym,r){
+  if(seeding.has(sym)) return; seeding.add(sym);
+  try{
+    const cs=await fetchKl(r,'1m',{limit:90});
+    if(cs) candles[sym]=cs;
+  }catch(e){}
+  seeding.delete(sym);
+}
+function onKline(d){
+  const k=d&&d.k; if(!k) return;
+  const sym=(d.s||'').replace(/USDT$/,'');
+  const r=universe.find(x=>x.sym===sym); if(!r) return;
+  const cs=candles[sym];
+  if(!cs){ seedCandles(sym,r); return; }        // first event before any sweep — seed once
+  const cd={t:+k.t,o:+k.o,h:+k.h,l:+k.l,c:+k.c,v:+k.v};
+  const last=cs[cs.length-1];
+  if(last && last.t===cd.t) cs[cs.length-1]=cd;  // the forming candle, updated in place
+  else { cs.push(cd); if(cs.length>90) cs.shift(); }
+  const sc=scanScore(cs,r.vol); if(!sc) return;
+  const now=Date.now();
+  liveStat.lat=Math.max(0,now-(+d.E||now)); liveStat.lastE=now;
+  scan[sym]=Object.assign(sc,{at:now,live:true});
+  applyTick(sym,cd.c,null);
+  liveTouch(sym,now);
+}
+// targeted DOM refresh between full renders — the open row's pace/ETA and
+// freshness stamp update ~3×/s without rebuilding the list
+function liveTouch(sym,now){
+  if(expanded===sym && now-liveDomT>350){
+    liveDomT=now;
+    const det=document.querySelector('.det'), s=scan[sym];
+    if(det && s){
+      const tm=timingOf(s);
+      const pe=det.querySelector('[data-lv="pace"]');
+      if(pe){ pe.textContent=tm.paceTxt; pe.style.color=tm.paceOk?'var(--up)':'var(--dim)'; }
+      const ee=det.querySelector('[data-lv="eta"]');
+      if(ee) renderEta(ee,s);
+      const me=det.querySelector('.mage');
+      if(me){ me.dataset.age=String(s.at); me.dataset.live='1'; }
+    }
+  }
+  if(now-wsRenderT>1100){ wsRenderT=now; render(); }
+}
+function openWSK(){
+  if(wsK || document.hidden) return;
+  const want=liveSet(); if(!want.size) return;
+  klineSubs=want;
+  try{ wsK=new WebSocket('wss://fstream.binance.com/stream?streams='+[...want].join('/')); }
+  catch(e){ wsK=null; return; }
+  wsK.onmessage=ev=>{
+    let m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+    const d=m && m.data; if(!d) return;
+    if(d.e==='kline') onKline(d);
+    else if(d.e==='aggTrade') onTrade(d);
+    else if(d.e==='bookTicker') onBook(d);
+    else if(d.e==='depthUpdate') onDepth(d);
+  };
+  wsK.onopen=()=>{ wsKRetry=0; };
+  wsK.onclose=()=>{ wsK=null; klineSubs=new Set();
+    setTimeout(openWSK, Math.min(30000, 1500*Math.pow(2,wsKRetry++))); };
+  wsK.onerror=()=>{ try{ wsK && wsK.close(); }catch(e){} };
+}
+function syncKlineSubs(){
+  if(document.hidden) return;
+  if(!wsK){ openWSK(); return; }
+  if(wsK.readyState!==1) return;                 // still connecting — onopen state is the URL set
+  const want=liveSet();
+  const add=[...want].filter(x=>!klineSubs.has(x));
+  const del=[...klineSubs].filter(x=>!want.has(x));
+  try{
+    if(add.length) wsK.send(JSON.stringify({method:'SUBSCRIBE',params:add,id:1}));
+    if(del.length) wsK.send(JSON.stringify({method:'UNSUBSCRIBE',params:del,id:2}));
+  }catch(e){ return; }
+  if(add.length||del.length) klineSubs=want;
+}
+
+// ── 🔬 MICRO PRECISION — every trade, the real book, honest ranges ──────
+// For the row that is open on screen the radar stops sampling and starts
+// LISTENING: @aggTrade delivers every executed trade (milliseconds), and
+// @bookTicker the actual best bid/ask. From a rolling 95s trade buffer:
+//   • taker-flow — who is hitting the market, buyers or sellers (30s, $)
+//   • CVD — net aggressive buying minus selling, in dollars
+//   • pace-60s — the last REAL minute, tick-accurate, not candle-sampled
+//   • spread — the true cost of a market entry right now
+// The ETA becomes a RANGE from two independent pace windows (60s + 5min):
+// when they disagree, showing both bounds is more precise than pretending
+// one number is certain.
+const micro={sym:null, trades:[], bid:0, ask:0, lastT:0,
+  bids:[], asks:[], depthAt:0, wallMem:[], spoofAt:0};
+let microT=0;
+function microStats(){
+  const now=Date.now(), tr=micro.trades;
+  let buy=0, sell=0, n30=0;
+  for(let i=tr.length-1;i>=0;i--){ const x=tr[i]; if(now-x.t>30000) break;
+    const usd=x.p*x.q; if(x.m) sell+=usd; else buy+=usd; n30++; }
+  const tot=buy+sell;
+  let p60=null;
+  for(let i=tr.length-1;i>=0;i--){ if(now-tr[i].t>=60000){ p60=tr[i].p; break; } }
+  const pNow=tr.length? tr[tr.length-1].p : 0;
+  return {
+    pNow,
+    buyPct: tot>0? buy/tot*100 : null,
+    cvd:    tot>0? buy-sell : null,
+    tps:    n30/30,
+    pace60: (p60&&pNow)? (pNow/p60-1)*100 : null,
+    spread: (micro.bid>0&&micro.ask>0)? (micro.ask-micro.bid)/micro.ask*100 : null,
+    n: tr.length };
+}
+function etaRange(s,ms){
+  const dirSign=s.dir==='long'?1:-1;
+  const targetPct=s.price>0? (s.atr*4.5)/s.price*100 : 0;
+  if(!(targetPct>0)) return null;
+  const paces=[s.m5/5];
+  if(ms && ms.pace60!=null) paces.push(ms.pace60);
+  const etas=paces.filter(p=>Math.sign(p)===dirSign && Math.abs(p)>=0.02)
+    .map(p=>Math.max(1,Math.min(180,Math.round(targetPct/Math.abs(p)))));
+  if(!etas.length) return null;
+  return {lo:Math.min(...etas), hi:Math.max(...etas)};
+}
+function renderEta(el,s){
+  const er=etaRange(s, (micro.sym===expanded && micro.trades.length)? microStats() : null);
+  el.innerHTML = !er? 'אין קצב מדיד לכיוון היעד כרגע'
+    : er.lo===er.hi
+      ? `בקצב הנוכחי — היעד בעוד <b style="color:var(--gold)">~${er.lo} דק׳</b>`
+      : `היעד בעוד <b style="color:var(--gold)">~${er.lo}–${er.hi} דק׳</b> <i style="color:var(--dim);font-style:normal;font-size:10px">(שני חלונות קצב: 60ש׳ + 5ד׳)</i>`;
+}
+// the tick target: the charted coin when a live chart is open, else the open row
+function microTarget(){
+  try{ if(chart.mode==='coin' && chart.sym) return chart.sym; }catch(e){}
+  return expanded;
+}
+function onTrade(d){
+  const sym=(d.s||'').replace(/USDT$/,'');
+  if(sym!==microTarget()) return;
+  if(micro.sym!==sym){ micro.sym=sym; micro.trades=[]; micro.bid=0; micro.ask=0; }
+  micro.trades.push({t:+d.T||Date.now(), p:+d.p, q:+d.q, m:!!d.m});
+  const cut=Date.now()-95000;
+  while(micro.trades.length && micro.trades[0].t<cut) micro.trades.shift();
+  applyTick(sym,+d.p,null);
+  micro.lastT=Date.now();
+  microTouch();
+  const now=Date.now();
+  if(now-wsRenderT>1100){ wsRenderT=now; render(); }
+}
+function onBook(d){
+  const sym=(d.s||'').replace(/USDT$/,'');
+  if(sym!==microTarget()) return;
+  if(micro.sym!==sym){ micro.sym=sym; micro.trades=[]; }
+  micro.bid=+d.b||0; micro.ask=+d.a||0;
+  microTouch();
+}
+// ── 🧱 LIVE MARKET DEPTH — the real book, walls and all ─────────────────
+// @depth20@100ms pushes the top 20 levels of both sides ten times a
+// second. From it: the buyer/seller imbalance in actual dollars, and
+// WALLS — levels holding 4x the median level size. A wall is a statement,
+// not a commitment: one that appears and vanishes within a minute is the
+// classic spoof, and that is detected and reported as a trap.
+function onDepth(d){
+  const sym=(d.s||'').replace(/USDT$/,'');
+  if(sym!==microTarget()) return;
+  if(micro.sym!==sym){ micro.sym=sym; micro.trades=[]; micro.bid=0; micro.ask=0;
+    micro.bids=[]; micro.asks=[]; micro.wallMem=[]; micro.spoofAt=0; }
+  micro.bids=(d.b||[]).map(x=>[+x[0],+x[1]]).filter(x=>x[0]>0&&x[1]>0).slice(0,20);
+  micro.asks=(d.a||[]).map(x=>[+x[0],+x[1]]).filter(x=>x[0]>0&&x[1]>0).slice(0,20);
+  micro.depthAt=Date.now();
+  const ds=depthStats();
+  if(ds){
+    const now=Date.now();
+    for(const w of micro.wallMem){
+      if(w.gone) continue;
+      const side=w.side==='buy'? micro.bids : micro.asks;
+      const still=side.some(([p,q])=> Math.abs(p-w.p)/w.p<0.001 && p*q>=w.usd*0.5);
+      if(!still){ w.gone=now; if(now-w.seen<45000) micro.spoofAt=now; }
+    }
+    for(const w of ds.walls){
+      if(!micro.wallMem.some(m=>!m.gone && m.side===w.side && Math.abs(m.p-w.p)/w.p<0.001))
+        micro.wallMem.push({side:w.side, p:w.p, usd:w.usd, seen:now});
+    }
+    if(micro.wallMem.length>30) micro.wallMem=micro.wallMem.slice(-30);
+  }
+  microTouch();
+}
+function depthStats(){
+  const bs=micro.bids, as=micro.asks;
+  if(!bs.length || !as.length || Date.now()-micro.depthAt>8000) return null;
+  const mid=(bs[0][0]+as[0][0])/2;
+  let bidUsd=0, askUsd=0; const lv=[];
+  for(const [p,q] of bs){ const u=p*q; bidUsd+=u; lv.push(u); }
+  for(const [p,q] of as){ const u=p*q; askUsd+=u; lv.push(u); }
+  const med=lv.slice().sort((a,b)=>a-b)[Math.floor(lv.length/2)]||0;
+  const wallMin=Math.max(med*4, 5000);
+  const walls=[];
+  for(const [p,q] of bs){ const u=p*q; if(u>=wallMin) walls.push({side:'buy', p, usd:u, dist:(mid-p)/mid*100}); }
+  for(const [p,q] of as){ const u=p*q; if(u>=wallMin) walls.push({side:'sell', p, usd:u, dist:(p-mid)/mid*100}); }
+  walls.sort((a,b)=>b.usd-a.usd);
+  return {mid, bidUsd, askUsd, imb:bidUsd/(bidUsd+askUsd)*100, walls:walls.slice(0,4)};
+}
+// in-place refresh of the micro chips, ≤4×/s
+function microTouch(force){
+  const now=Date.now();
+  if(!force && now-microT<250) return; microT=now;
+  if(!expanded || micro.sym!==expanded) return;
+  const det=document.querySelector('.det'); if(!det) return;
+  const r=universe.find(x=>x.sym===expanded), s=scan[expanded];
+  if(!r) return;
+  const ms=microStats();
+  const q=k=>det.querySelector(`[data-mv="${k}"]`);
+  let e;
+  if((e=q('px')) && ms.pNow>0)
+    e.textContent=ms.pNow.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec});
+  if((e=q('sp'))) e.textContent= ms.spread!=null? ms.spread.toFixed(3)+'%' : '—';
+  if((e=q('bp')) && ms.buyPct!=null){
+    e.textContent=Math.round(ms.buyPct)+'%';
+    e.style.color= ms.buyPct>=55?'var(--up)': ms.buyPct<=45?'var(--down)':'var(--dim)';
+  }
+  if((e=q('cvd')) && ms.cvd!=null){
+    e.textContent=(ms.cvd>=0?'+':'-')+fmtUsd(Math.abs(ms.cvd));
+    e.style.color= ms.cvd>=0?'var(--up)':'var(--down)';
+  }
+  if((e=q('p60')) && ms.pace60!=null){
+    e.textContent=(ms.pace60>=0?'+':'')+ms.pace60.toFixed(3)+'%/דק׳';
+    e.style.color= Math.abs(ms.pace60)<0.02?'var(--dim)': ms.pace60>0?'var(--up)':'var(--down)';
+  }
+  if((e=q('tps')) && micro.trades.length) e.textContent=ms.tps.toFixed(1);
+  if((e=q('note')) && micro.trades.length) e.textContent='';
+  const ds=depthStats();
+  if(ds){
+    if((e=det.querySelector('[data-dv="imb"]'))){
+      e.textContent='קונים '+Math.round(ds.imb)+'% ('+fmtUsd(ds.bidUsd)+') · מוכרים '+Math.round(100-ds.imb)+'% ('+fmtUsd(ds.askUsd)+')';
+      e.style.color= ds.imb>=58?'var(--up)': ds.imb<=42?'var(--down)':'var(--dim)';
+    }
+    if((e=det.querySelector('[data-dv="bid"]'))) e.style.width=Math.round(ds.imb)+'%';
+    if((e=det.querySelector('[data-dv="walls"]')))
+      e.innerHTML= ds.walls.length? ds.walls.map(w=>
+        `<span style="color:${w.side==='buy'?'var(--up)':'var(--down)'}">${w.side==='buy'?'🟩 קיר קנייה':'🟥 קיר מכירה'} @ ${w.p.toLocaleString('en-US',{maximumFractionDigits:r.dec})} · ${fmtUsd(w.usd)} · ${w.dist.toFixed(2)}% מהמחיר</span>`).join('')
+      : '<span style="color:var(--dim)">אין קירות בולטים ב-20 הרמות הקרובות</span>';
+    if((e=det.querySelector('[data-dv="dnote"]')))
+      e.textContent='קיר = פי 4+ מרמה חציונית · קיר שנעלם תוך דקה = ספוף (מדווח למעלה)';
+  }
+  if(s){ const ee=det.querySelector('[data-lv="eta"]'); if(ee) renderEta(ee,s); }
+}
+
+// ── 🕵️ TRICKS & TRAPS DETECTOR — the desk-level read of the tape ────────
+// Mechanical detections professionals actually watch for, computed from
+// real candles, real trades and the real book — each one a PATTERN with
+// its trigger stated, never an accusation with certainty:
+//   🎣 stop-hunt wick   — swept beyond the recent extreme, closed back
+//   🪤 failed breakout  — closed beyond the 20-bar extreme, swallowed back
+//   ⛽ exhaustion       — three pushes on shrinking volume
+//   🚨 velocity anomaly — a 1m move 3x the ATR (coordinated pump/dump risk)
+//   🎭 hidden flow      — price and aggressive order-flow disagree (CVD)
+function trapsOf(sym){
+  const out=[];
+  const cs=candles[sym];
+  if(cs && cs.length>=24){
+    const n=cs.length, last=cs[n-1], prev=cs[n-2];
+    const atr=atrVal(cs,14)||0;
+    const lo10=Math.min(...cs.slice(-13,-1).map(x=>x.l));
+    const hi10=Math.max(...cs.slice(-13,-1).map(x=>x.h));
+    for(const c of [last,prev]){
+      const body=Math.abs(c.c-c.o), lw=Math.min(c.o,c.c)-c.l, uw=c.h-Math.max(c.o,c.c);
+      if(lw>Math.max(body*2,atr*0.8) && c.l<lo10 && c.c>lo10){
+        out.push({k:'huntD',t:'🎣 ציד סטופים למטה — פתיל ארוך מתחת לשפל וסגירה חזרה מעליו'}); break; }
+      if(uw>Math.max(body*2,atr*0.8) && c.h>hi10 && c.c<hi10){
+        out.push({k:'huntU',t:'🎣 ציד סטופים למעלה — פתיל מעל השיא וסגירה חזרה מתחתיו'}); break; }
+    }
+    const hi20=Math.max(...cs.slice(-22,-2).map(x=>x.h));
+    const lo20=Math.min(...cs.slice(-22,-2).map(x=>x.l));
+    if(prev.c>hi20 && last.c<hi20) out.push({k:'trapL',t:'🪤 פריצה כושלת — נסגר מעל השיא ונבלע חזרה (מלכודת לונגים)'});
+    if(prev.c<lo20 && last.c>lo20) out.push({k:'trapS',t:'🪤 שבירה כושלת — נסגר מתחת לשפל וחזר (מלכודת שורטים)'});
+    if(n>=4){
+      const a=cs[n-3], b=cs[n-2], c3=cs[n-1];
+      if(a.c<b.c&&b.c<c3.c && a.v>b.v&&b.v>c3.v && (c3.c-a.c)>atr)
+        out.push({k:'exhU',t:'⛽ עלייה על מחזור דועך — תנועה שנגמר לה הדלק'});
+      if(a.c>b.c&&b.c>c3.c && a.v>b.v&&b.v>c3.v && (a.c-c3.c)>atr)
+        out.push({k:'exhD',t:'⛽ ירידה על מחזור דועך — הלחץ נחלש'});
+    }
+    if(atr>0 && Math.abs(last.c-prev.c)>atr*3)
+      out.push({k:'pump',t:'🚨 תנועת דקה חריגה פי 3 מהתנודתיות — סיכון פמפ/דמפ מתואם'});
+  }
+  if(micro.sym===sym && micro.spoofAt && Date.now()-micro.spoofAt<60000)
+    out.push({k:'spoof',t:'🧊 קיר גדול הופיע בספר ונעלם תוך פחות מדקה — דפוס ספוף קלאסי'});
+  if(micro.sym===sym && micro.trades.length>20){
+    const ms=microStats();
+    if(ms.pace60!=null && ms.cvd!=null){
+      if(ms.pace60>0.05 && ms.cvd<0)
+        out.push({k:'divD',t:'🎭 המחיר עולה אבל המוכרים האגרסיביים שולטים בזרימה — חלוקה סמויה אפשרית'});
+      if(ms.pace60<-0.05 && ms.cvd>0)
+        out.push({k:'divU',t:'🎭 המחיר יורד אבל הקונים האגרסיביים שולטים — איסוף סמוי אפשרי'});
+    }
+  }
+  return out;
+}
+// 1-SECOND candles, aggregated live from the trade stream — no REST, no
+// delay: each executed trade lands in its second's candle immediately
+function secCandles(){
+  const tr=micro.trades; if(!tr.length) return null;
+  const out=[]; let cur=null;
+  for(const x of tr){
+    const sec=Math.floor(x.t/1000)*1000;
+    if(!cur || cur.t!==sec){ if(cur) out.push(cur);
+      cur={t:sec,o:x.p,h:x.p,l:x.p,c:x.p,v:x.q}; }
+    else { cur.h=Math.max(cur.h,x.p); cur.l=Math.min(cur.l,x.p); cur.c=x.p; cur.v+=x.q; }
+  }
+  out.push(cur);
+  return out;
+}
+
+// ── 📈 CHART MODAL — every trade and every coin, drawn from real candles ─
+// One canvas renderer, two views:
+//   coin view   — live 1m candles (fed by the same @kline_1m stream the
+//                 open row already subscribes to) + EMA9/21 + plan lines
+//   signal view — the forensics of one ledger trade: candles from 30min
+//                 before the signal fired until now, entry/stop/target
+//                 lines, the fire moment marked, and the R state live
+const chart={mode:null, sym:null, sigI:-1, cs:null, timer:null,
+  tf:'1m', loadSeq:0, loading:false, loadedAt:0};
+const TFS={'1s':1000,'1m':60000,'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000};
+const TF_LABEL={'1s':'שנייה','1m':'דקה','5m':'5 דקות','15m':'15 דקות','1h':'שעה','4h':'4 שעות','1d':'יום'};
+function chTfSync(){
+  document.querySelectorAll('#chTf button').forEach(b=>b.classList.toggle('on',b.dataset.tf===chart.tf));
+  $('chSub').textContent = chart.mode==='sig'
+    ? 'ניתוח העסקה · נרות '+TF_LABEL[chart.tf]
+    : chart.tf==='1s'? 'נרות שנייה — נבנים חיים מכל עסקה, אפס דיליי'
+    : 'נרות '+TF_LABEL[chart.tf]+(chart.tf==='1m'?' · מתעדכן לייב':' · מחיר אחרון לייב, נרות כל ~25ש׳');
+}
+// higher timeframes come from REST; 1m in coin view rides the live stream
+async function chLoadTf(){
+  if(!chart.mode) return;
+  if(chart.tf==='1s'){ chart.cs=null; chart.loadedAt=Date.now();
+    if(chart.mode==='sig') chDrawSig(); else chDrawCoin(); return; }   // ticks are local, no REST
+  if(chart.mode==='coin' && chart.tf==='1m'){ chart.cs=null; chDrawCoin(); return; }
+  const r=universe.find(x=>x.sym===chart.sym); if(!r) return;
+  const ms=TFS[chart.tf], seq=++chart.loadSeq;
+  chart.loading=true;
+  const opts={limit:140};
+  if(chart.mode==='sig'){
+    const g=sigs[chart.sigI];
+    if(g){ opts.startTime=g.t-40*ms; opts.limit=999; }
+  }
+  try{
+    const cs=await fetchKl(r,chart.tf,opts);
+    if(seq===chart.loadSeq && cs) chart.cs=cs;
+  }catch(e){}
+  chart.loading=false; chart.loadedAt=Date.now();
+  if(chart.mode==='sig') chDrawSig(); else chDrawCoin();
+}
+function chMaybeRefresh(){
+  if(!chart.mode || chart.loading) return;
+  if(chart.tf==='1s') return;                        // fed by the tick stream
+  if(chart.mode==='coin' && chart.tf==='1m') return;
+  if(Date.now()-chart.loadedAt>25000) chLoadTf();
+}
+function drawCandles(cv,cs,opt){
+  opt=opt||{};
+  const dpr=window.devicePixelRatio||1;
+  const cssW=cv.clientWidth||320, cssH=cv.clientHeight||240;
+  if(cv.width!==Math.round(cssW*dpr)) cv.width=Math.round(cssW*dpr);
+  if(cv.height!==Math.round(cssH*dpr)) cv.height=Math.round(cssH*dpr);
+  const x=cv.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0);
+  const W=cssW, H=cssH, padR=64, padT=10, padB=20, padL=6;
+  x.clearRect(0,0,W,H);
+  x.font='10px "JetBrains Mono",monospace';
+  if(!cs || cs.length<2){
+    x.fillStyle='#6b7c93'; x.textAlign='center';
+    x.fillText(opt.empty||'טוען נרות…', W/2, H/2); return;
+  }
+  const dec=opt.dec!=null?opt.dec:2;
+  const fmtP=p=>p.toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+  let lo=Infinity, hi=-Infinity;
+  for(const c of cs){ if(c.l<lo)lo=c.l; if(c.h>hi)hi=c.h; }
+  for(const L of (opt.lines||[])){ if(L.p<lo)lo=L.p; if(L.p>hi)hi=L.p; }
+  if(!(hi>lo)) hi=lo+Math.abs(lo)*0.001+1e-9;
+  const m=(hi-lo)*0.06; lo-=m; hi+=m;
+  const py=p=> padT+(hi-p)/(hi-lo)*(H-padT-padB);
+  const n=cs.length, cw=(W-padL-padR)/n;
+  x.strokeStyle='rgba(120,150,190,.12)'; x.fillStyle='#6b7c93'; x.textAlign='left'; x.lineWidth=1;
+  for(let i=0;i<=4;i++){ const p=lo+(hi-lo)*i/4, y=py(p);
+    x.beginPath(); x.moveTo(padL,y); x.lineTo(W-padR,y); x.stroke();
+    x.fillText(fmtP(p), W-padR+4, y+3); }
+  for(let i=0;i<n;i++){ const c=cs[i], cx=padL+i*cw+cw/2, up=c.c>=c.o;
+    x.strokeStyle=x.fillStyle= up?'#00ffa6':'#ff476f';
+    x.beginPath(); x.moveTo(cx,py(c.h)); x.lineTo(cx,py(c.l)); x.stroke();
+    const y1=py(Math.max(c.o,c.c)), y2=py(Math.min(c.o,c.c));
+    x.fillRect(cx-Math.max(1,cw*0.32), y1, Math.max(2,cw*0.64), Math.max(1,y2-y1)); }
+  if(opt.ema){
+    const closes=cs.map(c=>c.c);
+    for(const [per,col] of [[9,'#00f0ff'],[21,'#ffd166']]){
+      const e=emaArr(closes,per);
+      x.strokeStyle=col; x.beginPath();
+      for(let i=0;i<n;i++){ const X=padL+i*cw+cw/2, Y=py(e[i]); i?x.lineTo(X,Y):x.moveTo(X,Y); }
+      x.stroke(); } }
+  if(opt.vwap){
+    // running session VWAP — where the average traded dollar sits
+    let pv=0, vv=0; x.strokeStyle='#ffb300'; x.setLineDash([2,3]); x.beginPath();
+    for(let i=0;i<n;i++){ const c=cs[i]; pv+=((c.h+c.l+c.c)/3)*(c.v||0); vv+=c.v||0;
+      const Y=py(vv>0? pv/vv : c.c), X=padL+i*cw+cw/2;
+      i?x.lineTo(X,Y):x.moveTo(X,Y); }
+    x.stroke(); x.setLineDash([]);
+    x.fillStyle='#ffb300'; x.textAlign='right';
+    x.fillText('VWAP', W-padR-4, py(vv>0?pv/vv:cs[n-1].c)+11);
+  }
+  x.textAlign='right';
+  for(const L of (opt.lines||[])){ const y=py(L.p);
+    x.strokeStyle=L.c; x.setLineDash([5,4]);
+    x.beginPath(); x.moveTo(padL,y); x.lineTo(W-padR,y); x.stroke(); x.setLineDash([]);
+    x.fillStyle=L.c; x.fillText(L.t+' '+fmtP(L.p), W-padR-4, y-3); }
+  if(opt.markT){
+    let mi=cs.findIndex(c=>c.t>opt.markT);           // the candle CONTAINING the mark
+    mi = mi<0? n-1 : Math.max(0,mi-1);
+    const mx=padL+mi*cw+cw/2;
+    x.strokeStyle='rgba(255,209,102,.85)'; x.setLineDash([3,3]);
+    x.beginPath(); x.moveTo(mx,padT); x.lineTo(mx,H-padB); x.stroke(); x.setLineDash([]);
+    x.fillStyle='#ffd166'; x.textAlign='center'; x.fillText('▲ האיתות נדלק', mx, H-padB+13); }
+  const tf=t=>new Date(t).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+  x.fillStyle='#6b7c93';
+  x.textAlign='left';  x.fillText(tf(cs[0].t), padL, H-4);
+  x.textAlign='right'; x.fillText(tf(cs[n-1].t), W-padR, H-4);
+}
+function chClose(){
+  if(chart.timer){ clearInterval(chart.timer); chart.timer=null; }
+  try{ train.on=false; train.pos=null; $('trainBar').hidden=true; }catch(e){}
+  chart.mode=null; chart.sym=null; chart.sigI=-1; chart.cs=null;
+  $('chModal').hidden=true;
+  syncKlineSubs();
+}
+function chDrawCoin(){
+  if(chart.mode!=='coin') return;
+  const sym=chart.sym, r=universe.find(x=>x.sym===sym); if(!r) return;
+  const s=scan[sym];
+  let lines=[];
+  if(s && s.score>=45){
+    const pl=planOf(s,r);
+    lines=[{p:pl.entry,c:'#00f0ff',t:'כניסה'},{p:pl.stop,c:'#ff476f',t:'סטופ'},{p:pl.t1,c:'#00ffa6',t:'יעד 1'}];
+  }
+  // live depth walls drawn straight on the chart (only near the price,
+  // so a far wall does not squash the scale)
+  if(micro.sym===sym){
+    const ds=depthStats();
+    if(ds){ const near=Math.max((s?s.atr:r.price*0.01)*6, r.price*0.02);
+      for(const w of ds.walls.slice(0,3))
+        if(Math.abs(w.p-r.price)<near)
+          lines.push({p:w.p, c:w.side==='buy'?'#00d68f':'#ff8fa8', t:(w.side==='buy'?'🧱 קיר קנייה ':'🧱 קיר מכירה ')+fmtUsd(w.usd)});
+    }
+  }
+  let cs = chart.tf==='1s'? secCandles() : chart.tf==='1m'? candles[sym] : chart.cs;
+  if(chart.tf==='1s' && (!cs || cs.length<3)){
+    drawCandles($('chCv'), null, {empty:'ממתין לזרם העסקאות החי… (נפתח אוטומטית לגרף הזה)'});
+    return;
+  }
+  if(chart.tf!=='1m' && chart.tf!=='1s' && cs && cs.length && r.price>0){
+    // between refetches the forming candle tracks the live price
+    cs=cs.slice(); const L=Object.assign({},cs[cs.length-1]);
+    L.c=r.price; L.h=Math.max(L.h,r.price); L.l=Math.min(L.l,r.price);
+    cs[cs.length-1]=L;
+  }
+  drawCandles($('chCv'), cs, {ema:chart.tf!=='1s', vwap:chart.tf==='1m', lines, dec:r.dec});
+  const v=s?verdictOf(s):null, tm=s?timingOf(s):null;
+  const age=s? Math.round((Date.now()-s.at)/1000) : null;
+  const traps=trapsOf(sym);
+  $('chInfo').innerHTML=
+    `<span>מחיר<b>${r.price? r.price.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec}):'—'}</b></span>`+
+    `<span>24ש<b style="color:${r.chg>=0?'var(--up)':'var(--down)'}">${(r.chg>=0?'+':'')+r.chg.toFixed(2)}%</b></span>`+
+    (s? `<span>5ד<b style="color:${s.m5>=0?'var(--up)':'var(--down)'}">${(s.m5>=0?'+':'')+s.m5.toFixed(2)}%</b></span>`+
+        `<span>RSI<b>${Math.round(s.rsi)}</b></span>`+
+        `<span>מחזור<b>×${s.volX.toFixed(1)}</b></span>`+
+        `<span>ציון<b>${s.dir==='long'?'▲':'▼'}${s.score}</b></span>`+
+        `<span>קצב<b>${tm.paceTxt}</b></span>`+
+        `<span>${v.t}</span>`+
+        `<span style="color:var(--dim)">${s.live&&age<=4?'⚡ לייב':'נמדד לפני '+age+' שנ׳'}</span>`
+      : '<span>אין עדיין קריאת סריקה למטבע הזה</span>')+
+    (traps.length
+      ? traps.map(t=>`<span style="color:var(--down)">${t.t}</span>`).join('')
+      : '<span style="color:var(--dim)">🕵️ אין תרגילים מזוהים כרגע</span>')+
+    (()=>{ const ds=micro.sym===sym? depthStats():null;
+      return ds? `<span style="color:${ds.imb>=58?'var(--up)':ds.imb<=42?'var(--down)':'var(--dim)'}">🧱 עומק: קונים ${Math.round(ds.imb)}% · ${ds.walls.length} קירות</span>` : ''; })();
+}
+function openCoinChart(sym){
+  chClose();
+  chart.mode='coin'; chart.sym=sym; chart.tf='1m'; chart.loadedAt=0;
+  $('chModal').hidden=false;
+  { const rt=universe.find(x=>x.sym===sym); $('chTitle').textContent='📈 '+sym+(rt&&rt.market==='stock'?'':'/USDT'); }
+  chTfSync();
+  const r=universe.find(x=>x.sym===sym);
+  if(!candles[sym] && r) seedCandles(sym,r).then(chDrawCoin);
+  renderJournal();                       // coin view has no trade to tag — hides itself
+  chDrawCoin();
+  chart.timer=setInterval(()=>{ chDrawCoin(); chMaybeRefresh(); },600);
+  syncKlineSubs();          // the charted coin joins the live stream
+}
+function chDrawSig(){
+  if(chart.mode!=='sig') return;
+  const g=sigs[chart.sigI]; if(!g) return;
+  const r=universe.find(x=>x.sym===g.sym);
+  const dec=r?r.dec:4;
+  drawCandles($('chCv'), chart.cs, {dec, markT:g.t,
+    empty: chart.tf==='1s'? 'אין היסטוריית טיקים לעסקה — נרות שנייה זמינים רק בגרף לייב' : undefined,
+    lines:[{p:g.entry,c:'#00f0ff',t:'כניסה'},{p:g.stop,c:'#ff476f',t:'סטופ'},{p:g.t1,c:'#00ffa6',t:'יעד 1'}]});
+  const px=r&&r.price>0? r.price:0;
+  const curR= g.out!=null? g.r : (px? sigR(g,px) : null);
+  const st= g.out==='t1'? `<b style="color:var(--up)">✓ פגע ביעד +${sigWinR(g)}R</b>`
+    : g.out==='stop'? '<b style="color:var(--down)">✗ נעצר בסטופ -1R</b>'
+    : g.out==='exp'? `<b style="color:var(--dim)">⌛ פג · ${g.r>=0?'+':''}${g.r}R</b>`
+    : `<b style="color:var(--gold)">● פתוח · כרגע ${curR!=null?(curR>=0?'+':'')+curR+'R':'—'}</b>`;
+  const f=p=>p.toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+  const pct=(a)=>(Math.abs(a-g.entry)/g.entry*100).toFixed(2)+'%';
+  $('chInfo').innerHTML=
+    `<span>${st}</span>`+
+    `<span>כיוון<b>${g.dir==='long'?'לונג ▲':'שורט ▼'}</b></span>`+
+    `<span>ציון בכניסה<b>${g.score}</b></span>`+
+    `<span>כניסה<b>${f(g.entry)}</b></span>`+
+    `<span>סטופ<b>${f(g.stop)}</b> <i style="font-style:normal;color:var(--dim)">(${pct(g.stop)})</i></span>`+
+    `<span>יעד 1<b>${f(g.t1)}</b> <i style="font-style:normal;color:var(--dim)">(${pct(g.t1)})</i></span>`+
+    `<span>מחיר עכשיו<b>${px?f(px):'—'}</b></span>`+
+    `<span>נדלק<b>${new Date(g.t).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})}</b> · לפני ${Math.round((Date.now()-g.t)/60000)} דק׳</span>`;
+}
+async function openSigChart(i){
+  const g=sigs[i]; if(!g) return;
+  chClose();
+  chart.mode='sig'; chart.sigI=i; chart.sym=g.sym; chart.tf='1m'; chart.loadedAt=0;
+  $('chModal').hidden=false;
+  $('chTitle').textContent='🎯 '+g.sym+'/USDT';
+  chTfSync();
+  chDrawSig();
+  renderJournal();
+  await chLoadTf();
+  chart.timer=setInterval(()=>{ chDrawSig(); chMaybeRefresh(); },1000);   // R + clock live
+}
+// 📓 emotion journal — one tag per trade; the quality trainer treats the
+// tag as a dimension, so "how do my FOMO trades really do?" gets a
+// measured answer once there are 8 tagged outcomes per emotion
+const EMOS=[['plan','📋 לפי תוכנית'],['fomo','😰 FOMO'],['revenge','😤 נקמה'],['sure','😎 ביטחון יתר']];
+function renderJournal(){
+  const el=$('sigJournal'); if(!el) return;
+  const g=sigs[chart.sigI];
+  if(chart.mode!=='sig' || !g){ el.hidden=true; return; }
+  el.hidden=false;
+  el.innerHTML=`<span style="color:var(--dim)">📓 מה הרגשת בכניסה?</span>`+
+    EMOS.map(([k,t])=>`<button data-emo="${k}" class="${g.emo===k?'on':''}">${t}</button>`).join('')+
+    `<span style="color:var(--dim);font-size:9.5px">המאמן ילמד: מ-8 עסקאות מתויגות לרגש — תראה את האמת עליו</span>`;
+}
+$('sigJournal').onclick=e=>{
+  const b=e.target.closest('[data-emo]'); if(!b) return;
+  const g=sigs[chart.sigI]; if(!g) return;
+  g.emo= g.emo===b.dataset.emo? null : b.dataset.emo;
+  saveSigs(); renderJournal();
+};
+
+// ── 🎓 SUPER METRICS — the pro desk's session read, from real candles ───
+// VWAP (volume-weighted average price of the session window — where the
+// average dollar actually traded), position inside the session range,
+// the current run of consecutive one-direction minutes, and 30-minute
+// correlation to BTC (does this coin even have a mind of its own?).
+function superMetrics(sym){
+  const cs=candles[sym]; if(!cs || cs.length<20) return null;
+  let pv=0, vv=0, hi=-Infinity, lo=Infinity;
+  for(const c of cs){ const tp=(c.h+c.l+c.c)/3; pv+=tp*(c.v||0); vv+=c.v||0;
+    if(c.h>hi)hi=c.h; if(c.l<lo)lo=c.l; }
+  const p=cs[cs.length-1].c;
+  const vwap=vv>0? pv/vv : null;
+  let run=0;
+  for(let i=cs.length-1;i>0;i--){
+    const d=cs[i].c-cs[i-1].c;
+    if(run===0){ if(d>0) run=1; else if(d<0) run=-1; else break; }
+    else if(run>0 && d>0) run++;
+    else if(run<0 && d<0) run--;
+    else break;
+  }
+  let corr=null;
+  const bs=candles.BTC;
+  if(mkt==='crypto' && sym!=='BTC' && bs && bs.length>=31 && cs.length>=31){
+    const a=cs.slice(-31), b2=bs.slice(-31), n=30, ra=[], rb=[];
+    for(let i=1;i<=n;i++){ ra.push(a[i].c/a[i-1].c-1); rb.push(b2[i].c/b2[i-1].c-1); }
+    const ma=ra.reduce((x,y)=>x+y,0)/n, mb=rb.reduce((x,y)=>x+y,0)/n;
+    let sab=0,sa=0,sb=0;
+    for(let i=0;i<n;i++){ const da=ra[i]-ma, db=rb[i]-mb; sab+=da*db; sa+=da*da; sb+=db*db; }
+    if(sa>0&&sb>0) corr=sab/Math.sqrt(sa*sb);
+  }
+  return {vwap, vwapDist: vwap? (p/vwap-1)*100 : null,
+    hi, lo, rangePos: hi>lo? (p-lo)/(hi-lo)*100 : 50,
+    run, corr, win:cs.length};
+}
+let tapeAt=0;
+function renderTape(){
+  const el=$('tape'); if(!el || Date.now()-tapeAt<30000) return;
+  const rs=universe.filter(r=>scan[r.sym]&&r.price>0)
+    .map(r=>({r,s:scan[r.sym]}))
+    .sort((a,b)=>Math.abs(b.s.m5)-Math.abs(a.s.m5)).slice(0,10);
+  if(rs.length<4){ el.hidden=true; return; }
+  tapeAt=Date.now(); el.hidden=false;
+  const seg=rs.map(({r,s})=>
+    `<b>${r.sym}</b> ${r.price.toLocaleString('en-US',{maximumFractionDigits:r.dec})} <i style="color:${s.m5>=0?'var(--up)':'var(--down)'}">${(s.m5>=0?'+':'')+s.m5.toFixed(2)}%</i>`
+  ).join('<span class="sep">◆</span>');
+  el.innerHTML=`<div class="tapein">${seg}<span class="sep">◆</span>${seg}</div>`;
+}
+
+// ── 🛡 THE GAUNTLET — 20 checks before any entry recommendation ─────────
+// "Check yourself 20 times before recommending", implemented literally.
+// Five HARD data-integrity gates (a recommendation computed from stale,
+// gapped, or inconsistent data is a preventable mistake — those are
+// blocked outright), ten signal gates, five context gates. Every gate is
+// shown with its measured value. A 🟢 on the decision card now means
+// 20/20 — anything less says exactly which checks failed. What no gate
+// can do is predict the future, and the card never claims otherwise.
+function gauntlet(s,r){
+  const g=[]; const add=(t,ok,val,hard)=>g.push({t, ok:!!ok, val:String(val??''), hard:!!hard});
+  // — data integrity (hard: fail ⇒ no recommendation at all) —
+  add('מחיר חי תקין', r.price>0 && isFinite(r.price), r.price, true);
+  const age=(Date.now()-(s.at||0))/1000;
+  add('קריאה טרייה', age<150 && !r.stale, Math.round(age)+'ש׳', true);
+  const cs=candles[r.sym]||[];
+  const gapMin=cs.length? (Date.now()-cs[cs.length-1].t)/60000 : 999;
+  add('רצף נרות שלם', cs.length>=60 && gapMin<4, cs.length+' נרות', true);
+  add('תנודתיות שפויה', s.atr>0 && s.atr/s.price<0.1, (s.atr/s.price*100).toFixed(2)+'% ATR', true);
+  add('עקביות מקורות', s.price>0 && Math.abs(r.price-s.price)/s.price<0.02,
+    ((r.price/s.price-1)*100).toFixed(2)+'% פער', true);
+  // — signal —
+  const d=s.dir==='long'?1:-1;
+  add('ציון 60+', s.score>=60, s.score);
+  add('מגמת 15ד בכיוון', Math.sign(s.m15)===d && Math.abs(s.m15)>=0.15, s.m15.toFixed(2)+'%');
+  add('דחיפת 5ד בכיוון', Math.sign(s.m5)===d && Math.abs(s.m5)>=0.2, s.m5.toFixed(2)+'%');
+  add('מבנה EMA בכיוון', Math.sign(s.gap)===d && Math.abs(s.gap)>=0.12, s.gap.toFixed(3)+'%');
+  add('RSI עם מקום', s.dir==='long'? s.rsi<72 : s.rsi>28, Math.round(s.rsi));
+  add('מחזור תומך ×1.3+', s.volX>=1.3, '×'+s.volX.toFixed(1));
+  add('נזילות $10M+', (r.vol||0)>=1e7, fmtUsd(r.vol||0));
+  add('לא רדוף (עד 2.2 ATR)', Math.abs(s.ext||0)<=2.2, Math.abs(s.ext||0).toFixed(1)+' ATR');
+  add('MACD בכיוון', (s.macdUp?1:-1)===d, s.macdUp?'חיובי':'שלילי');
+  add('הסכמת מומנטום 5ד/15ד', Math.sign(s.m5)===Math.sign(s.m15), 'מיושר');
+  // — context —
+  const tp=trapsOf(r.sym);
+  add('אפס תרגילים על הטייפ', !tp.length, tp.length? tp.length+' דפוסים':'נקי');
+  const bd=breadth();
+  add('השוק הכללי לא נגד', !bd || (s.dir==='long'? bd.k!=='down' : bd.k!=='up'),
+    bd? (bd.k==='up'?'עולה':bd.k==='down'?'יורד':'מעורב'):'—');
+  const trf=turfOf(r.sym);
+  add('לא מגרש קר אצלך', trf.k!=='cold', trf.k==='home'?'ביתי 🏠':trf.k==='cold'?'קר':'ניטרלי');
+  const q=qualityNum(s);
+  add('פרופיל היסטורי 50%+', !q.ready || q.pct>=50, q.ready? q.pct+'%':'אין מדגם עדיין');
+  const tm=timingOf(s);
+  add('קצב לא נגד היעד', tm.paceOk || Math.abs(tm.pace)<0.02, tm.paceTxt);
+  const hardFail=g.filter(x=>x.hard && !x.ok).length;
+  const pass=g.filter(x=>x.ok).length;
+  return {g, pass, total:g.length, hardFail, full: pass===g.length};
+}
+
+// ── 🌍 MARKET BREADTH — which way is the WHOLE market moving ────────────
+// Counted, not guessed: the share of contracts green on the 15-minute
+// window (scan data), the 24h share, and the volume-weighted average 24h
+// move. 60%+ green = rising market, 40%- = falling, between = mixed.
+function breadth(){
+  let n=0, up24=0, wsum=0, wtot=0, n15=0, up15=0;
+  for(const r of universe){
+    if(!(r.price>0)) continue;
+    n++; if(r.chg>0) up24++;
+    wsum+=r.chg*(r.vol||0); wtot+=r.vol||0;
+    const s=scan[r.sym];
+    if(s){ n15++; if(s.m15>0) up15++; }
+  }
+  if(!n) return null;
+  const p24=up24/n*100, p15=n15>=10? up15/n15*100 : null, wavg=wtot? wsum/wtot : 0;
+  const key=p15!=null? p15 : p24;
+  return {p24, p15, wavg, n, n15, k: key>=60?'up': key<=40?'down':'mixed'};
+}
+function renderMktDir(){
+  const el=$('mktDir'); if(!el) return;
+  const bd=breadth();
+  if(!bd){ el.hidden=true; return; }
+  el.hidden=false; el.className='mdir '+bd.k;
+  const word= bd.k==='up'?'עולה 📈': bd.k==='down'?'יורד 📉':'מעורב ↔️';
+  el.innerHTML=`🌍 השוק עכשיו: <b>${word}</b> · `+
+    (bd.p15!=null? `<b>${Math.round(bd.p15)}%</b> מהחוזים ירוקים ב-15ד · `:'')+
+    `<b>${Math.round(bd.p24)}%</b> ירוקים ב-24ש · ממוצע משוקלל <b>${(bd.wavg>=0?'+':'')+bd.wavg.toFixed(2)}%</b>`;
+}
+// simple vs advanced open-row view — persisted
+let simpleOn=true;
+try{ simpleOn=localStorage.getItem('na:radar:simple')!=='0'; }catch(e){}
+
+// ── 🧠 DEEP ANALYSIS — everything the radar knows, fused into one read ──
+// The way a senior desk analyst works: momentum, structure on THREE
+// timeframes (1m/15m/1h), real swing support/resistance from hourly
+// candles, live order-flow and book imbalance when streaming, trap scan,
+// and the trader's own measured history — each factor listed with its
+// actual value, fused into a letter grade and a written thesis WITH an
+// invalidation level. Computed on demand, every number derived, zero
+// guesses — and graded honestly: a conflicted tape gets a C, not a story.
+const deepCache={};
+async function deepAnalyze(sym){
+  const r=universe.find(x=>x.sym===sym); if(!r) return null;
+  const s=scan[sym];
+  const get=(iv,lim)=>fetchKl(r,iv,{limit:lim}).catch(()=>null);
+  const [c15,c1h]=await Promise.all([get('15m',100),get('1h',120)]);
+  if(!c15 || !c1h || c15.length<30 || c1h.length<30) return null;
+  const tfRead=(cs)=>{
+    const closes=cs.map(c=>c.c), n=closes.length, p=closes[n-1];
+    const e9=emaArr(closes,9)[n-1], e21=emaArr(closes,21)[n-1];
+    return {bull:e9>e21, gap:(e9-e21)/p*100, rsi:rsiArr(closes,14)[n-1], macd:(macdHistLast(closes)||0)>0};
+  };
+  const t15=tfRead(c15), t1h=tfRead(c1h);
+  // swing S/R from hourly candles, clustered within 0.4%
+  const piv=[];
+  for(let i=2;i<c1h.length-2;i++){
+    const c=c1h[i];
+    // strict on the left, >= on the right: adjacent candles can tie exactly
+    // at a swing point (peak close = next open) and must still count once
+    if(c.h>c1h[i-1].h && c.h>c1h[i-2].h && c.h>=c1h[i+1].h && c.h>=c1h[i+2].h) piv.push(c.h);
+    if(c.l<c1h[i-1].l && c.l<c1h[i-2].l && c.l<=c1h[i+1].l && c.l<=c1h[i+2].l) piv.push(c.l);
+  }
+  piv.sort((a,b)=>a-b);
+  const lvls=[];
+  for(const p2 of piv){
+    const L=lvls[lvls.length-1];
+    if(L && Math.abs(p2-L.p)/L.p<0.004){ L.p=(L.p*L.n+p2)/(L.n+1); L.n++; }
+    else lvls.push({p:p2,n:1});
+  }
+  const px=r.price;
+  const res=lvls.filter(l=>l.p>px).sort((a,b)=>a.p-b.p)[0]||null;
+  const sup=lvls.filter(l=>l.p<px).sort((a,b)=>b.p-a.p)[0]||null;
+  const dir=s? s.dir : (t1h.bull?'long':'short');
+  const dSign=dir==='long'?1:-1;
+  const ms=(micro.sym===sym && micro.trades.length>20)? microStats():null;
+  const ds=(micro.sym===sym)? depthStats():null;
+  const traps=trapsOf(sym);
+  const q=s? qualityNum(s):{ready:false};
+  const F=[];
+  if(s) F.push({t:'מומנטום 5ד+15ד בכיוון', ok:Math.sign(s.m5)===dSign&&Math.sign(s.m15)===dSign,
+    val:`${(s.m5>=0?'+':'')+s.m5.toFixed(2)}% / ${(s.m15>=0?'+':'')+s.m15.toFixed(2)}%`});
+  if(s) F.push({t:'מבנה EMA בדקות', ok:Math.sign(s.gap)===dSign, val:(s.gap>=0?'+':'')+s.gap.toFixed(3)+'%'});
+  F.push({t:'מבנה EMA ב-15 דקות', ok:(t15.bull?1:-1)===dSign, val:(t15.gap>=0?'+':'')+t15.gap.toFixed(2)+'%'});
+  F.push({t:'מבנה EMA בשעתי', ok:(t1h.bull?1:-1)===dSign, val:(t1h.gap>=0?'+':'')+t1h.gap.toFixed(2)+'%'});
+  F.push({t:'RSI שעתי עם מקום', ok:dir==='long'? t1h.rsi<70 : t1h.rsi>30, val:String(Math.round(t1h.rsi))});
+  F.push({t:'MACD שעתי בכיוון', ok:(t1h.macd?1:-1)===dSign, val:t1h.macd?'חיובי':'שלילי'});
+  if(s) F.push({t:'מחזור תומך ×1.3+', ok:s.volX>=1.3, val:'×'+s.volX.toFixed(1)});
+  if(ms && ms.buyPct!=null) F.push({t:'זרימת עסקאות חיה (30ש׳)', ok:dir==='long'? ms.buyPct>=52 : ms.buyPct<=48, val:Math.round(ms.buyPct)+'% קונים'});
+  if(ds) F.push({t:'מאזן עומק הספר', ok:dir==='long'? ds.imb>=52 : ds.imb<=48, val:Math.round(ds.imb)+'% קונים'});
+  F.push({t:'תעודה נקייה מתרגילים', ok:!traps.length, val:traps.length? traps.length+' דפוסים':'נקי'});
+  if(q.ready) F.push({t:'הפרופיל ההיסטורי שלך', ok:q.pct>=50, val:q.pct+'% על '+q.done+' עסקאות'});
+  if(s && dir==='long' && res) F.push({t:'דרך פנויה להתנגדות', ok:(res.p-px)>=s.atr*geom.t1K,
+    val:'+'+((res.p-px)/px*100).toFixed(2)+'% עד '+res.p.toLocaleString('en-US',{maximumFractionDigits:r.dec})});
+  if(s && dir==='short' && sup) F.push({t:'דרך פנויה לתמיכה', ok:(px-sup.p)>=s.atr*geom.t1K,
+    val:'-'+((px-sup.p)/px*100).toFixed(2)+'% עד '+sup.p.toLocaleString('en-US',{maximumFractionDigits:r.dec})});
+  const okN=F.filter(f=>f.ok).length, pct=okN/F.length;
+  const grade= pct>=0.85?'A+': pct>=0.7?'A': pct>=0.55?'B': pct>=0.4?'C':'D';
+  const inval= dir==='long'? sup : res;
+  return {dir, grade, pct, okN, F, t1h, t15, sup, res, inval, traps:traps.length, px, dec:r.dec, at:Date.now()};
+}
+function deepHtml(sym,d){
+  const fp=p=>p.toLocaleString('en-US',{maximumFractionDigits:d.dec});
+  const gc= d.grade[0]==='A'?'var(--up)': d.grade==='B'?'var(--gold)':'var(--down)';
+  const pros=d.F.filter(f=>f.ok).slice(0,3).map(f=>f.t).join(', ');
+  const cons=d.F.filter(f=>!f.ok).map(f=>f.t);
+  const thesis= d.grade[0]==='A'
+    ? `תזה: ${d.dir==='long'?'לונג':'שורט'} עם התלכדות רחבה — ${pros}.`
+    : d.grade==='B'
+    ? `תזה: נטייה ל${d.dir==='long'?'לונג':'שורט'}, אבל לא נקייה — ${cons.length? 'נגד: '+cons.slice(0,2).join(', ') : ''}.`
+    : `אין תזה חזקה: הטווחים חלוקים (${cons.slice(0,3).join(', ')}). ישיבה על הידיים היא עמדה לגיטימית.`;
+  return `<div class="deep">
+    <div class="dg" style="color:${gc}">🧠 ניתוח-על · ציון <b>${d.grade}</b> — ${d.okN}/${d.F.length} גורמים בעד ${d.dir==='long'?'לונג ▲':'שורט ▼'}</div>
+    <div class="df">${d.F.map(f=>`<span class="${f.ok?'ok':'no'}">${f.ok?'✓':'✗'} ${f.t} <b>${f.val}</b></span>`).join('')}</div>
+    <div class="dl">${d.sup?`🟢 תמיכה שעתית ${fp(d.sup.p)} (${((d.px-d.sup.p)/d.px*100).toFixed(2)}%-)`:''}
+      ${d.res?` · 🔴 התנגדות שעתית ${fp(d.res.p)} (+${((d.res.p-d.px)/d.px*100).toFixed(2)}%)`:''}</div>
+    <div class="dt">${thesis}</div>
+    ${d.inval?`<div class="dt">רמת פסילה: סגירה שעתית ${d.dir==='long'?'מתחת':'מעל'} <b>${fp(d.inval.p)}</b> שוברת את התזה — שם מפסיקים להתווכח עם השוק.</div>`:''}
+    <div class="dn">נכון ל-${new Date(d.at).toLocaleTimeString('he-IL')} · כל גורם מחושב מנתונים אמיתיים · לא ייעוץ השקעות</div>
+  </div>`;
+}
+function deepBlock(sym){
+  const c=deepCache[sym];
+  if(!c) return '';
+  if(c.loading) return '<div class="deep"><span class="dn">🧠 מנתח לעומק — מושך 15ד + שעתי, רמות, זרימה…</span></div>';
+  if(!c.d) return '<div class="deep"><span class="dn">הניתוח נכשל (רשת) — נסה שוב</span></div>';
+  return deepHtml(sym,c.d);
+}
+
+// ── 🌌 MARKET GALAXY — the whole universe in one glance ─────────────────
+// A live heat-map: every contract is a tile sized by real volume and
+// colored by its 15-minute move; 🟢 signals get a pulsing ring, home turf
+// gets its 🏠. Three size tiers (6 giants, 12 mids, 24 smalls) so the eye
+// reads liquidity instantly. Tapping a tile jumps to that row.
+let galOn=false, galTimer=null, galRects=[];
+function galDraw(){
+  const cv=$('galCv'); if(!cv || !galOn) return;
+  const dpr=window.devicePixelRatio||1, W=cv.clientWidth||320, H=cv.clientHeight||420;
+  if(cv.width!==Math.round(W*dpr)) cv.width=Math.round(W*dpr);
+  if(cv.height!==Math.round(H*dpr)) cv.height=Math.round(H*dpr);
+  const x=cv.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0);
+  x.clearRect(0,0,W,H);
+  const items=universe.filter(r=>r.price>0).sort((a,b)=>(b.vol||0)-(a.vol||0)).slice(0,42);
+  galRects=[];
+  if(!items.length){ x.fillStyle='#8b8b98'; x.font='12px Heebo'; x.textAlign='center';
+    x.fillText('אין עדיין נתונים לציור המפה', W/2, H/2); return; }
+  const tiers=[[items.slice(0,6),3,0,H*0.44],[items.slice(6,18),6,H*0.44,H*0.30],[items.slice(18,42),8,H*0.74,H*0.26]];
+  const pulse=(Math.sin(Date.now()/300)+1)/2;
+  for(const [list,cols,y0,th] of tiers){
+    if(!list.length) continue;
+    const rowsN=Math.ceil(list.length/cols), tw=W/cols, rh=th/rowsN;
+    list.forEach((r,i)=>{
+      const cx=(i%cols)*tw, cy=y0+Math.floor(i/cols)*rh;
+      const s=scan[r.sym], m=s? s.m15 : null;
+      const mag=m==null? 0 : clamp(Math.abs(m)/1.5,0,1);
+      x.fillStyle= m==null? '#17171d'
+        : m>=0? `rgba(0,${120+Math.round(110*mag)},${70+Math.round(48*mag)},${0.25+0.55*mag})`
+        : `rgba(${150+Math.round(105*mag)},40,${60+Math.round(30*mag)},${0.25+0.55*mag})`;
+      x.fillRect(cx+1.5,cy+1.5,tw-3,rh-3);
+      x.strokeStyle='#26262e'; x.strokeRect(cx+1.5,cy+1.5,tw-3,rh-3);
+      if(s && verdictOf(s).k==='go'){
+        x.strokeStyle=`rgba(0,230,118,${0.5+0.5*pulse})`; x.lineWidth=2;
+        x.strokeRect(cx+3,cy+3,tw-6,rh-6); x.lineWidth=1;
+      }
+      const big=rh>46;
+      x.fillStyle='#e6e6ea'; x.textAlign='center';
+      x.font=(big?'bold 13px':'bold 10px')+" 'JetBrains Mono',monospace";
+      x.fillText((turfOf(r.sym).k==='home'?'🏠':'')+r.sym, cx+tw/2, cy+rh/2-(big?4:-3));
+      if(big || rh>34){
+        x.font=(big?'11px':'9px')+" 'JetBrains Mono',monospace";
+        x.fillStyle= m==null? '#8b8b98' : m>=0? '#7dffc4' : '#ffb3c2';
+        x.fillText(m==null?'—':(m>=0?'+':'')+m.toFixed(2)+'%', cx+tw/2, cy+rh/2+(big?13:12));
+      }
+      galRects.push({sym:r.sym, x:cx, y:cy, w:tw, h:rh});
+    });
+  }
+}
+function openGal(){ $('galModal').hidden=false; galOn=true; galDraw();
+  galTimer=setInterval(galDraw,1500); }
+function closeGal(){ galOn=false; $('galModal').hidden=true;
+  if(galTimer){ clearInterval(galTimer); galTimer=null; } }
+
+// ── ⏰ PRICE ALERTS — "wake me exactly at this price" ───────────────────
+// Set any price on any symbol; the radar watches the live tape (crypto:
+// every tick, stocks: every sweep) and fires ONCE when the level is
+// crossed in the direction it was armed — then the alert removes itself.
+let palerts=[];
+try{ palerts=JSON.parse(localStorage.getItem('na:radar:palerts')||'[]'); }catch(e){}
+if(!Array.isArray(palerts)) palerts=[];
+palerts=palerts.filter(a=>a && a.sym && a.p>0);
+function savePalerts(){ try{ localStorage.setItem('na:radar:palerts',JSON.stringify(palerts.slice(-50))); }catch(e){} }
+function addPalert(sym,p){
+  const r=universe.find(x=>x.sym===sym);
+  if(!r || !(p>0) || !(r.price>0)) return false;
+  if(Math.abs(p-r.price)/r.price<0.0005){ toast('המחיר כבר שם — בחר רמה רחוקה יותר'); return false; }
+  palerts.push({sym, p:+(+p).toPrecision(8), dir: p>r.price?'above':'below', at:Date.now()});
+  savePalerts();
+  toast(`⏰ נקבעה התראה: ${sym} ${p>r.price?'מעל':'מתחת'} ${p}`);
+  return true;
+}
+function checkPalerts(sym,price){
+  if(!palerts.length || !(price>0)) return;
+  for(let i=palerts.length-1;i>=0;i--){
+    const a=palerts[i];
+    if(a.sym!==sym) continue;
+    if((a.dir==='above' && price>=a.p) || (a.dir==='below' && price<=a.p)){
+      palerts.splice(i,1); savePalerts();
+      toast(`⏰ ${sym} חצה את ${a.p} — עכשיו ${price}`);
+      try{ beep(); }catch(e){}
+      try{
+        if('Notification' in window && Notification.permission==='granted')
+          new Notification('⏰ התראת מחיר', {body:`${sym} הגיע ל-${price} (הרמה: ${a.p})`, tag:'pa-'+sym});
+      }catch(e){}
+    }
+  }
+}
+
+// ── 🧬🌊 DISPLAY LENSES (v433) — three ways to see the same live data ────
+// Same rows(), same scan readings, zero duplicated state: the lens only
+// changes the projection. cards = the classic list; dna = a spectral
+// barcode where every band is one of the 7 checks; river = a flowing
+// momentum current where speed IS 15-minute momentum. Canvas taps map
+// back to the real row and open its full card.
+let lens='cards', lensRects=[], lensAnim=0; const riverB={};
+try{ const l0=localStorage.getItem('na:radar:lens'); if(l0==='dna'||l0==='river') lens=l0; }catch(e){}
+function setLens(l){
+  lens=l; try{ localStorage.setItem('na:radar:lens',l); }catch(e){}
+  document.querySelectorAll('#lensBar button').forEach(b=>b.classList.toggle('on',b.dataset.lens===l));
+  const cv=$('lensCv');
+  cancelAnimationFrame(lensAnim);
+  if(l==='cards'){ cv.hidden=true; $('list').style.display=''; }
+  else { cv.hidden=false; $('list').style.display='none'; lensSize(); lensTick(); }
+}
+function lensSize(){
+  const cv=$('lensCv'); const w=cv.parentElement.clientWidth||360;
+  const n=Math.min(rows().length,26);
+  const h= lens==='dna'? Math.max(220, 34*n+40) : Math.min(560, Math.max(380, innerHeight-280));
+  const dpr=Math.min(2,devicePixelRatio||1);
+  cv.style.height=h+'px'; cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+}
+function lensTick(){
+  if(lens==='cards' || document.hidden) return;
+  try{ lens==='dna'? drawDna() : drawRiver(); }catch(e){}
+  lensAnim=requestAnimationFrame(lensTick);
+}
+function drawDna(){
+  const cv=$('lensCv'), x=cv.getContext('2d');
+  const dpr=Math.min(2,devicePixelRatio||1);
+  x.setTransform(dpr,0,0,dpr,0,0);
+  const W=cv.width/dpr, H=cv.height/dpr;
+  x.clearRect(0,0,W,H);
+  const rs=rows().slice(0,26);
+  lensRects=[];
+  x.textBaseline='middle';
+  x.textAlign='right'; x.fillStyle='#8a8a95'; x.font='400 10px system-ui';
+  x.fillText('🧬 כל פס = בדיקה (ירוק עבר) · קו תחתון = מומנטום 15ד · זהב = GO', W-8, 14);
+  const y0=26, rh=34;
+  const symZone=88, bw=17, gap=3, bandsW=7*(bw+gap)-gap;
+  const bandsRight=W-symZone, bandsLeft=bandsRight-bandsW;
+  rs.forEach((r,i)=>{
+    const y=y0+i*rh, s=scan[r.sym];
+    x.strokeStyle='rgba(255,255,255,.05)';
+    x.beginPath(); x.moveTo(6,y+rh-3); x.lineTo(W-6,y+rh-3); x.stroke();
+    const go=s && verdictOf(s).k==='go';
+    x.textAlign='right'; x.font='700 11.5px JetBrains Mono,monospace';
+    x.fillStyle= go? '#ffb300' : '#e8e8ee';
+    x.fillText(r.sym, W-8, y+10);
+    x.font='400 9.5px JetBrains Mono,monospace'; x.fillStyle='#8a8a95';
+    x.fillText(r.price>0? String(+r.price.toFixed(r.price<10?4:2)) : '—', W-8, y+23);
+    if(s){
+      checksOf(s,r.vol).forEach((c,k)=>{
+        x.fillStyle= c.ok? 'rgba(0,230,118,.78)' : 'rgba(255,82,82,.5)';
+        x.fillRect(bandsRight-(k+1)*(bw+gap)+gap, y+6, bw, 11);
+      });
+      const m=Math.max(-3,Math.min(3,s.m15)), mw=Math.abs(m)/3*bandsW;
+      x.fillStyle= m>=0? 'rgba(0,230,118,.9)' : 'rgba(255,82,82,.9)';
+      x.fillRect(m>=0? bandsRight-mw : bandsLeft, y+21, mw, 4);
+      x.textAlign='left'; x.font='700 12px JetBrains Mono,monospace';
+      x.fillStyle='#ffb300'; x.fillText(String(s.score), 10, y+14);
+      x.fillStyle= s.dir==='long'? '#00e676':'#ff5252';
+      x.fillText(s.dir==='long'?'▲':'▼', 42, y+14);
+      if(go){ x.fillStyle='rgba(255,179,0,.9)'; x.font='700 10px JetBrains Mono,monospace';
+        x.fillText('GO', 58, y+14); }
+    } else {
+      x.textAlign='left'; x.fillStyle='#55555f'; x.font='700 12px JetBrains Mono,monospace';
+      x.fillText('—', 10, y+14);
+    }
+    lensRects.push({x:0,y,w:W,h:rh,sym:r.sym});
+  });
+  if(!rs.length){ x.textAlign='center'; x.fillStyle='#8a8a95';
+    x.font='400 12px system-ui'; x.fillText('אין נתונים עדיין…', W/2, 60); }
+}
+function drawRiver(){
+  const cv=$('lensCv'), x=cv.getContext('2d');
+  const dpr=Math.min(2,devicePixelRatio||1);
+  x.setTransform(dpr,0,0,dpr,0,0);
+  const W=cv.width/dpr, H=cv.height/dpr;
+  x.fillStyle='rgba(8,8,12,.28)'; x.fillRect(0,0,W,H);   // motion trails
+  const rs=rows().slice(0,34);
+  const maxV=Math.max(1,...rs.map(r=>r.vol||0));
+  lensRects=[];
+  const now=Date.now();
+  rs.forEach(r=>{
+    const s=scan[r.sym], m=s? s.m15 : 0;
+    let b=riverB[r.sym];
+    if(!b) b=riverB[r.sym]={x:Math.random()*W, y:(0.1+0.72*Math.random())*H, ph:Math.random()*6.28};
+    const rad=9+Math.sqrt((r.vol||0)/maxV)*20;
+    b.x-=0.35+Math.min(3,Math.abs(m))*1.1;               // speed IS momentum
+    b.ph+=0.02;
+    const y=b.y+Math.sin(b.ph)*9;
+    if(b.x<-rad*2){ b.x=W+rad+Math.random()*80; b.y=(0.1+0.72*Math.random())*H; }
+    const col= m>=0? '0,230,118' : '255,82,82';
+    const g=x.createRadialGradient(b.x,y,1,b.x,y,rad);
+    g.addColorStop(0,'rgba('+col+',.85)'); g.addColorStop(1,'rgba('+col+',.05)');
+    x.fillStyle=g; x.beginPath(); x.arc(b.x,y,rad,0,6.283); x.fill();
+    if(s && verdictOf(s).k==='go'){
+      x.strokeStyle='rgba(255,179,0,'+(0.5+0.4*Math.sin(now/300)).toFixed(2)+')';
+      x.lineWidth=2; x.beginPath(); x.arc(b.x,y,rad+3,0,6.283); x.stroke();
+    }
+    x.textAlign='center'; x.textBaseline='middle';
+    x.fillStyle='#fff'; x.font='700 '+Math.max(9,Math.min(13,rad*0.6)).toFixed(0)+'px JetBrains Mono,monospace';
+    x.fillText(r.sym, b.x, y-3);
+    x.fillStyle='rgba(255,255,255,.75)'; x.font='400 8.5px JetBrains Mono,monospace';
+    x.fillText(r.price>0? (r.price<10? r.price.toFixed(3) : r.price.toFixed(1)) : '—', b.x, y+9);
+    lensRects.push({x:b.x-rad,y:y-rad,w:rad*2,h:rad*2,sym:r.sym});
+  });
+  x.textAlign='right'; x.fillStyle='#8a8a95'; x.font='400 10px system-ui';
+  x.fillText('🌊 מהירות = מומנטום 15ד · גודל = מחזור · טבעת זהב = GO · הקש לפתיחה', W-8, H-10);
+}
+$('lensBar').onclick=e=>{ const b=e.target.closest('[data-lens]'); if(b) setLens(b.dataset.lens); };
+$('lensCv').onclick=e=>{
+  const rc=$('lensCv').getBoundingClientRect();
+  const px=e.clientX-rc.left, py=e.clientY-rc.top;
+  for(let i=lensRects.length-1;i>=0;i--){ const it=lensRects[i];
+    if(px>=it.x&&px<=it.x+it.w&&py>=it.y&&py<=it.y+it.h){
+      expanded=it.sym; setLens('cards'); render();
+      const el=document.querySelector(`.mrow[data-sym="${it.sym}"]`);
+      if(el) el.scrollIntoView({block:'center'});
+      return;
+    } }
+};
+window.addEventListener('resize',()=>{ if(lens!=='cards') lensSize(); });
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden && lens!=='cards'){ cancelAnimationFrame(lensAnim); lensTick(); } });
+// restore the saved lens only after the whole script parsed (rows()/render
+// state live further down the file)
+setTimeout(()=>{ if(lens!=='cards') setLens(lens); },0);
+
+// ── ✦ RADIAL COMMAND ORB (v433) — every power one thumb away ───────────
+const RAD_ITEMS=[
+  {e:'📡',t:'בדיקת רשת',f:()=>openDiag()},
+  {e:'🌌',t:'גלקסיה',f:()=>openGal()},
+  {e:'🗂',t:'עסקאות',f:()=>openHist()},
+  {e:'🔄',t:'סרוק עכשיו',f:()=>{ toast('🔄 סורק את השוק…'); kick(true); }},
+  {e:'🎯',t:'מצב קפדני',f:()=>setStrict(!strictOn)},
+  {e:'🔊',t:'תקציר קולי',f:()=>speakBrief()},
+  {e:'🔁',t:'החלף שוק',f:()=>setMkt(mkt==='stock'?'crypto':'stock')},
+  {e:'🧬',t:'עדשה הבאה',f:()=>setLens(lens==='cards'?'dna':lens==='dna'?'river':'cards')},
+  {e:'⚡',t:'סקאלפ 3 נרות',f:()=>{ location.href='scalp.html'; }},
+];
+function openRad(){
+  const rad=$('radial'); rad.hidden=false;
+  if(!rad.childElementCount){
+    RAD_ITEMS.forEach((it,i)=>{
+      const b=document.createElement('button');
+      b.className='radItem'; b.dataset.ri=i;
+      b.innerHTML=it.e+'<span>'+it.t+'</span>';
+      rad.appendChild(b);
+    });
+    rad.onclick=e=>{
+      const b=e.target.closest('.radItem');
+      if(b){ closeRad(); RAD_ITEMS[+b.dataset.ri].f(); }
+      else closeRad();
+    };
+  }
+  const o=$('orbBtn').getBoundingClientRect();
+  const cx=o.left+o.width/2, cy=o.top+o.height/2;
+  const kids=[...rad.children], R1=4, n2=kids.length-R1;
+  kids.forEach((b,i)=>{
+    const first=i<R1;
+    const ring= first? 92 : 158;
+    const k= first? i : i-R1, cnt= first? R1 : n2;
+    const ang=(-6 + k*(104/Math.max(1,cnt-1)))*Math.PI/180;   // quarter-fan: right → up
+    b.style.left=(cx+Math.cos(ang)*ring-29)+'px';
+    b.style.top =(cy-Math.sin(ang)*ring-29)+'px';
+    b.style.transitionDelay=(i*22)+'ms';
+  });
+  requestAnimationFrame(()=>{
+    rad.classList.add('open'); $('orbBtn').classList.add('open');
+    [...rad.children].forEach(b=>{ b.style.transform='scale(1)'; });
+  });
+}
+function closeRad(){
+  const rad=$('radial');
+  rad.classList.remove('open'); $('orbBtn').classList.remove('open');
+  [...rad.children].forEach(b=>{ b.style.transform='scale(.3)'; });
+  setTimeout(()=>{ rad.hidden=true; },220);
+}
+$('orbBtn').onclick=()=>{ $('radial').hidden? openRad() : closeRad(); };
+
+// ── 📡 LIVE NETWORK CONSOLE (v433) — see exactly which route is blocked ─
+// The stock outage debugging kept guessing what the user's carrier blocks.
+// No more guessing: probe EVERY data route from THIS device, live, with
+// latency and the failure kind, and let the user screenshot/copy it.
+let diagRes=[];
+function diagRoutes(){
+  const test=YQ+'AAPL?interval=1d&range=1d';
+  const tvBody=JSON.stringify({symbols:{query:{types:[]},tickers:[]},
+    filter:[{left:'name',operation:'in_range',right:['AAPL']}],
+    columns:['name','close'], range:[0,2]});
+  const list=[];
+  Y_VIAS.forEach(v=>{
+    if(v.hg && !simBase()){ list.push({n:'שרת Heavy Guard', skip:'לא מוגדר'}); return; }
+    list.push({n:(v.d?'יאהו — ':'')+v.n, u:v.f(test), o:{headers:v.h? v.h(): undefined}});
+  });
+  list.push({n:'TradingView ישיר', u:TV_URL, o:{method:'POST',body:tvBody}});
+  list.push({n:'TradingView דרך גשר', u:TV_VIAS[1](TV_URL), o:{method:'POST',body:tvBody}});
+  list.push({n:'Binance REST', u:`${FAPI}/fapi/v1/time`});
+  return list;
+}
+async function diagProbe(u,o){
+  const t0=performance.now();
+  try{
+    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),8000);
+    const res=await fetch(u,Object.assign({signal:ctrl.signal},o||{}));
+    clearTimeout(to);
+    if(!res.ok) return {ok:false, ms:Math.round(performance.now()-t0), why:'HTTP '+res.status};
+    await res.text();
+    return {ok:true, ms:Math.round(performance.now()-t0)};
+  }catch(e){
+    return {ok:false, ms:Math.round(performance.now()-t0),
+      why: e && e.name==='AbortError'? 'טיימאאוט' : 'רשת/CORS'};
+  }
+}
+function drawDiag(){
+  const wsOk= ws && ws.readyState===1;
+  $('diagList').innerHTML = diagRes.map(d=>{
+    const st= d.skip? `<span class="dna">⚪ ${d.skip}</span>`
+      : d.r===undefined? '<span class="dwait">⏳ בודק…</span>'
+      : d.r.ok? `<span class="dok">✅ חי · ${d.r.ms}ms</span>`
+      : `<span class="dbad">⛔ ${d.r.why}</span>`;
+    return `<div class="drow"><b>${d.n}</b><span class="dst">${st}</span></div>`;
+  }).join('')
+  + `<div class="drow"><b>Binance WebSocket</b><span class="dst">${
+      wsOk? '<span class="dok">✅ מחובר</span>' : '<span class="dbad">⛔ מנותק</span>'}</span></div>`;
+}
+async function runDiag(){
+  diagRes=diagRoutes(); drawDiag();
+  await Promise.all(diagRes.map(async d=>{
+    if(d.skip) return;
+    d.r=await diagProbe(d.u,d.o);
+    drawDiag();
+  }));
+  return diagRes;
+}
+function openDiag(){ $('diagModal').hidden=false; runDiag(); }
+function closeDiag(){ $('diagModal').hidden=true; }
+$('diagClose').onclick=closeDiag;
+$('diagModal').onclick=e=>{ if(e.target.id==='diagModal') closeDiag(); };
+$('diagRun').onclick=runDiag;
+$('diagCopy').onclick=()=>{
+  const txt='📡 דוח רשת '+new Date().toLocaleString('he-IL')+'\n'+
+    diagRes.map(d=>d.n+': '+(d.skip || (d.r? (d.r.ok? 'OK '+d.r.ms+'ms' : d.r.why) : '?'))).join('\n');
+  (navigator.clipboard? navigator.clipboard.writeText(txt) : Promise.reject())
+    .then(()=>toast('📋 הדוח הועתק — הדבק בצ׳אט'))
+    .catch(()=>toast('ההעתקה נכשלה'));
+};
+document.addEventListener('click',e=>{ if(e.target.closest('[data-diag]')) openDiag(); });
+
+// ── 💼 REAL POSITIONS — "I actually entered" tracking ───────────────────
+// The missing loop: one tap on a recommendation records that the trader
+// ACTUALLY entered (at the live price, with the plan's stop/target/qty).
+// A pinned panel then tracks every open position tick by tick — R and
+// dollars — beeps once when the stop or target is TOUCHED (the radar
+// never trades for anyone; it yells "close it on the exchange"), and
+// closing logs the trade to a personal ledger with real P&L.
+let poss=[];
+try{ poss=JSON.parse(localStorage.getItem('na:radar:pos')||'[]'); }catch(e){}
+poss=Array.isArray(poss)? poss.filter(p=>p && p.sym && p.entry>0 && p.qty>0) : [];
+let myTrades=[];
+try{ myTrades=JSON.parse(localStorage.getItem('na:radar:mytr')||'[]'); }catch(e){}
+if(!Array.isArray(myTrades)) myTrades=[];
+function savePos(){ try{ localStorage.setItem('na:radar:pos',JSON.stringify(poss.slice(-12))); }catch(e){} }
+function saveMyTr(){ myTrades=myTrades.slice(-200);
+  try{ localStorage.setItem('na:radar:mytr',JSON.stringify(myTrades)); }catch(e){} }
+function posR(p,px){ const d=Math.abs(p.entry-p.stop);
+  return d>0? (p.dir==='long'? px-p.entry : p.entry-px)/d : 0; }
+function posPnl(p,px){ return (p.dir==='long'? px-p.entry : p.entry-px)*p.qty; }
+// ── v459: THE WALLET you actually trade through — visible, moving, honest ──
+// "גודל חשבון" is just the sizing input; this is the live paper balance.
+// Bootstrapped once from the account size PLUS the already-recorded trade
+// ledger (reconstructed, not invented), then moves with every close.
+let rwal=null;
+try{ rwal=JSON.parse(localStorage.getItem('na:radar:wallet')||'null'); }catch(e){}
+if(!rwal || !(rwal.bal>-1e9)){
+  const led=myTrades.reduce((a,t)=>a+(+t.pnl||0),0);
+  rwal={ start:acct||1000, bal:+((acct||1000)+led).toFixed(2) };
+}
+function saveRwal(){ try{ localStorage.setItem('na:radar:wallet',JSON.stringify(rwal)); }catch(e){} }
+saveRwal();
+function drawRwal(){
+  const el=document.getElementById('rwalRow'); if(!el) return;
+  const net=+(rwal.bal-rwal.start).toFixed(2);
+  const openPnl=poss.reduce((a,p)=>{ const r=universe.find(x=>x.sym===p.sym);
+    return a+(r&&r.price>0? posPnl(p,r.price):0); },0);
+  el.innerHTML=
+    `<b style="font-size:15px">🏦 הארנק (נייר): <span style="color:var(--gold)">$${rwal.bal.toFixed(2)}</span></b>`+
+    `<span style="color:${net>=0?'var(--up)':'var(--down)'}">${net>=0?'+':'-'}$${Math.abs(net).toFixed(2)} מצטבר</span>`+
+    `<span style="font-size:11.5px;color:var(--dim)">${myTrades.length} עסקאות סגורות</span>`+
+    (poss.length? `<span style="font-size:11.5px;color:${openPnl>=0?'var(--up)':'var(--down)'}">פתוח כרגע: ${openPnl>=0?'+':'-'}$${Math.abs(openPnl).toFixed(2)}</span>`:'')+
+    `<button class="ghost" id="rwalReset" style="margin-right:auto;padding:3px 10px;font-size:11px">איפוס לגודל החשבון</button>`+
+    // v462: the wallet's own measured record — equity line + honest stats
+    (myTrades.length>=2? (()=>{
+      const w2=myTrades.filter(t=>t.pnl>0).length;
+      const gW=myTrades.filter(t=>t.pnl>0).reduce((a,t)=>a+t.pnl,0);
+      const gL=Math.abs(myTrades.filter(t=>t.pnl<=0).reduce((a,t)=>a+t.pnl,0));
+      const pf= gL>0? (gW/gL).toFixed(2) : '∞';
+      const lnet=myTrades.reduce((a,t)=>a+(+t.pnl||0),0);
+      return `<span id="rwalStats" style="flex-basis:100%;font-size:11px;color:var(--dim)">`+
+        `פגיעה ${Math.round(w2/myTrades.length*100)}% · תוחלת ${(lnet/myTrades.length>=0?'+':'-')}$${Math.abs(lnet/myTrades.length).toFixed(2)}/עסקה · Profit Factor ${pf}</span>`+
+        `<canvas id="rwalEq" style="flex-basis:100%;width:100%;height:44px"></canvas>`; })() : '');
+  const cv2=document.getElementById('rwalEq');
+  if(cv2){ try{
+    const x=cv2.getContext('2d'); const dpr=Math.min(2,devicePixelRatio||1);
+    const w3=cv2.clientWidth||300, h3=44; cv2.width=w3*dpr; cv2.height=h3*dpr; x.setTransform(dpr,0,0,dpr,0,0);
+    let eq=0; const pts=myTrades.map(t=>eq+=t.pnl);
+    const lo=Math.min(0,...pts), hi=Math.max(0,...pts), sp=(hi-lo)||1;
+    const Y=v=>h3-4-(v-lo)/sp*(h3-8);
+    x.strokeStyle='rgba(255,255,255,.12)'; x.setLineDash([3,4]);
+    x.beginPath(); x.moveTo(0,Y(0)); x.lineTo(w3,Y(0)); x.stroke(); x.setLineDash([]);
+    const col= eq>=0? '0,230,118' : '255,82,82';
+    x.strokeStyle='rgb('+col+')'; x.lineWidth=1.6; x.beginPath();
+    pts.forEach((v,i)=>{ const X=i/Math.max(1,pts.length-1)*w3; i? x.lineTo(X,Y(v)) : x.moveTo(X,Y(v)); });
+    x.stroke();
+  }catch(e){} }
+  const rb=document.getElementById('rwalReset');
+  if(rb) rb.onclick=()=>{ if(confirm('לאפס את הארנק ל-$'+acct+'? (יומן העסקאות נשאר)')){
+    rwal={start:acct, bal:acct}; saveRwal(); drawRwal(); toast('🏦 הארנק אופס ל-$'+acct); } };
+}
+// v462: the radar also watches the server shift (read-only, via shift-data)
+let srvSh=null;
+async function srvShFetch(){
+  try{
+    const r=await fetch('https://raw.githubusercontent.com/atikshahar23-ctrl/Alpha-new/shift-data/shift.json?x='+Date.now(),{cache:'no-store'});
+    if(r.ok){ srvSh=await r.json(); try{ renderPos(); }catch(e){} }
+  }catch(e){}
+}
+setInterval(()=>{ if(!document.hidden) srvShFetch(); },60000);
+setTimeout(srvShFetch,3000);
+function enterPos(sym){
+  const r=universe.find(x=>x.sym===sym), s=scan[sym];
+  if(!r || !s || !(r.price>0)){ toast('אין מחיר חי — אי אפשר לרשום כניסה'); return false; }
+  const pl=planOf(s,r);
+  poss.push({sym, dir:s.dir, entry:r.price, stop:pl.stop, t1:pl.t1,
+    qty:pl.qty, riskAmt:pl.riskAmt, t:Date.now(), m:mkt, hit:null});
+  savePos(); renderPos();
+  toast('✅ נרשמה כניסה ב-'+sym+' — מעקב חי בראש המסך');
+  return true;
+}
+function exitPos(i,why){
+  const p=poss[i]; if(!p) return;
+  if(why==='cancel'){ poss.splice(i,1); savePos(); renderPos(); toast('הכניסה בוטלה — לא נרשמה'); return; }
+  const r=universe.find(x=>x.sym===p.sym);
+  const px=r && r.price>0? r.price : 0;
+  if(!(px>0)){ toast('אין מחיר חי לסגירה'); return; }
+  const pnl=+posPnl(p,px).toFixed(2), rr=+posR(p,px).toFixed(2);
+  myTrades.push(Object.assign({},p,{exit:px, pnl, r:rr, closedAt:Date.now()}));
+  rwal.bal=+(rwal.bal+pnl).toFixed(2); saveRwal();        // v459: the wallet moves
+  poss.splice(i,1); savePos(); saveMyTr(); renderPos(); drawRwal();
+  toast((pnl>=0?'🎯 נסגר ברווח +$':'🛑 נסגר בהפסד -$')+Math.abs(pnl).toFixed(2)+' ('+(rr>=0?'+':'')+rr+'R) · ארנק $'+rwal.bal.toFixed(2));
+}
+function watchPos(){
+  for(const p of poss){
+    if(p.hit) continue;
+    const r=universe.find(x=>x.sym===p.sym);
+    const px=r && r.price>0? r.price : 0; if(!px) continue;
+    const sHit=p.dir==='long'? px<=p.stop : px>=p.stop;
+    const tHit=p.dir==='long'? px>=p.t1  : px<=p.t1;
+    if(sHit){ p.hit='stop'; savePos(); try{ beep(); }catch(e){}
+      toast('🛑 '+p.sym+': הסטופ נגע — סגור בבורסה עכשיו'); }
+    else if(tHit){ p.hit='t1'; savePos(); try{ beep(); }catch(e){}
+      toast('🎯 '+p.sym+': היעד נגע! — קח רווח בבורסה'); }
+  }
+}
+// v431: the pinned bar is now the ACTIVE TRADES ZONE — personal positions
+// (real "I entered" records, dollars + R) AND every open radar signal
+// still being tracked live, each with a stop→target progress bar. One
+// glance answers "what is running right now and where does each one
+// stand" — tap a signal row for its full forensics chart.
+function renderPos(){
+  const el=$('poss'); if(!el) return;
+  // open signals, newest first, current market only, capped for the bar
+  const openSigs=[];
+  for(let i=sigs.length-1;i>=0 && openSigs.length<6;i--){
+    const g=sigs[i]; if(g && !g.out) openSigs.push({g,i});
+  }
+  // v435: the 3-candle scalp wallet (separate page, same device) shows here too
+  let sc3=null;
+  try{ const o=JSON.parse(localStorage.getItem('na:scalp:open')||'null');
+    if(o && o.entry>0 && o.sym) sc3=o; }catch(e){}
+  const srvPos= (srvSh && srvSh.pos && srvSh.pos.entry>0)? srvSh.pos : null;   // v462
+  if(!poss.length && !openSigs.length && !sc3 && !srvPos){ el.hidden=true; try{ drawRwal(); }catch(e){} return; }
+  el.hidden=false;
+  const today=new Date().toISOString().slice(0,10);
+  const dayPnl=myTrades.filter(t=>new Date(t.closedAt).toISOString().slice(0,10)===today)
+    .reduce((a,t)=>a+t.pnl,0);
+  let tot=0;
+  const rows=poss.map((p,i)=>{
+    const r=universe.find(x=>x.sym===p.sym);
+    const px=r && r.price>0? r.price : 0;
+    const rr=px? posR(p,px):0, pnl=px? posPnl(p,px):0; tot+=pnl;
+    const hb= p.hit==='t1'? '<span class="hitb" style="background:rgba(0,230,118,.2);color:var(--up)">🎯 היעד נגע — סגור!</span>'
+      : p.hit==='stop'? '<span class="hitb" style="background:rgba(255,82,82,.2);color:var(--down)">🛑 הסטופ נגע — סגור!</span>' : '';
+    return `<div class="prow">
+      <b>${p.sym}</b> ${p.dir==='long'?'▲':'▼'}
+      <span>כניסה ${p.entry}</span>
+      <span style="color:${rr>=0?'var(--up)':'var(--down)'}">${(rr>=0?'+':'')+rr.toFixed(2)}R</span>
+      <span style="color:${pnl>=0?'var(--up)':'var(--down)'}">${(pnl>=0?'+':'-')}$${Math.abs(pnl).toFixed(2)}</span>
+      ${hb}
+      <button data-px="${i}">💰 סגרתי</button>
+      <button data-pc="${i}" title="נרשם בטעות">✕</button>
+    </div>`;
+  }).join('');
+  const sigRows=openSigs.map(({g,i})=>{
+    const r=universe.find(x=>x.sym===g.sym);
+    const px=r && r.price>0? r.price : 0;
+    const rr=px? sigR(g,px) : 0;
+    const win=sigWinR(g);
+    const pos=Math.max(0,Math.min(1,(rr+1)/(win+1)));       // -1R..+winR → 0..1
+    const age=Math.max(0,Math.round((Date.now()-g.t)/60000));
+    return `<div class="srow" data-osig="${i}" title="פתח גרף מעקב">
+      <b>${g.sym}</b> ${g.dir==='long'?'▲':'▼'}
+      <span>כניסה ${g.entry}</span>
+      <span style="color:${rr>=0?'var(--up)':'var(--down)'}">${px? (rr>=0?'+':'')+rr.toFixed(2)+'R' : '—'}</span>
+      <span class="sbar"><i style="left:${(pos*100).toFixed(1)}%"></i></span>
+      <span style="color:var(--dim)">${age<60? age+' דק׳' : Math.floor(age/60)+':'+String(age%60).padStart(2,'0')+' שע׳'}</span>
+      <span>👁</span>
+    </div>`;
+  }).join('');
+  const posHd= poss.length? `<div class="shd">💼 הפוזיציות שלי (${poss.length}) · כרגע <b style="color:${tot>=0?'var(--up)':'var(--down)'}">${(tot>=0?'+':'-')}$${Math.abs(tot).toFixed(2)}</b>${myTrades.length?` · סגור היום: <b style="color:${dayPnl>=0?'var(--up)':'var(--down)'}">${(dayPnl>=0?'+':'-')}$${Math.abs(dayPnl).toFixed(2)}</b>`:''}</div>` : '';
+  const sigHd= sigRows? `<div class="shd">📡 איתותים במעקב חי (${sigStats().open})</div>` : '';
+  const sc3Row= sc3? `<div class="srow" onclick="location.href='scalp.html'" title="פתח את דף הסקאלפ">`+
+    `<b>⚡ סקאלפ</b> ${sc3.dir==='long'?'▲':'▼'} <span>${sc3.sym} @ ${sc3.entry}</span>`+
+    `<span style="color:var(--dim)">נר ${Math.min(3,(sc3.candles||0)+1)}/3</span><span>↗</span></div>` : '';
+  // v462: the 24/7 server shift shows its open position here too
+  const srvRow= srvPos? `<div class="srow" onclick="location.href='scalp.html'" title="המשמרת בשרת — פרטים בדף הסקאלפ">`+
+    `<b>🌐 שרת</b> ${srvPos.dir==='long'?'▲':'▼'} <span>${srvPos.sym} @ ${srvPos.entry}</span>`+
+    `<span style="color:var(--dim)">נר ${Math.min(srvPos.maxCt||3,(srvPos.candles||0)+1)}/${srvPos.maxCt||3} · 24/7</span><span>↗</span></div>` : '';
+  el.innerHTML=`<div class="ph">🔥 עסקאות פעילות (${poss.length+sigStats().open+(sc3?1:0)+(srvPos?1:0)})</div>${posHd}${rows}${sigHd}${sigRows}${sc3Row}${srvRow}`;
+  try{ drawRwal(); }catch(e){}
+}
+
+// ── 🛑 TILT GUARD — the discipline layer every prop desk enforces ───────
+// Decision quality collapses after a losing streak; pros get cut off by
+// their risk desk. Here: when the day's graded trades reach -3R the radar
+// says STOP for today, out loud, and mutes GO alerts until midnight.
+// Everything is still recorded and measured — only the nagging stops.
+// The trader can override, and the override itself is a conscious act.
+const TILT_R=3;
+let tiltOverride='';
+try{ tiltOverride=localStorage.getItem('na:radar:tiltok')||''; }catch(e){}
+const dayKey=()=>new Date().toISOString().slice(0,10);
+function dailyR(){
+  const today=dayKey();
+  let sum=0, n=0;
+  for(const g of sigs){
+    if(!g || !g.out) continue;
+    const ts=+(g.gAt||g.t);
+    if(!Number.isFinite(ts) || new Date(ts).toISOString().slice(0,10)!==today) continue;
+    sum+=g.r||0; n++;
+  }
+  return {r:+sum.toFixed(2), n};
+}
+function tiltActive(){
+  const d=dailyR();
+  return d.r<=-TILT_R && tiltOverride!==dayKey();
+}
+function renderTilt(){
+  const el=$('tilt'); if(!el) return;
+  const d=dailyR();
+  if(d.r<=-TILT_R){
+    el.hidden=false;
+    el.innerHTML=`🛑 <b>מגן טילט:</b> ${d.n} עסקאות היום, נטו <b>${d.r}R</b> — יום אדום. `+
+      (tiltOverride===dayKey()
+        ? 'בחרת להמשיך בכל זאת — ההתראות פעילות. <button class="hbtn2" data-tilt="on">החזר את המגן</button>'
+        : 'ההתראות מושתקות עד חצות. הסטטיסטיקה ברורה: אחרי רצף הפסדים איכות ההחלטות צונחת. <button class="hbtn2" data-tilt="off">אני ממשיך בכל זאת</button>');
+  } else el.hidden=true;
+}
+
+// ── 🎬 TIME-MACHINE TRAINER — deliberate practice on real history ───────
+// The chart rewinds to a random point in the symbol's real past with the
+// FUTURE HIDDEN, and the trader trades it candle by candle: enter long or
+// short (stop/target from the active geometry), advance, get graded by
+// the same conservative rules as the ledger. A flight simulator for
+// entries and exits — real tape, zero money, and a separate practice
+// scoreboard that persists. Nothing here touches the live signal ledger.
+const train={on:false, cs:null, idx:0, pos:null};
+let practice={n:0,w:0,net:0};
+try{ const pr=JSON.parse(localStorage.getItem('na:radar:practice')||'null');
+  if(pr && typeof pr.n==='number') practice=pr; }catch(e){}
+function savePractice(){ try{ localStorage.setItem('na:radar:practice',JSON.stringify(practice)); }catch(e){} }
+function trPosR(pos,px){
+  const dist=Math.abs(pos.entry-pos.stop);
+  return dist>0? Math.max(-1,Math.min(pos.rr,(pos.dir==='long'? px-pos.entry : pos.entry-px)/dist)) : 0;
+}
+async function trStart(atIdx){
+  const sym=chart.sym; if(!sym) return;
+  const r=universe.find(x=>x.sym===sym); if(!r) return;
+  let cs=null;
+  try{ cs=await fetchKl(r,'1m',{limit:500}); }catch(e){}
+  if(!cs || cs.length<120){ toast('אין מספיק היסטוריה לאימון על הנייר הזה'); return; }
+  train.on=true; train.cs=cs; train.pos=null;
+  train.idx= (atIdx && atIdx>=60 && atIdx<cs.length)? atIdx
+    : 60+Math.floor(Math.random()*(cs.length-100));
+  $('trainBar').hidden=false;
+  if(chart.timer){ clearInterval(chart.timer); chart.timer=null; }   // freeze the live feed
+  $('chSub').textContent='🎬 מכונת זמן — עבר אמיתי, העתיד מוסתר';
+  trDraw();
+}
+function trDraw(){
+  const r=universe.find(x=>x.sym===chart.sym); if(!r || !train.on) return;
+  const view=train.cs.slice(Math.max(0,train.idx-90), train.idx);
+  const lines=[];
+  if(train.pos) lines.push(
+    {p:train.pos.entry,c:'#00f0ff',t:'כניסה'},
+    {p:train.pos.stop,c:'#ff476f',t:'סטופ'},
+    {p:train.pos.t1,c:'#00ffa6',t:'יעד'});
+  drawCandles($('chCv'), view, {lines, dec:r.dec});
+  const px=view[view.length-1].c;
+  const curR=train.pos? trPosR(train.pos,px) : null;
+  $('trStat').innerHTML=
+    `נר <b>${train.idx}/${train.cs.length}</b>`+
+    (train.pos? ` · פוזיציה ${train.pos.dir==='long'?'לונג ▲':'שורט ▼'} · כרגע <b style="color:${curR>=0?'var(--up)':'var(--down)'}">${(curR>=0?'+':'')+curR.toFixed(2)}R</b>`
+      : ' · אין פוזיציה — בחר כיוון או התקדם')+
+    ` · 🏋️ סה״כ אימון: <b>${practice.n}</b> עסקאות${practice.n?` · ${Math.round(practice.w/practice.n*100)}% · <b style="color:${practice.net>=0?'var(--up)':'var(--down)'}">${(practice.net>=0?'+':'')+practice.net.toFixed(1)}R</b>`:''}`;
+  $('trExitB').hidden=!train.pos;
+  $('trLongB').hidden=!!train.pos;
+  $('trShortB').hidden=!!train.pos;
+}
+function trSettle(res){
+  const pos=train.pos; if(!pos) return;
+  practice.n++;
+  if(res==='t1'){ practice.w++; practice.net+=pos.rr; toast(`🎯 יעד! +${pos.rr}R (אימון)`); }
+  else if(res==='stop'){ practice.net-=1; toast('🛑 סטופ. -1R (אימון)'); }
+  else { const rM=trPosR(pos, train.cs[train.idx-1].c);
+    if(rM>0) practice.w+= rM>=pos.rr?1:0;
+    practice.net+=rM; toast(`✋ נסגר ידנית: ${(rM>=0?'+':'')+rM.toFixed(2)}R (אימון)`); }
+  practice.net=+practice.net.toFixed(2);
+  savePractice();
+  train.pos=null;
+}
+function trNext(n){
+  if(!train.on) return;
+  for(let k=0;k<(n||1);k++){
+    if(train.idx>=train.cs.length){ toast('נגמרה ההיסטוריה — מגריל נקודה חדשה'); trStart(); return; }
+    const c=train.cs[train.idx++];
+    if(train.pos){
+      const p=train.pos;
+      const sHit=p.dir==='long'? c.l<=p.stop : c.h>=p.stop;
+      const tHit=p.dir==='long'? c.h>=p.t1  : c.l<=p.t1;
+      if(sHit){ trSettle('stop'); break; }      // conservative: stop first
+      if(tHit){ trSettle('t1'); break; }
+    }
+  }
+  trDraw();
+}
+function trEnter(dir){
+  if(!train.on || train.pos) return;
+  const view=train.cs.slice(0,train.idx);
+  const atr=atrVal(view.slice(-30),14) || view[view.length-1].c*0.002;
+  const entry=view[view.length-1].c;
+  train.pos={dir, entry,
+    stop: dir==='long'? entry-atr*geom.stopK : entry+atr*geom.stopK,
+    t1:   dir==='long'? entry+atr*geom.t1K  : entry-atr*geom.t1K,
+    rr:+(geom.t1K/geom.stopK).toFixed(2)};
+  trDraw();
+}
+function trQuit(){
+  train.on=false; train.pos=null; $('trainBar').hidden=true;
+  if(chart.mode==='coin'){ chTfSync(); chDrawCoin();
+    chart.timer=setInterval(()=>{ chDrawCoin(); chMaybeRefresh(); },600); }
+}
+
+// ── 🔊 VOICE BRIEF — the radar reads the room out loud ──────────────────
+function speakBrief(){
+  try{
+    if(window.speechSynthesis.speaking){ window.speechSynthesis.cancel(); return; }
+    const bd=breadth(), st=sigStats();
+    const gos=universe.filter(r=>scan[r.sym] && verdictOf(scan[r.sym]).k==='go').slice(0,3);
+    let t='תקציר ראדאר. ';
+    if(bd) t+='השוק '+(bd.k==='up'?'עולה':bd.k==='down'?'יורד':'מעורב')+', '+Math.round(bd.p15!=null?bd.p15:bd.p24)+' אחוז מהחוזים ירוקים. ';
+    t+= gos.length
+      ? 'איתותים חמים: '+gos.map(r=>r.sym+', ציון '+scan[r.sym].score).join('. ')+'. '
+      : 'אין איתותים חמים כרגע. ';
+    if(st.done) t+='הביצועים שלך: '+st.wins+' מתוך '+st.done+' פגעו ביעד, נטו '+(st.net>=0?'פלוס ':'מינוס ')+Math.abs(st.net)+' אר. ';
+    t+='לא ייעוץ השקעות.';
+    const u=new SpeechSynthesisUtterance(t);
+    u.lang='he-IL'; u.rate=1.05;
+    window.speechSynthesis.speak(u);
+  }catch(e){ toast('הדפדפן לא תומך בהקראה'); }
+}
+
+// ── 🎯 SIGNAL LEDGER — the radar grades its own calls, in public ────────
+// Every 🟢 is recorded the moment it fires, with the exact entry/stop/
+// target the plan showed. Outcomes are then measured against what the
+// market actually did: stop touched first = -1R, target-1 first = +1.5R,
+// nothing within 6h = closed at the 6h price. While the page is open the
+// live tape grades signals; history that happened while the page was
+// closed is backfilled from 1m candle highs/lows (a candle that touches
+// both counts as a stop — the conservative read). The screen shows the
+// real hit-rate and net R, and says so out loud when the strategy is
+// losing. No cherry-picking: the ledger keeps the last 200 signals.
+let sigs=[];
+try{ sigs=JSON.parse(localStorage.getItem('na:radar:sigs')||'[]'); }catch(e){}
+if(!Array.isArray(sigs)) sigs=[];
+// a single corrupt entry (an interrupted save, a null) must never take the
+// whole page down — sanitize on load and on every save
+function sigOk(g){ return g && typeof g==='object' && Number.isFinite(+g.t) && +g.t>0
+  && Number.isFinite(+g.entry) && +g.entry>0 && Number.isFinite(+g.stop) && +g.stop>0; }
+sigs=sigs.filter(sigOk).map(g=>Object.assign(g,{t:+g.t}));
+function saveSigs(){ sigs=sigs.filter(sigOk).slice(-200);
+  try{ localStorage.setItem('na:radar:sigs',JSON.stringify(sigs)); }catch(e){} }
+function recordSig(r,s){
+  const pl=planOf(s,r);
+  if(!(pl.entry>0) || !(Math.abs(pl.entry-pl.stop)>0)) return;
+  // full context snapshot — the raw material the quality trainer learns from
+  sigs.push({sym:r.sym, dir:s.dir, t:Date.now(), entry:pl.entry, stop:pl.stop,
+    t1:pl.t1, atr:s.atr, rr:+(geom.t1K/geom.stopK).toFixed(2),
+    score:s.score, rsi:Math.round(s.rsi), volX:+s.volX.toFixed(2),
+    ext:+(s.ext||0).toFixed(2), m15:+s.m15.toFixed(2), out:null, r:null});
+  saveSigs(); renderPerf(); renderPos();
+}
+const SIG_TTL=6*3600e3;
+function sigWinR(g){ return g.rr||1.5; }
+function sigR(g,px){
+  const dist=Math.abs(g.entry-g.stop); if(!(dist>0)||!(px>0)) return 0;
+  const raw=(g.dir==='long'? px-g.entry : g.entry-px)/dist;
+  return Math.max(-1,Math.min(sigWinR(g),+raw.toFixed(2)));
+}
+// live grading — last price only; intraminute wicks that happen while the
+// page is open are caught within a second, history is caught by backfill
+function gradeSigs(){
+  const now=Date.now(); let dirty=false;
+  for(const g of sigs){
+    if(g.out) continue;
+    const r=universe.find(x=>x.sym===g.sym);
+    const p=r&&r.price>0? r.price : 0;
+    if(p>0){
+      const hitStop = g.dir==='long'? p<=g.stop : p>=g.stop;
+      const hitT1   = g.dir==='long'? p>=g.t1  : p<=g.t1;
+      if(hitStop){ g.out='stop'; g.r=-1; g.gAt=Date.now(); dirty=true; continue; }
+      if(hitT1){ g.out='t1'; g.r=sigWinR(g); g.gAt=Date.now(); dirty=true; continue; }
+    }
+    if(now-g.t>SIG_TTL && p>0){ g.out='exp'; g.r=sigR(g,p); g.gAt=Date.now(); dirty=true; }
+  }
+  if(dirty){ saveSigs(); renderPerf(); renderPos(); }
+}
+// backfill: what did the market do while the page was closed?
+async function backfillSigs(){
+  let dirty=false;
+  for(const g of sigs){
+    if(g.out || Date.now()-g.t<120000) continue;
+    const r=universe.find(x=>x.sym===g.sym); if(!r) continue;
+    try{
+      const cs=await fetchKl(r,'1m',{startTime:g.t, limit:Math.min(999,Math.ceil((Date.now()-g.t)/60000)+1)});
+      if(!cs) continue;
+      let lastC=0;
+      for(const a0 of cs){
+        const h=a0.h, l=a0.l; lastC=a0.c;
+        const sHit=g.dir==='long'? l<=g.stop : h>=g.stop;
+        const tHit=g.dir==='long'? h>=g.t1  : l<=g.t1;
+        if(sHit){ g.out='stop'; g.r=-1; g.gAt=Date.now(); dirty=true; break; }   // both in one candle → conservative
+        if(tHit){ g.out='t1'; g.r=sigWinR(g); g.gAt=Date.now(); dirty=true; break; }
+      }
+      if(!g.out && Date.now()-g.t>SIG_TTL && lastC>0){ g.out='exp'; g.r=sigR(g,lastC); g.gAt=Date.now(); dirty=true; }
+    }catch(e){}
+  }
+  if(dirty) saveSigs();
+  renderPerf();
+}
+function sigStats(){
+  const done=sigs.filter(g=>g.out);
+  return { n:sigs.length, open:sigs.length-done.length, done:done.length,
+    wins:done.filter(g=>g.out==='t1').length,
+    net:+done.reduce((a,g)=>a+(g.r||0),0).toFixed(1) };
+}
+let perfOpen=false;
+function renderPerf(){ try{ renderPerfInner(); }catch(e){
+  const el=$('perf'); if(el){ el.className='perf'; el.textContent='🎯 מד הביצועים בשגיאה — נקה עם רענון'; } } }
+function renderPerfInner(){
+  const el=$('perf'); if(!el) return;
+  const st=sigStats();
+  let h;
+  if(!st.done){
+    el.className='perf';
+    h= st.open
+      ? `🎯 ${st.open} איתותים במעקב — התוצאות יופיעו כאן, כולל ההפסדים <span style="opacity:.6">${perfOpen?'▴':'▾'}</span>`+
+        `<button class="hbtn2" id="histBtn">🗂 היסטוריה + מאמן</button>`
+      : '🎯 מכאן והלאה הראדאר מודד את עצמו: כל 🟢 נרשם ונשפט מול מה שקרה באמת';
+  } else {
+  const wr=Math.round(st.wins/st.done*100);
+  const neg=st.net<0;
+  el.className='perf '+(neg?'bad':'good');
+  h=`🎯 ביצועי האיתותים באמת: <b>${st.wins}/${st.done}</b> פגעו ביעד (${wr}%) · נטו <b>${st.net>=0?'+':''}${st.net}R</b>`+
+    (st.open?` · ${st.open} פתוחים`:'')+` <span style="opacity:.6">${perfOpen?'▴':'▾'}</span>`+
+    `<button class="hbtn2" id="histBtn">🗂 היסטוריה + מאמן</button>`;
+  if(neg && st.done>=10)
+    h+=`<div class="warn">⚠️ האסטרטגיה הזו מפסידה בתקופה הנמדדת — אל תסחר עליה בכסף אמיתי</div>`;
+  const tr=trendOf();
+  if(tr) h+=`<div style="margin-top:4px;font-size:11px;color:${tr.dir>0?'var(--up)':tr.dir<0?'var(--down)':'var(--dim)'}">`+
+    `מגמת הצלחה: ${tr.dir>0?'▲ משתפרת':tr.dir<0?'▼ נחלשת':'→ יציבה'} — ${Math.round(tr.cur*100)}% ב-${tr.n} האחרונות`+
+    `${tr.prev!=null?` (מול ${Math.round(tr.prev*100)}% ב-${tr.pn} שלפניהן)`:''}</div>`;
+  }
+  if(perfOpen && sigs.length){
+    const start=Math.max(0,sigs.length-12);
+    h+=`<div class="siglist">`+sigs.slice(start).map((g,j)=>({g,idx:start+j})).reverse().map(({g,idx})=>{
+      let o;
+      if(g.out==='t1') o=`<i style="color:var(--up)">✓ יעד +${sigWinR(g)}R</i>`;
+      else if(g.out==='stop') o='<i style="color:var(--down)">✗ סטופ -1R</i>';
+      else if(g.out==='exp') o=`<i style="color:var(--dim)">⌛ פג ${g.r>=0?'+':''}${g.r}R</i>`;
+      else{
+        const r=universe.find(x=>x.sym===g.sym);
+        const cur=r&&r.price>0? sigR(g,r.price) : null;
+        o=`<i style="color:var(--gold)">● פתוח${cur!=null?' · כרגע '+(cur>=0?'+':'')+cur+'R':''}</i>`;
+      }
+      return `<span data-sig="${idx}">${new Date(g.t).toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'})} · ${g.sym} ${g.dir==='long'?'▲':'▼'} ציון ${g.score} — ${o} <i style="color:var(--dim)">📈</i></span>`;
+    }).join('')+`</div>`;
+  }
+  el.innerHTML=h;
+}
+
+// ── 🧠 QUALITY TRAINER + 🗂 FULL HISTORY ────────────────────────────────
+// The trainer never invents: it splits the trader's own MEASURED outcomes
+// along the dimensions that were snapshotted at fire time (score, volume,
+// RSI, chase distance, direction, hour) and reports hit-rate and average
+// R per bucket — with the sample size, and only calling a pattern real
+// from 8 graded trades per bucket. Every newly graded signal sharpens the
+// analysis automatically: that is the "always training" loop, done
+// honestly — correlation on your history, never a promise.
+const QDIMS=[
+  {t:'ציון',   get:g=>g.score, buckets:[[60,70,'ציון 60-69'],[70,80,'ציון 70-79'],[80,101,'ציון 80+']]},
+  {t:'מחזור',  get:g=>g.volX,  buckets:[[0,1.6,'מחזור עד ×1.6'],[1.6,2.5,'מחזור ×1.6-2.5'],[2.5,999,'מחזור ×2.5+']]},
+  {t:'RSI',    get:g=>g.rsi,   buckets:[[0,45,'RSI מתחת 45'],[45,60,'RSI 45-60'],[60,101,'RSI מעל 60']]},
+  {t:'מרחק מהממוצע', get:g=>g.ext!=null?Math.abs(g.ext):null, buckets:[[0,1,'עד 1 ATR מהממוצע'],[1,2.21,'1-2.2 ATR מהממוצע']]},
+  {t:'כיוון',  get:g=>g.dir,   cats:[['long','לונג'],['short','שורט']]},
+  {t:'שעה',    get:g=>new Date(g.t).getHours(), buckets:[[0,8,'לילה (0-8)'],[8,16,'יום (8-16)'],[16,24,'ערב (16-24)']]},
+  {t:'רגש',    get:g=>g.emo||null,
+    cats:[['plan','📋 לפי תוכנית'],['fomo','😰 FOMO'],['revenge','😤 נקמה'],['sure','😎 ביטחון יתר']]},
+];
+function bucketOf(d,g){
+  const v=d.get(g); if(v==null||Number.isNaN(v)) return null;
+  if(d.cats){ const c=d.cats.find(c=>c[0]===v); return c?c[1]:null; }
+  const b=d.buckets.find(b=>v>=b[0]&&v<b[1]); return b?b[2]:null;
+}
+function qStats(){
+  const perDim=QDIMS.map(d=>({t:d.t, buckets:{}}));
+  for(const g of sigs){
+    if(!g.out) continue;
+    QDIMS.forEach((d,i)=>{
+      const lb=bucketOf(d,g); if(!lb) return;
+      const e=perDim[i].buckets[lb]||(perDim[i].buckets[lb]={n:0,w:0,r:0});
+      e.n++; if(g.out==='t1') e.w++; e.r+=g.r||0;
+    });
+  }
+  return perDim;
+}
+const QMIN=8;                       // graded trades per bucket before a pattern counts
+function buildInsights(){
+  const done=sigs.filter(g=>g.out).length;
+  if(done<QMIN) return `<span class="nl">🧠 מאמן האיכות: ${done} עסקאות נמדדו — מ-${QMIN} בכל קטגוריה אצביע על דפוסים</span>`;
+  const lines=[];
+  for(const d of qStats()){
+    const es=Object.entries(d.buckets).filter(([,v])=>v.n>=QMIN);
+    if(es.length<2){ continue; }
+    es.sort((a,b)=> b[1].r/b[1].n - a[1].r/a[1].n);
+    const [bl,bv]=es[0], [wl,wv]=es[es.length-1];
+    const f=([l,v],cls,tag)=>`<span class="${cls}">${tag} ${l}: ${Math.round(v.w/v.n*100)}% פגיעה · ממוצע ${(v.r/v.n>=0?'+':'')+(v.r/v.n).toFixed(2)}R (מדגם ${v.n})</span>`;
+    lines.push(f([bl,bv],'gl','▲ הכי חזק —'));
+    if(wv.r/wv.n < bv.r/bv.n - 0.2) lines.push(f([wl,wv],'bl','▼ הכי חלש —'));
+  }
+  if(!lines.length) return `<span class="nl">🧠 ${done} עסקאות נמדדו — עדיין אין קטגוריה עם ${QMIN}+ בכל צד להשוואה</span>`;
+  return `<span><b>🧠 מאמן האיכות — מה ההיסטוריה שלך מלמדת:</b></span>`+lines.join('')+
+    `<span class="nl">מבוסס על ${done} עסקאות שנמדדו אצלך · קורלציה, לא הבטחה — דפוס יכול להשתנות</span>`;
+}
+// one live line inside an open row: how did SIMILAR signals do historically?
+function qualityNum(s){
+  const done=sigs.filter(g=>g.out);
+  if(done.length<15) return {ready:false, done:done.length};
+  const fake={score:s.score, volX:s.volX, rsi:Math.round(s.rsi), ext:s.ext, dir:s.dir, t:Date.now()};
+  let n=0,w=0,r=0,used=0;
+  for(const d of QDIMS){
+    const lb=bucketOf(d,fake); if(!lb) continue;
+    let e={n:0,w:0,r:0};
+    for(const g of done){ if(bucketOf(d,g)===lb){ e.n++; if(g.out==='t1')e.w++; e.r+=g.r||0; } }
+    if(e.n>=QMIN){ n+=e.n; w+=e.w; r+=e.r; used++; }
+  }
+  if(!used) return {ready:false, done:done.length, noMatch:true};
+  return {ready:true, done:done.length, pct:Math.round(w/n*100), avgR:r/n, used};
+}
+function qualityTxt(s){
+  const q=qualityNum(s);
+  if(!q.ready) return q.noMatch? 'אין עדיין מדגם מספיק לאיתותים עם הפרופיל הזה'
+    : `מאמן האיכות: ${q.done}/15 עסקאות נמדדו — משם אדרג פרופילים דומים`;
+  return `לפי ${q.done} עסקאות שנמדדו: פרופיל דומה פגע ${q.pct}% · ממוצע ${(q.avgR>=0?'+':'')+q.avgR.toFixed(2)}R (${q.used} מאפיינים תואמים)`;
+}
+// success TREND: the last 10 graded trades against the 10 before them
+function trendOf(){
+  const done=sigs.filter(g=>g.out);
+  if(done.length<6) return null;
+  const wr=a=>a.length? a.filter(g=>g.out==='t1').length/a.length : 0;
+  const last=done.slice(-10), prev=done.slice(-20,-10);
+  const cur=wr(last);
+  if(!prev.length) return {cur, dir:0, n:last.length, prev:null};
+  const d=cur-wr(prev);
+  return {cur, dir: d>0.05?1:d<-0.05?-1:0, n:last.length, prev:wr(prev), pn:prev.length};
+}
+let hFilter='all';
+function drawEq(cv){
+  const dpr=window.devicePixelRatio||1, cssW=cv.clientWidth||300, cssH=cv.clientHeight||110;
+  if(cv.width!==Math.round(cssW*dpr)) cv.width=Math.round(cssW*dpr);
+  if(cv.height!==Math.round(cssH*dpr)) cv.height=Math.round(cssH*dpr);
+  const x=cv.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0);
+  x.clearRect(0,0,cssW,cssH);
+  const done=sigs.filter(g=>g.out).sort((a,b)=>a.t-b.t);
+  x.font='10px "JetBrains Mono",monospace';
+  if(done.length<2){ x.fillStyle='#6b7c93'; x.textAlign='center';
+    x.fillText('עקומת ה-R המצטבר תצטייר כאן מ-2 תוצאות ומעלה', cssW/2, cssH/2); return; }
+  let cum=0; const pts=[0].concat(done.map(g=>cum+=(g.r||0)));
+  const lo=Math.min(0,...pts), hi=Math.max(0.5,...pts);
+  const px=(i)=> 8+i/(pts.length-1)*(cssW-52);
+  const py=(v)=> 8+(hi-v)/(hi-lo)*(cssH-24);
+  x.strokeStyle='rgba(120,150,190,.25)'; x.setLineDash([4,4]);
+  x.beginPath(); x.moveTo(8,py(0)); x.lineTo(cssW-44,py(0)); x.stroke(); x.setLineDash([]);
+  x.strokeStyle= cum>=0? '#00ffa6':'#ff476f'; x.lineWidth=1.6; x.beginPath();
+  pts.forEach((v,i)=> i? x.lineTo(px(i),py(v)) : x.moveTo(px(i),py(v)));
+  x.stroke();
+  x.fillStyle= cum>=0? '#00ffa6':'#ff476f'; x.textAlign='left';
+  x.fillText((cum>=0?'+':'')+cum.toFixed(1)+'R', cssW-40, py(cum)+3);
+  x.fillStyle='#6b7c93'; x.fillText('R מצטבר, עסקה-עסקה', 8, cssH-3);
+}
+function renderHist(){
+  const st=sigStats();
+  const stops=sigs.filter(g=>g.out==='stop').length, exps=sigs.filter(g=>g.out==='exp').length;
+  const avg= st.done? (sigs.filter(g=>g.out).reduce((a,g)=>a+(g.r||0),0)/st.done) : 0;
+  $('hStats').innerHTML=
+    `<span>סה״כ<b>${st.n}</b></span><span>✓ יעד<b style="color:var(--up)">${st.wins}</b></span>`+
+    `<span>✗ סטופ<b style="color:var(--down)">${stops}</b></span><span>⌛ פג<b>${exps}</b></span>`+
+    `<span>● פתוחים<b style="color:var(--gold)">${st.open}</b></span>`+
+    (st.done?`<span>פגיעה<b>${Math.round(st.wins/st.done*100)}%</b></span>`+
+      `<span>נטו<b style="color:${st.net>=0?'var(--up)':'var(--down)'}">${st.net>=0?'+':''}${st.net}R</b></span>`+
+      `<span>ממוצע<b>${(avg>=0?'+':'')+avg.toFixed(2)}R</b></span>`:'')+
+    (practice.n>=5 && st.done? (()=>{
+      const pw=Math.round(practice.w/practice.n*100), rw=Math.round(st.wins/st.done*100);
+      const gap=pw-rw;
+      return `<span>🎬 אימון<b>${pw}% (${practice.n})</b></span>`+
+        `<span title="הפער בין אימון לאמת ≈ מחיר הרגש">פער אימון-אמת<b style="color:${Math.abs(gap)>=15?'var(--gold)':'var(--dim)'}">${gap>0?'+':''}${gap}%</b></span>`; })() : '');
+  drawEq($('eqCv'));
+  // 💼 the personal ledger — what the trader ACTUALLY did, in dollars
+  if(myTrades.length){
+    const w=myTrades.filter(t=>t.pnl>0).length;
+    const sum=myTrades.reduce((a,t)=>a+t.pnl,0);
+    $('hInsights').innerHTML=`<span><b style="color:var(--up)">💼 העסקאות שלי באמת (${myTrades.length}):</b> `+
+      `${w} ברווח (${Math.round(w/myTrades.length*100)}%) · סה״כ <b style="color:${sum>=0?'var(--up)':'var(--down)'};font-family:'JetBrains Mono',monospace">${(sum>=0?'+':'-')}$${Math.abs(sum).toFixed(2)}</b></span>`+
+      myTrades.slice(-8).reverse().map(t=>`<span class="nl">${new Date(t.closedAt).toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'})} · ${t.sym} ${t.dir==='long'?'▲':'▼'} — <i style="font-style:normal;color:${t.pnl>=0?'var(--up)':'var(--down)'}">${(t.pnl>=0?'+':'-')}$${Math.abs(t.pnl).toFixed(2)} (${(t.r>=0?'+':'')+t.r}R)</i></span>`).join('')+
+      buildInsights();
+  } else $('hInsights').innerHTML=buildInsights();
+  const rows=sigs.map((g,idx)=>({g,idx})).reverse().filter(({g})=>{
+    if(hFilter==='all') return true;
+    if(hFilter==='open') return !g.out;
+    return g.out===hFilter;
+  });
+  $('hList').innerHTML= rows.length? rows.map(({g,idx})=>{
+    const o= g.out==='t1'? `<i style="color:var(--up)">✓ +${sigWinR(g)}R</i>`
+      : g.out==='stop'? '<i style="color:var(--down)">✗ -1R</i>'
+      : g.out==='exp'? `<i>⌛ ${g.r>=0?'+':''}${g.r}R</i>`
+      : (()=>{ const r=universe.find(x=>x.sym===g.sym);
+          const cur=r&&r.price>0? sigR(g,r.price):null;
+          return `<i style="color:var(--gold)">● ${cur!=null?(cur>=0?'+':'')+cur+'R':'פתוח'}</i>`; })();
+    const d=new Date(g.t);
+    const when=d.toLocaleDateString('he-IL',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('he-IL',{hour:'2-digit',minute:'2-digit'});
+    return `<span data-sig="${idx}">${when} · ${g.sym} ${g.dir==='long'?'▲':'▼'} ציון ${g.score}${g.volX!=null?' · ×'+g.volX:''}${g.rsi!=null?' · RSI '+g.rsi:''} — ${o} 📈</span>`;
+  }).join('') : '<span style="cursor:default">אין איתותים בסינון הזה</span>';
+}
+// ── 🎛 GEOMETRY LAB — replay the trader's own ledger under other rules ──
+// Hit-rate is not skill, it is GEOMETRY: a short target with a wide stop
+// hits almost always and can still lose money. The lab replays every
+// graded signal against the real candles that followed it, under several
+// stop/target geometries at once, and reports hit-rate, average R and
+// net R for each — so "90% hit" is shown next to its true price tag.
+// Conservative rule everywhere: a candle touching both = stop.
+const GEO_CONFIGS=[
+  {t1K:1.5, stopK:4.5, tag:'פגיעה מקסימלית — יעד קצר, סטופ רחוק'},
+  {t1K:2,   stopK:3},
+  {t1K:3,   stopK:3},
+  {t1K:4.5, stopK:3,  tag:'ברירת המחדל'},
+  {t1K:6,   stopK:3},
+  {t1K:4.5, stopK:2,  tag:'סטופ צמוד'},
+];
+const btCache={};
+async function geoLab(onProgress){
+  const done=sigs.filter(g=>g.out);
+  const rows=GEO_CONFIGS.map(c=>({t1K:c.t1K, stopK:c.stopK, tag:c.tag, n:0, w:0, net:0}));
+  let i=0;
+  for(const g of done){
+    i++;
+    const r=universe.find(x=>x.sym===g.sym); if(!r) continue;
+    const key=g.sym+':'+g.t;
+    let cs=btCache[key];
+    if(!cs){
+      try{
+        const raw=await fetchKl(r,'1m',{startTime:g.t, limit:360});
+        if(raw) cs=btCache[key]=raw.map(a=>({h:a.h,l:a.l,c:a.c}));
+      }catch(e){}
+    }
+    if(!cs || !cs.length) continue;
+    const atr=g.atr || Math.abs(g.entry-g.stop)/3;
+    for(const cfg of rows){
+      const stop=g.dir==='long'? g.entry-atr*cfg.stopK : g.entry+atr*cfg.stopK;
+      const t1 = g.dir==='long'? g.entry+atr*cfg.t1K  : g.entry-atr*cfg.t1K;
+      const rr=cfg.t1K/cfg.stopK;
+      let out=null, lastC=0;
+      for(const c of cs){
+        lastC=c.c;
+        const sHit=g.dir==='long'? c.l<=stop : c.h>=stop;
+        const tHit=g.dir==='long'? c.h>=t1  : c.l<=t1;
+        if(sHit){ out='stop'; break; }
+        if(tHit){ out='t1'; break; }
+      }
+      cfg.n++;
+      if(out==='t1'){ cfg.w++; cfg.net+=rr; }
+      else if(out==='stop') cfg.net-=1;
+      else if(lastC>0){
+        const dist=Math.abs(g.entry-stop);
+        if(dist>0) cfg.net+=Math.max(-1,Math.min(rr,(g.dir==='long'? lastC-g.entry : g.entry-lastC)/dist));
+      }
+    }
+    if(onProgress && i%5===0) onProgress(i,done.length);
+  }
+  return rows;
+}
+function renderGeoRows(rows){
+  if(!rows[0] || !rows[0].n){
+    $('geoOut').innerHTML='<div class="nl" style="color:var(--dim)">אין עדיין עסקאות מדורגות להריץ עליהן</div>'; return;
+  }
+  const best=rows.slice().sort((a,b)=>b.net-a.net)[0];
+  const cur=geom.t1K+'/'+geom.stopK;
+  $('geoOut').innerHTML=
+    `<div class="nl" style="color:var(--dim);font-size:10.5px;margin:4px 0">נבדק על ${rows[0].n} עסקאות אמיתיות מהלדג׳ר · נר שנוגע בסטופ וביעד = סטופ (הקריאה המחמירה)</div>`+
+    rows.map(c=>{
+      const hit=Math.round(c.w/c.n*100), avg=c.net/c.n, active=(c.t1K+'/'+c.stopK)===cur;
+      return `<div class="geoRow${c===best?' best':''}">
+        <span><b>יעד ${c.t1K} · סטופ ${c.stopK}</b> ATR (R:R ${(c.t1K/c.stopK).toFixed(2)})${c.tag?` · ${c.tag}`:''}${c===best?' · ★ התוחלת הכי טובה':''}</span>
+        <span>פגיעה <b>${hit}%</b> · ממוצע <b style="color:${avg>=0?'var(--up)':'var(--down)'}">${(avg>=0?'+':'')+avg.toFixed(2)}R</b> · נטו <b>${(c.net>=0?'+':'')+c.net.toFixed(1)}R</b>
+        ${active?'<i class="onTag">✔ פעיל</i>':`<button class="hbtn2" data-geo="${c.t1K},${c.stopK}">החל מעכשיו</button>`}</span>
+      </div>`;
+    }).join('')+
+    `<div class="nl" style="color:var(--gold);font-size:10.5px;margin-top:4px">האמת על "90%": אחוז פגיעה קונים ביעד קצר — הכסף נמצא בעמודת הממוצע (התוחלת). עבר ≠ עתיד.</div>`;
+}
+let geoRows=null;
+function openHist(){ $('histModal').hidden=false; renderHist(); }
+function closeHist(){ $('histModal').hidden=true; }
+function csvText(){
+  const head='time,symbol,dir,score,rsi,volX,ext,entry,stop,target1,outcome,R';
+  return head+'\n'+sigs.map(g=>[new Date(g.t).toISOString(),g.sym,g.dir,g.score,
+    g.rsi??'',g.volX??'',g.ext??'',g.entry,g.stop,g.t1,g.out||'open',g.r??''].join(',')).join('\n');
+}
+
+// ── 🔔 ALERTS — the radar watches so the trader does not have to ────────
+// When a contract's verdict turns 🟢 (score, volume and RSI all in), the
+// page beeps, toasts, flashes the row, and — if the user granted it — fires
+// a system notification. 10-minute cooldown per symbol so a signal that
+// hovers around the line does not nag.
+let alertsOn=false, strictOn=false;
+try{ alertsOn=localStorage.getItem('na:radar:alerts')==='1';
+  strictOn=localStorage.getItem('na:radar:strict')==='1'; }catch(e){}
+function setStrict(on){
+  strictOn=!!on;
+  try{ localStorage.setItem('na:radar:strict',strictOn?'1':'0'); }catch(e){}
+  const b=$('strictBtn'); if(b) b.classList.toggle('on',strictOn);
+  toast(strictOn? '🎯 מצב סלקטיבי: התראות רק על הכי נקי — בלי תרגילים, פרופיל 50%+'
+    : 'מצב סלקטיבי כבוי — התראה על כל 🟢');
+}
+const goAlerted={};               // sym -> last alert ts
+let audioCtx=null;
+function beep(){
+  try{
+    audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type='sine'; o.frequency.value=880;
+    g.gain.setValueAtTime(0.001,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.18,audioCtx.currentTime+0.02);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.35);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime+0.4);
+    const o2=audioCtx.createOscillator(), g2=audioCtx.createGain();
+    o2.type='sine'; o2.frequency.value=1318;
+    g2.gain.setValueAtTime(0.001,audioCtx.currentTime+0.12);
+    g2.gain.exponentialRampToValueAtTime(0.14,audioCtx.currentTime+0.15);
+    g2.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.5);
+    o2.connect(g2); g2.connect(audioCtx.destination);
+    o2.start(audioCtx.currentTime+0.12); o2.stop(audioCtx.currentTime+0.55);
+  }catch(e){}
+}
+function checkAlerts(){
+  const now=Date.now();
+  for(const r of universe){
+    const s=scan[r.sym]; if(!s) continue;
+    const v=verdictOf(s);
+    if(v.k!=='go') continue;
+    if(r.stale) continue;              // closed stock market — no fresh signal
+    if(goAlerted[r.sym] && now-goAlerted[r.sym]<600000) continue;
+    goAlerted[r.sym]=now;
+    recordSig(r,s);              // the ledger grades every 🟢, sound on or off
+    // v444: autopilot — automatic PAPER entry on every fresh GO, any market
+    // (stocks included: same engine). Guards: tilt day, 3-position cap,
+    // one position per symbol. The radar never touches a real exchange.
+    if(autoOn && !tiltActive() && poss.length<3 && !poss.some(p=>p.sym===r.sym)){
+      try{ if(enterPos(r.sym)) toast('🤖 הטייס נכנס (נייר): '+r.sym); }catch(e){}
+    }
+    if(!alertsOn) continue;
+    if(tiltActive()) continue;         // red day — the guard mutes the nagging
+    if(strictOn){
+      // selective mode: only 20/20 setups ring — the full gauntlet
+      // (data integrity, signal, market context, personal history)
+      if(!gauntlet(s,r).full) continue;
+    }
+    const msg=`${r.sym} ${s.dir==='long'?'לונג ▲':'שורט ▼'} · ציון ${s.score} · ${horizonOf(s,r.chg).t}`;
+    toast('🟢 '+msg);
+    beep();
+    try{
+      if('Notification' in window && Notification.permission==='granted')
+        new Notification('📡 ראדאר: איתות חם', {body:msg, tag:'radar-'+r.sym});
+    }catch(e){}
+    const row=document.querySelector(`.mrow[data-sym="${r.sym}"]`);
+    if(row){ row.classList.remove('goFlash'); void row.offsetWidth; row.classList.add('goFlash'); }
+  }
+}
+// v444: radar autopilot — paper entries, never a real exchange order
+let autoOn=false;
+try{ autoOn=localStorage.getItem('na:radar:auto')==='1'; }catch(e){}
+function setAuto(on){
+  autoOn=!!on;
+  try{ localStorage.setItem('na:radar:auto',autoOn?'1':'0'); }catch(e){}
+  const b=$('autoBtn'); if(b) b.classList.toggle('on',autoOn);
+  toast(autoOn
+    ? '🤖 טייס אוטומטי פעיל — כניסת נייר על כל GO (קריפטו ומניות). המערכת לא שולחת פקודות לבורסה.'
+    : 'הטייס האוטומטי כובה');
+}
+function setAlerts(on){
+  alertsOn=!!on;
+  try{ localStorage.setItem('na:radar:alerts',alertsOn?'1':'0'); }catch(e){}
+  $('alertBtn').classList.toggle('on',alertsOn);
+  if(alertsOn){
+    toast('🔔 התראות פעילות — צליל + הודעה כשאיתות נהיה 🟢');
+    beep();
+    try{ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }catch(e){}
+    checkAlerts();
+  } else toast('🔕 התראות כבויות');
+}
+
+// ── table state + render ────────────────────────────────────────────────
+let filter='all', sortKey='rec', sortDir=-1, query='', expanded=null;
+// ── 🏠 HOME TURF — prefer the symbols the trader PROVABLY controls ──────
+// Measured from the ledger, never from feeling: 3+ graded trades on a
+// symbol with positive net R = home turf (boosted and badged); 3+ trades
+// at -1R or worse = a cold symbol (badged, downgraded, never alerted in
+// selective mode). The feeling of control gets tested against the record.
+function symStats(){
+  const m={};
+  for(const g of sigs){
+    if(!g.out) continue;
+    const e=m[g.sym]||(m[g.sym]={n:0,w:0,net:0});
+    e.n++; if(g.out==='t1') e.w++; e.net+=g.r||0;
+  }
+  return m;
+}
+function turfOf(sym,T){
+  const e=(T||symStats())[sym];
+  if(!e || e.n<3) return {k:'none', e};
+  if(e.net>0) return {k:'home', e};
+  if(e.net<=-1) return {k:'cold', e};
+  return {k:'none', e};
+}
+function rows(){
+  let out=universe.slice();
+  const T=symStats();
+  if(query){ const q=query.toUpperCase();
+    out=out.filter(r=>r.sym.includes(q)||r.pair.includes(q)); }
+  if(filter==='fav') out=out.filter(r=>favs.has(r.sym));
+  else if(filter==='my') out=out.filter(r=>turfOf(r.sym,T).k==='home');
+  else if(filter==='gainers') out=out.filter(r=>r.chg>0);
+  else if(filter==='losers') out=out.filter(r=>r.chg<0);
+  else if(filter==='rec') out=out.filter(r=>(scan[r.sym]?.score??0)>=45);
+  else if(filter==='mov5') out=out.filter(r=>Math.abs(scan[r.sym]?.m5??0)>=0.35);
+  const sKeys={m5:'m5',m15:'m15',rsi:'rsi',volx:'volX',rec:'score'};
+  if(sKeys[sortKey]){
+    const k=sKeys[sortKey];
+    // the recommendation sort prefers proven ground: home turf climbs,
+    // cold symbols sink — the row badge says why
+    const bump=(r)=> sortKey==='rec'? (turfOf(r.sym,T).k==='home'?8: turfOf(r.sym,T).k==='cold'?-8:0) : 0;
+    out.sort((a,b)=>{ const A=scan[a.sym], B=scan[b.sym];
+      if(!A&&!B) return (b.vol||0)-(a.vol||0);
+      if(!A) return 1; if(!B) return -1;
+      return sortDir*((A[k]+bump(a))-(B[k]+bump(b))); });
+    return out;
+  }
+  const key={name:'sym',price:'price',chg:'chg'}[sortKey]||'sym';
+  out.sort((a,b)=> key==='sym'
+    ? -sortDir*String(a.sym).localeCompare(String(b.sym))
+    :  sortDir*(((a[key])??0)-((b[key])??0)));
+  return out;
+}
+function pctCell(v,cls){
+  if(v==null) return `<span class="num ${cls||''}" style="color:var(--dim)">—</span>`;
+  const col=v>=0.03?'var(--up)':v<=-0.03?'var(--down)':'var(--dim)';
+  return `<span class="num ${cls||''}" style="color:${col}">${(v>=0?'+':'')+v.toFixed(2)}%</span>`;
+}
+function renderGoStrip(){
+  const el=$('goStrip'); if(!el) return;
+  const gos=universe
+    .map(r=>({r,s:scan[r.sym]}))
+    .filter(x=>x.s && verdictOf(x.s).k==='go')
+    .sort((a,b)=>b.s.score-a.s.score)
+    .slice(0,12);
+  if(!gos.length){ el.hidden=true; return; }
+  el.hidden=false;
+  el.innerHTML='<span style="flex:none;align-self:center;font-size:11px;color:var(--dim)">🟢 עכשיו:</span>'+
+    gos.map(({r,s})=>`<span class="go ${s.dir==='short'?'sh':''} ${Date.now()-(goAlerted[r.sym]||0)<8000?'fresh':''}" data-go="${r.sym}">${s.dir==='long'?'▲':'▼'} ${r.sym} · ${s.score}</span>`).join('');
+}
+function render(){
+  const el=$('list');
+  // typing a price alert? the live re-render must not eat the keystrokes
+  if(document.activeElement && document.activeElement.dataset && document.activeElement.dataset.paIn) return;
+  // no auxiliary widget is ever allowed to kill the main list — the exact
+  // failure mode a corrupt ledger caused once (page opened, nothing rendered)
+  try{ renderGoStrip(); }catch(e){}
+  try{ renderMktDir(); }catch(e){}
+  try{ renderTape(); }catch(e){}
+  try{ renderTilt(); }catch(e){}
+  $('scanStat').textContent=scanState.running? `⟳ ${scanState.done}/${scanState.total}` : '';
+  if(!universe.length) return;
+  const rs=rows();
+  const TURF=symStats();
+  $('count').textContent=rs.length+(mkt==='stock'?' ניירות':' חוזים');
+  if(!rs.length){ el.innerHTML='<div class="empty">אין חוזה שתואם</div>'; return; }
+  // stock mode with a finished sweep and not one real price = every path
+  // to Yahoo is blocked — say it, never show a wall of silent dashes
+  const stockDead= mkt==='stock' && scanState.at>0 && !scanState.running && !universe.some(x=>x.price>0);
+  const tvOnly= mkt==='stock' && !stockDead && stockSweep.at>0 && stockSweep.candles===0 && stockSweep.tv>0;
+  const deadNote= stockDead
+    ? `<div class="empty" style="border:1px solid rgba(255,82,82,.4);border-radius:10px;margin:6px 0">📡 נתוני המניות לא נגישים כרגע — ניסיתי ${Y_VIAS.filter(v=>v.d).length} כתובות ישירות של יאהו, ${Y_VIAS.filter(v=>v.b).length} גשרים ציבוריים${simBase()?', את שרת ה־Heavy Guard':''} וגם את TradingView. זו חסימת רשת, לא תקלה באפליקציה. אני מנסה שוב אוטומטית כל 45 שניות — אפשר גם לעבור רשת (WiFi/סלולר).<br><button data-diag style="margin-top:8px;background:#141419;border:1px solid rgba(255,179,0,.5);color:var(--gold);border-radius:8px;padding:7px 14px;cursor:pointer;font-family:inherit">📡 בדיקת רשת חיה — צלם ושלח</button></div>`
+    : tvOnly
+    ? `<div class="empty" style="border:1px solid rgba(255,179,0,.4);border-radius:10px;margin:6px 0;color:var(--gold)">📊 מחירים חיים דרך TradingView. ניתוח הנרות (יאהו) חסום ברשת הזו — בלי נרות אין המלצות ואין איתותים, רק מחירים אמיתיים והתראות מחיר. מנסה את יאהו שוב כל 45 שניות.<br><button data-diag style="margin-top:8px;background:#141419;border:1px solid rgba(255,179,0,.5);color:var(--gold);border-radius:8px;padding:7px 14px;cursor:pointer;font-family:inherit">📡 בדיקת רשת חיה</button></div>`
+    : '';
+  const top=el.scrollTop;
+  el.innerHTML=deadNote+rs.slice(0,200).map(r=>{ try{
+    const s=scan[r.sym];
+    const hor=s? horizonOf(s,r.chg) : null;
+    const recCell = s
+      ? `<span class="vdot">${verdictOf(s).dot}</span> <i class="${s.score<45?'':s.dir}" title="${s.why}">${s.dir==='long'?'▲':'▼'}${s.score}</i>`
+      : (scanState.running?'<i>…</i>':'<i>—</i>');
+    const open = expanded===r.sym;
+    let det='';
+    if(open && s){
+      const dirW = s.dir==='long'? 'לונג ▲' : 'שורט ▼';
+      const v=verdictOf(s);
+      const pl=planOf(s,r);
+      const tm=timingOf(s);
+      const fx=(x)=>x.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec});
+      const fq=(x)=> x>=100? Math.round(x).toLocaleString() : x.toFixed(x>=1?2:4);
+      const chips=checksOf(s,r.vol).map(c=>`<i class="${c.ok?'ok':''}">${c.ok?'✓':'✗'} ${c.t}</i>`).join('');
+      // ── the SIMPLE decision card: enter? exit when? — one glance ──
+      const bd=breadth();
+      const tp=trapsOf(r.sym);
+      const mktAgainst= bd? (s.dir==='long'? bd.k==='down' : bd.k==='up') : false;
+      const gt=gauntlet(s,r);
+      let dec,decCls,why2;
+      if(gt.hardFail){ dec='⛔ אין המלצה'; decCls='';
+        why2='בדיקת אמינות נתונים נכשלה ('+gt.g.filter(x=>x.hard&&!x.ok).map(x=>x.t).join(', ')+') — לא ממליצים על סמך נתונים חשודים'; }
+      else if(v.k==='go' && gt.full){ dec='🟢 אפשר להיכנס עכשיו'; decCls='up';
+        why2='עבר את כל 20 הבדיקות — אמינות נתונים, איתות, הקשר שוק והיסטוריה אישית'; }
+      else if(v.k==='go'){ dec='🟡 חכה רגע'; decCls='gold';
+        const miss=gt.g.filter(x=>!x.ok).map(x=>x.t);
+        why2=`עבר ${gt.pass}/20 בדיקות — נפלו: ${miss.slice(0,3).join(' · ')}${miss.length>3?' ועוד':''}`; }
+      else if(v.k==='wait'||v.k==='late'){ dec='🟡 חכה רגע'; decCls='gold'; why2=v.t.replace(/^\S+\s/,''); }
+      else if(v.k==='watch'){ dec='⚪ עוד לא'; decCls=''; why2='איתות בינוני — מעקב בלבד, בלי כניסה'; }
+      else { dec='🔴 לא להיכנס'; decCls=''; why2='אין איתות חזק מספיק'; }
+      const trf=turfOf(r.sym);
+      const timeStop= hor.k==='scalp'?'15 דק׳': hor.k==='short'?'שעה': hor.k==='intra'?'4 שעות':'יממה';
+      const q0=qualityNum(s);
+      const card=`<div class="scard ${decCls}">
+        <div class="sc1">${dec}${r.stale?' <span style="font-size:12px;color:var(--dim)">🌙 השוק סגור — נתונים מהסגירה</span>':''}</div>
+        <div class="sc2">${why2}</div>
+        <div class="g20">${gt.g.map(x=>`<i class="${x.ok?'k':'f'}" title="${x.t}: ${x.val}"></i>`).join('')}<span>${gt.pass}/20 בדיקות ${gt.full?'✓':''}</span></div>
+        <div class="scr">
+          <span>🚪 כניסה<b>${fx(pl.entry)}</b></span>
+          <span>✅ צא ברווח ב-<b>${fx(pl.t1)}</b></span>
+          <span>🛑 צא בהפסד ב-<b>${fx(pl.stop)}</b></span>
+          <span>⏱ כלום לא זז תוך<b>${timeStop}? צא</b></span>
+        </div>
+        <div class="sc3">היעד או הסטופ — מה שנוגע קודם קובע · מפסידים מקסימום $${pl.riskAmt<10?pl.riskAmt.toFixed(2):pl.riskAmt.toFixed(0)}${bd?` · 🌍 השוק ${bd.k==='up'?'עולה':bd.k==='down'?'יורד':'מעורב'}${mktAgainst?' — נגדך':''}`:''}${q0.ready?` · 🧠 פרופיל דומה: ${q0.pct}% אצלך`:''}${trf.k==='home'?` · 🏠 מגרש ביתי: ${trf.e.w}/${trf.e.n} · ${trf.e.net>=0?'+':''}${trf.e.net.toFixed(1)}R אצלך`:''}</div>
+        <div><button class="copy" data-enter="${r.sym}">✅ נכנסתי — עקוב אחריי</button>
+          <button class="copy" data-simple="1">${simpleOn?'🔬 הצג הכל (מתקדם)':'✨ חזרה למצב פשוט'}</button></div>
+      </div>`;
+      const adv= simpleOn? '' : `
+        <div class="verdict" style="color:${v.k==='go'?'var(--up)':(v.k==='wait'||v.k==='late')?'var(--gold)':'var(--dim)'}">${v.t}</div>
+        <div><b>${r.sym}${r.market==='stock'?'':'/USDT'}</b> · ${dirW} · ציון ${s.score} · אופק ${hor.t}</div>
+        <div class="checks">${chips}</div>
+        <div class="why">${s.why}</div>
+        <div class="why" style="color:var(--cyan)">🧠 ${qualityTxt(s)}</div>
+        <div class="glist"><b style="font-size:11px;color:var(--gold)">🛡 20 הבדיקות, אחת-אחת:</b>
+          ${gt.g.map(x=>`<span class="${x.ok?'ok':'no'}">${x.ok?'✓':'✗'} ${x.t} <b>${x.val}</b>${x.hard?' <i title="בדיקת אמינות קשיחה">🛡</i>':''}</span>`).join('')}</div>
+        <div class="mins">
+          <span class="mt">⏱ ניתוח בדקות</span>
+          <span class="mage" data-age="${s.at}"${s.live?' data-live="1"':''}>נמדד לפני —</span>
+          <span>קצב: <b data-lv="pace" style="color:${tm.paceOk?'var(--up)':'var(--dim)'}">${tm.paceTxt}</b></span>
+          <span data-lv="eta">${tm.etaMin!=null
+            ? `בקצב הנוכחי — היעד בעוד <b style="color:var(--gold)">~${tm.etaMin} דק׳</b>`
+            : 'אין קצב מדיד לכיוון היעד כרגע'}</span>
+        </div>
+        <div class="mtape">${(s.mins||[]).map(m=>{
+          const c=m>=0.02?'var(--up)':m<=-0.02?'var(--down)':'var(--dim)';
+          return `<i style="color:${c}" title="דקה">${(m>=0?'+':'')+m.toFixed(2)}</i>`;
+        }).join('')}<em>← 10 הדקות האחרונות, דקה-דקה</em></div>
+        ${deepBlock(r.sym)}
+        <div class="traps">${(()=>{ const tp=trapsOf(r.sym);
+          return tp.length? tp.map(t=>`<span>${t.t}</span>`).join('')
+            : '<span class="cl">🕵️ סריקת תרגילים — נקי: אין ציד סטופים, פריצות שווא או סטיות זרימה בנרות האחרונים</span>'; })()}</div>
+        ${r.market==='stock'? `<div class="mnote" style="color:var(--dim);padding:4px 2px">🔬 טיקים חיים, עומק ספר ונרות-שנייה זמינים בקריפטו בלבד — יאהו לא משדר אותם. הנתונים כאן מתרעננים עם כל סריקה.</div>` : `<div class="micro">
+          <span class="mt">🔬 מיקרו — טיק אחר טיק</span>
+          <span>מחיר<b data-mv="px">—</b></span>
+          <span>ספרד<b data-mv="sp">—</b></span>
+          <span>קונים 30ש׳<b data-mv="bp">—</b></span>
+          <span>CVD 30ש׳<b data-mv="cvd">—</b></span>
+          <span>קצב 60ש׳<b data-mv="p60">—</b></span>
+          <span>עסק׳/שנ׳<b data-mv="tps">—</b></span>
+          <span>סגירת נר<b data-mv="cndl">—</b></span>
+          <span class="mnote" data-mv="note">מחכה לזרם עסקאות…</span>
+        </div>
+        <div class="depth">
+          <span class="mt">🧱 עומק שוק חי — 20 רמות, 10 עדכונים בשנייה</span>
+          <div class="dbar"><i data-dv="bid"></i></div>
+          <span data-dv="imb">—</span>
+          <div class="dwalls" data-dv="walls"></div>
+          <span class="mnote" data-dv="dnote">מחכה לזרם העומק…</span>
+        </div>`}
+        ${(()=>{ const sm=superMetrics(r.sym); if(!sm) return '';
+          return `<div class="smx">
+            <span class="mt">🎓 מדדי-על</span>
+            <span>VWAP<b style="color:${sm.vwapDist>=0?'var(--up)':'var(--down)'}">${sm.vwapDist!=null?(sm.vwapDist>=0?'+':'')+sm.vwapDist.toFixed(2)+'%':'—'}</b> <i style="font-style:normal;color:var(--dim);font-size:9.5px">מעל/מתחת למחיר הממוצע-משוקלל</i></span>
+            <span>מיקום בטווח ${Math.round(sm.win)}ד׳<b style="color:${sm.rangePos>=70?'var(--up)':sm.rangePos<=30?'var(--down)':'var(--dim)'}">${Math.round(sm.rangePos)}%</b></span>
+            <span>רצף<b style="color:${sm.run>0?'var(--up)':sm.run<0?'var(--down)':'var(--dim)'}">${sm.run>0? sm.run+' דק׳ ירוקות': sm.run<0? (-sm.run)+' דק׳ אדומות':'—'}</b></span>
+            ${sm.corr!=null?`<span>קורלציה ל-BTC<b>${sm.corr.toFixed(2)}</b> <i style="font-style:normal;color:var(--dim);font-size:9.5px">${Math.abs(sm.corr)>=0.7?'עוקב אחרי המלך — בדוק מה BTC עושה':'זז בכוחות עצמו'}</i></span>`:''}
+          </div>`; })()}`;
+      det=`<div class="det">
+        ${card}${adv}
+        <div class="plan">
+          <div class="pr">
+            <span><b>כניסה</b>${fx(pl.entry)}</span>
+            <span><b>סטופ</b>${fx(pl.stop)}</span>
+            <span><b>יעד 1 (R:R ${pl.rr1})</b>${fx(pl.t1)}</span>
+            <span><b>יעד 2 (R:R ${pl.rr2})</b>${fx(pl.t2)}</span>
+          </div>
+          <div class="pr" style="margin-top:6px">
+            <span><b>כמות (${r.sym})</b>${fq(pl.qty)}</span>
+            <span><b>שווי פוזיציה</b>$${Math.round(pl.notional).toLocaleString()}</span>
+            <span><b>מינוף מוצע</b>×${pl.lev}</span>
+            <span><b>בסיכון</b>$${pl.riskAmt<10? pl.riskAmt.toFixed(2) : pl.riskAmt.toFixed(0)}</span>
+          </div>
+          <button class="copy" data-copy="${r.sym}">📋 העתק תוכנית</button>
+          <button class="copy" data-chart="${r.sym}">📈 גרף לייב</button>
+          <button class="copy" data-deep="${r.sym}">🧠 ניתוח-על</button>
+          <div class="palert">
+            <span>⏰ העירו אותי במחיר:</span>
+            <input type="number" step="any" inputmode="decimal" data-pa-in="${r.sym}" placeholder="${fx(r.price)}">
+            <button class="hbtn2" data-pa-add="${r.sym}">קבע</button>
+            ${palerts.filter(a=>a.sym===r.sym).map(a=>
+              `<i class="pchip" data-pa-del="${a.sym}|${a.p}" title="הסר">${a.dir==='above'?'↑':'↓'} ${a.p} ✕</i>`).join('')}
+          </div>
+        </div>
+        <div class="why" style="margin-top:5px">הכמות מחושבת כך שאם הסטופ נפגע — מפסידים בדיוק את סכום הסיכון שהוגדר למעלה. המינוף המוצע שומר מרג׳ין ~20% מהחשבון, והסטופ נפגע הרבה לפני חיסול. האופק: פרץ 5-דק׳ בלי מבנה = דקות · מבנה EMA = שעות · מבנה + מגמת 24ש = ימים.</div>
+      </div>`;
+    }
+    return `<div class="mrow v-${s? verdictOf(s).k:'none'}" data-sym="${r.sym}">
+      <span class="mname">
+        <span class="star${favs.has(r.sym)?' on':''}" data-fav="${r.sym}">${favs.has(r.sym)?'★':'☆'}</span>
+        <span class="nn">
+          <span class="n1"><b>${r.sym}</b><span class="tag">${r.market==='stock'?'מניה':'Perp'}</span>${(()=>{const t=turfOf(r.sym,TURF);
+            return t.k==='home'?'<span class="tag turfH" title="מגרש ביתי — רווחי אצלך">🏠</span>'
+              : t.k==='cold'?'<span class="tag turfC" title="מטבע קר — מפסיד אצלך">⚠️</span>':'';})()}${palerts.some(a=>a.sym===r.sym)?'<span class="tag" style="color:var(--gold)" title="התראת מחיר פעילה">⏰</span>':''}</span>
+          <span class="sub">${fmtUsd(r.vol)}</span>
+        </span>
+      </span>
+      <span class="num ${priceFlash[r.sym]?'pf-'+priceFlash[r.sym]:''}">${r.price? r.price.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec}) : '—'}</span>
+      ${pctCell(r.chg)}
+      ${pctCell(s?s.m15:null)}
+      ${pctCell(s?s.m5:null)}
+      <span class="num c-rsi">${s? Math.round(s.rsi) : '—'}</span>
+      <span class="num c-volx">${s? '×'+s.volX.toFixed(1) : '—'}</span>
+      <span class="rec">${recCell} ${hor?`<span class="hor"><i class="${hor.k}">${hor.t}</i></span>`:''}</span>
+      ${det}
+    </div>`;
+  }catch(e){ return ''; } }).join('') + (rs.length>200? `<div class="empty">מוצגים 200 מתוך ${rs.length} — צמצם עם חיפוש</div>`:'');
+  el.scrollTop=top;
+  // a flash is one render long — the next tick decides again
+  for(const k in priceFlash) delete priceFlash[k];
+  // a rebuild resets the micro chips to "—"; repaint them from the buffer
+  // immediately instead of waiting for the next trade on a quiet tape
+  if(expanded && micro.sym===expanded && micro.trades.length) microTouch(true);
+}
+
+// ── wiring ──────────────────────────────────────────────────────────────
+$('q').oninput=e=>{ query=e.target.value.trim(); render(); };
+$('tabs').querySelectorAll('button').forEach(b=>{
+  b.onclick=()=>{ filter=b.dataset.f;
+    $('tabs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+    if(filter==='rec'){ sortKey='rec'; sortDir=-1; syncSort(); }
+    if(filter==='mov5'){ sortKey='m5'; sortDir=-1; syncSort(); }
+    render(); kick(); };
+});
+function syncSort(){ document.querySelectorAll('.mhead button').forEach(x=>x.classList.toggle('on',x.dataset.s===sortKey)); }
+document.querySelectorAll('.mhead button').forEach(b=>{
+  b.onclick=()=>{ if(sortKey===b.dataset.s) sortDir*=-1; else { sortKey=b.dataset.s; sortDir=-1; }
+    syncSort(); render(); kick(); };
+});
+$('list').onclick=e=>{
+  const paA=e.target.closest('[data-pa-add]');
+  if(paA){ const sym=paA.dataset.paAdd;
+    const inp=document.querySelector(`[data-pa-in="${sym}"]`);
+    const v=+(inp&&inp.value);
+    if(addPalert(sym,v)) render();
+    return; }
+  const paD=e.target.closest('[data-pa-del]');
+  if(paD){ const [sym,pp]=paD.dataset.paDel.split('|');
+    palerts=palerts.filter(a=>!(a.sym===sym && String(a.p)===pp));
+    savePalerts(); render(); return; }
+  if(e.target.closest('[data-pa-in]')) return;   // focusing the input must not toggle the row
+  const ch=e.target.closest('[data-chart]');
+  if(ch){ openCoinChart(ch.dataset.chart); return; }
+  const en=e.target.closest('[data-enter]');
+  if(en){ enterPos(en.dataset.enter); return; }
+  const sm=e.target.closest('[data-simple]');
+  if(sm){ simpleOn=!simpleOn;
+    try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(err){}
+    render(); return; }
+  const dp=e.target.closest('[data-deep]');
+  if(dp){ const sym=dp.dataset.deep;
+    deepCache[sym]={loading:true}; render();
+    deepAnalyze(sym).then(d=>{ deepCache[sym]={d, at:Date.now()}; render(); })
+      .catch(()=>{ deepCache[sym]={d:null}; render(); });
+    return; }
+  const fav=e.target.closest('[data-fav]');
+  if(fav){ const s=fav.dataset.fav;
+    if(favs.has(s)) favs.delete(s); else favs.add(s);
+    saveFavs(); render(); return; }
+  const row=e.target.closest('.mrow'); if(!row) return;
+  expanded = expanded===row.dataset.sym ? null : row.dataset.sym;
+  micro.sym=expanded; micro.trades=[]; micro.bid=0; micro.ask=0;
+  render();
+  syncKlineSubs();      // the open row joins the live streams immediately
+};
+$('refreshBtn').onclick=()=>{ boot(true); };
+$('mktMode').onclick=e=>{ const b=e.target.closest('button[data-m]'); if(b) setMkt(b.dataset.m); };
+document.querySelectorAll('#mktMode button').forEach(b=>b.classList.toggle('on',b.dataset.m===mkt));
+// thumb bar (phone): mirrors the tabs + opens the trade history
+$('bnav').onclick=e=>{
+  const b=e.target.closest('button[data-bn]'); if(!b) return;
+  document.querySelectorAll('#bnav button').forEach(x=>x.classList.toggle('on',x===b));
+  if(b.dataset.bn==='hist'){ openHist(); return; }
+  const tab=document.querySelector(`#tabs [data-f="${b.dataset.bn}"]`);
+  if(tab) tab.click();
+};
+// deep link from NEXUS and anywhere else: markets.html?mkt=stock
+try{
+  const pm=new URLSearchParams(location.search).get('mkt');
+  if(pm==='stock' && mkt!=='stock') setMkt('stock');
+}catch(e){}
+$('poss').onclick=e=>{
+  const x=e.target.closest('[data-px]');
+  if(x){ exitPos(+x.dataset.px,'manual'); return; }
+  const c=e.target.closest('[data-pc]');
+  if(c){ exitPos(+c.dataset.pc,'cancel'); return; }
+  const s=e.target.closest('[data-osig]');
+  if(s) openSigChart(+s.dataset.osig);
+};
+$('tilt').onclick=e=>{
+  const b=e.target.closest('[data-tilt]'); if(!b) return;
+  if(b.dataset.tilt==='off'){ tiltOverride=dayKey();
+    try{ localStorage.setItem('na:radar:tiltok',tiltOverride); }catch(err){}
+    toast('המגן כובה להיום — זו הייתה החלטה מודעת'); }
+  else { tiltOverride='';
+    try{ localStorage.setItem('na:radar:tiltok',''); }catch(err){}
+    toast('🛡 המגן חזר — התראות מושתקות עד חצות'); }
+  renderTilt();
+};
+$('perf').onclick=e=>{
+  if(e.target.closest('#histBtn')){ openHist(); return; }
+  const sig=e.target.closest('[data-sig]');
+  if(sig){ openSigChart(+sig.dataset.sig); return; }
+  perfOpen=!perfOpen; renderPerf();
+};
+$('histClose').onclick=closeHist;
+$('histModal').onclick=e=>{ if(e.target.id==='histModal') closeHist(); };
+$('hFilter').onclick=e=>{
+  const b=e.target.closest('button[data-hf]'); if(!b) return;
+  hFilter=b.dataset.hf;
+  document.querySelectorAll('#hFilter button').forEach(x=>x.classList.toggle('on',x===b));
+  renderHist();
+};
+$('hList').onclick=e=>{
+  const sig=e.target.closest('[data-sig]');
+  if(sig) openSigChart(+sig.dataset.sig);   // opens above the history screen
+};
+$('geoRun').onclick=async()=>{
+  $('geoOut').innerHTML='<div class="nl" style="color:var(--dim)">⏳ מריץ על ההיסטוריה…</div>';
+  try{
+    geoRows=await geoLab((i,n)=>{ $('geoOut').innerHTML=`<div class="nl" style="color:var(--dim)">⏳ ${i}/${n} עסקאות…</div>`; });
+    renderGeoRows(geoRows);
+  }catch(e){ $('geoOut').innerHTML='<div class="nl" style="color:var(--down)">הסימולציה נכשלה — נסה שוב</div>'; }
+};
+$('geoOut').onclick=e=>{
+  const b=e.target.closest('[data-geo]'); if(!b) return;
+  const [t1K,stopK]=b.dataset.geo.split(',').map(Number);
+  setGeom(stopK,t1K);
+  toast(`🎛 גיאומטריה חדשה: יעד ${t1K} ATR · סטופ ${stopK} ATR — חלה על איתותים חדשים בלבד`);
+  if(geoRows) renderGeoRows(geoRows);
+  if(expanded) render();
+};
+$('hCsv').onclick=()=>{
+  try{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob(['﻿'+csvText()],{type:'text/csv'}));
+    a.download='radar-signals.csv'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    toast('⬇ הקובץ ירד — כל האיתותים בפנים');
+  }catch(e){ toast('הייצוא נכשל'); }
+};
+$('chClose').onclick=chClose;
+$('trGo').onclick=()=>{ if(chart.mode==='coin') trStart(); else toast('אימון זמין מגרף לייב של מטבע'); };
+$('trNextB').onclick=()=>trNext(1);
+$('trFast').onclick=()=>trNext(5);
+$('trLongB').onclick=()=>trEnter('long');
+$('trShortB').onclick=()=>trEnter('short');
+$('trExitB').onclick=()=>{ trSettle('manual'); trDraw(); };
+$('trQuitB').onclick=trQuit;
+$('voiceBtn').onclick=speakBrief;
+$('galBtn').onclick=openGal;
+$('galClose').onclick=closeGal;
+$('galModal').onclick=e=>{ if(e.target.id==='galModal') closeGal(); };
+$('galCv').onclick=e=>{
+  const rect=e.target.getBoundingClientRect();
+  const px=e.clientX-rect.left, py=e.clientY-rect.top;
+  const hit=galRects.find(t=>px>=t.x && px<t.x+t.w && py>=t.y && py<t.y+t.h);
+  if(!hit) return;
+  closeGal();
+  filter='all'; query=''; $('q').value='';
+  expanded=hit.sym; micro.sym=expanded; micro.trades=[];
+  render(); syncKlineSubs();
+  document.querySelector(`.mrow[data-sym="${hit.sym}"]`)?.scrollIntoView({block:'center',behavior:'smooth'});
+};
+$('chTf').onclick=e=>{
+  const b=e.target.closest('button[data-tf]'); if(!b || !chart.mode) return;
+  const rr=universe.find(x=>x.sym===chart.sym);
+  if(rr && rr.market==='stock' && (b.dataset.tf==='1s'||b.dataset.tf==='4h')){
+    toast(b.dataset.tf==='1s'? 'נרות שנייה — קריפטו בלבד (אין זרם טיקים ממניות)'
+      : 'ליאהו אין נרות 4 שעות — השתמש ב-1ש׳ או 1י׳'); return;
+  }
+  chart.tf=b.dataset.tf; chart.cs=null; chart.loadedAt=0;
+  chTfSync();
+  if(chart.mode==='coin') chDrawCoin(); else chDrawSig();
+  chLoadTf();
+};
+$('chModal').onclick=e=>{ if(e.target.id==='chModal') chClose(); };
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape') return;
+  if(chart.mode) chClose();
+  else if(!$('galModal').hidden) closeGal();
+  else if(!$('histModal').hidden) closeHist();
+});
+$('alertBtn').onclick=()=>setAlerts(!alertsOn);
+$('strictBtn').onclick=()=>setStrict(!strictOn);
+if(strictOn) $('strictBtn').classList.add('on');
+$('autoBtn').onclick=()=>setAuto(!autoOn);
+if(autoOn) $('autoBtn').classList.add('on');
+if(alertsOn) $('alertBtn').classList.add('on');
+$('goStrip').addEventListener('click',e=>{
+  const c=e.target.closest('[data-go]'); if(!c) return;
+  expanded=c.dataset.go; filter='all'; query=''; $('q').value='';
+  $('tabs').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.f==='all'));
+  render();
+  const row=document.querySelector(`.mrow[data-sym="${c.dataset.go}"]`);
+  if(row) row.scrollIntoView({behavior:'smooth',block:'center'});
+});
+function toast(t){ let e=$('toastEl'); if(!e){ e=document.createElement('div'); e.id='toastEl'; document.body.appendChild(e); }
+  e.textContent=t; e.style.opacity='1'; clearTimeout(toast._t); toast._t=setTimeout(()=>{ e.style.opacity='0'; },1800); }
+// the two risk fields are the SAME number in two currencies — % of the
+// account and hard dollars. Editing either recomputes the other; both
+// persist through the % value. Above 5% the bar says so, loudly.
+function riskWarnSync(){
+  const w=$('riskWarn');
+  if(riskPct>5){ w.textContent='⚠️ מעל 5% מהחשבון לעסקה — אגרסיבי מאוד, הפסד אחד מוחק '+riskPct.toFixed(0)+'%';
+    w.style.color='var(--down)'; }
+  else { w.textContent='הסטופ מחושב כך שהפסד = בדיוק הסכום הזה'; w.style.color=''; }
+}
+function syncAcct(){
+  $('acctSize').value=acct; $('riskPct').value=+riskPct.toFixed(2);
+  $('riskAmt').value=+(acct*riskPct/100).toFixed(2);
+  riskWarnSync();
+}
+function saveRisk(){ try{ localStorage.setItem('na:radar:acct',String(acct));
+  localStorage.setItem('na:radar:risk',String(riskPct)); }catch(err){} }
+$('acctSize').oninput=e=>{ const v=+e.target.value; if(v>0){ acct=v; saveRisk();
+  $('riskAmt').value=+(acct*riskPct/100).toFixed(2); riskWarnSync(); if(expanded) render(); } };
+$('riskPct').oninput=e=>{ const v=+e.target.value; if(v>0&&v<=100){ riskPct=v; saveRisk();
+  $('riskAmt').value=+(acct*riskPct/100).toFixed(2); riskWarnSync(); if(expanded) render(); } };
+$('riskAmt').oninput=e=>{ const v=+e.target.value;
+  if(v>0 && acct>0){ riskPct=Math.min(100, v/acct*100); saveRisk();
+    $('riskPct').value=+riskPct.toFixed(2); riskWarnSync(); if(expanded) render(); } };
+syncAcct();
+document.addEventListener('click',e=>{
+  const c=e.target.closest('[data-copy]'); if(!c) return;
+  e.stopPropagation();
+  const sym=c.dataset.copy; const r=universe.find(x=>x.sym===sym); const s=scan[sym];
+  if(!r||!s) return;
+  const pl=planOf(s,r); const v=verdictOf(s);
+  const fx=(x)=>x.toLocaleString('en-US',{minimumFractionDigits:r.dec,maximumFractionDigits:r.dec});
+  const txt=`${sym}USDT Perp · ${s.dir==='long'?'LONG':'SHORT'} · ציון ${s.score}
+${v.t}
+כניסה: ${fx(pl.entry)}
+סטופ: ${fx(pl.stop)}
+יעד 1: ${fx(pl.t1)} (R:R ${pl.rr1}) · יעד 2: ${fx(pl.t2)} (R:R ${pl.rr2})
+כמות: ${pl.qty>=100?Math.round(pl.qty):pl.qty.toFixed(4)} ${sym} · שווי $${Math.round(pl.notional)} · מינוף ×${pl.lev} · בסיכון $${pl.riskAmt<10? pl.riskAmt.toFixed(2) : pl.riskAmt.toFixed(0)}
+קצב: ${timingOf(s).paceTxt}${timingOf(s).etaMin!=null?' · יעד בעוד ~'+timingOf(s).etaMin+' דק׳ בקצב הנוכחי':''}`;
+  (navigator.clipboard? navigator.clipboard.writeText(txt) : Promise.reject())
+    .then(()=>toast('📋 התוכנית הועתקה — הדבק בבורסה'))
+    .catch(()=>toast('ההעתקה נכשלה'));
+},true);
+function kick(force){ runScan(force,render).then(()=>{ render(); checkAlerts(); }).catch(()=>render()); }
+async function boot(force){
+  try{
+    await loadUniverse(force);
+    render();
+    renderPerf();
+    kick(force);
+    backfillSigs();          // grade whatever fired while the page was closed
+  }catch(e){
+    $('list').innerHTML='<div class="empty">רשימת החוזים לא נטענה — ‏Binance Futures לא נגיש מהרשת הזו</div>';
+  }
+}
+boot(false);
+// stay fresh, but never spin in a hidden tab.
+// two tiers: the full 120-contract sweep on its 90s TTL, and a HOT tier —
+// favourites + current 🟢 + top-20 liquidity — every 30 seconds, so the
+// minute-timing numbers are never more than half a minute old.
+setInterval(()=>{ if(!document.hidden){ loadUniverse(false).then(render).catch(()=>{});
+  // stock mode with zero real prices (or TV-only prices with zero Yahoo
+  // candles) = the candle path was blocked last sweep — force a fresh
+  // attempt instead of sitting on the 90s TTL
+  const dead = mkt==='stock' && universe.length>0 &&
+    (!universe.some(r=>r.price>0) || (stockSweep.at>0 && stockSweep.candles===0));
+  kick(dead); } }, 45000);
+setInterval(()=>{ if(!document.hidden && !scanState.running && mkt==='crypto'){
+  runScan(true,render,true).then(()=>{ render(); checkAlerts(); }).catch(()=>{}); } }, 30000);
+// grade open signals against the live tape every 5s; when the trade list
+// is open, its "currently ±R" figures refresh too
+setInterval(()=>{ if(!document.hidden){ gradeSigs(); if(perfOpen) renderPerf(); } }, 5000);
+// once a second: the "measured Xs ago" counters and the next-sweep countdown
+// update in place — no full re-render for a ticking clock
+setInterval(()=>{
+  if(document.hidden) return;
+  const now=Date.now();
+  document.querySelectorAll('.mage').forEach(el=>{
+    const at=+el.dataset.age||0; if(!at) return;
+    const sec=Math.max(0,Math.round((now-at)/1000));
+    if(el.dataset.live && sec<=4){
+      el.textContent='⚡ לייב · '+liveStat.lat+'ms';
+      el.style.color='var(--up)';
+      return;
+    }
+    el.textContent='נמדד לפני '+(sec<60? sec+' שנ׳' : Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0'));
+    el.style.color = sec>150? 'var(--down)' : 'var(--dim)';
+  });
+  // 1m candles close on the wall-clock minute — an exact number, no stream needed
+  const cndl=document.querySelector('[data-mv="cndl"]');
+  if(cndl){ const left=60-Math.floor((now/1000)%60);
+    cndl.textContent='עוד '+left+'ש׳'; cndl.style.color= left<=10?'var(--gold)':''; }
+  const hotAt=scanState.hotAt||scanState.at||0;
+  if(hotAt){ const left=Math.max(0,30-Math.round((now-hotAt)/1000));
+    $('nextScan').textContent='⟳ בעוד '+left+'ש'; }
+  try{ watchPos(); renderPos(); }catch(e){}
+  $('liveStat').textContent = (wsK && wsK.readyState===1 && klineSubs.size)
+    ? '⚡ '+klineSubs.size+' לייב'+(now-liveStat.lastE<5000? ' · '+liveStat.lat+'ms':'') : '';
+  syncKlineSubs();
+},1000);
+// test hooks — the same style every app in the suite exposes
+window.__mkt={ rows, scan:()=>scan, state:()=>({filter,sortKey,sortDir,query,expanded,acct,riskPct}),
+  yState:()=>({via:yVia,bad:yBad.slice(),deadAt:yAllDeadAt,n:Y_VIAS.length}),
+  auto:(on)=>{ if(on!==undefined) setAuto(on); return autoOn; },
+  tv:tvScan, tvInfo:()=>({state:tvState,sweep:Object.assign({},stockSweep),via:tvVia}),
+  lens:setLens, lensName:()=>lens, lensRects:()=>lensRects.slice(),
+  radOpen:openRad, radClose:closeRad,
+  diag:runDiag, diagRes:()=>diagRes.map(d=>({n:d.n,skip:d.skip,r:d.r})), openDiag, closeDiag,
+  verdictOf, checksOf, planOf, setAcct:(a,r)=>{acct=a;riskPct=r;syncAcct();},
+  rwal:()=>Object.assign({},rwal), rwalDraw:drawRwal,
+  srvSh:(s)=>{ if(s!==undefined){ srvSh=s; try{ renderPos(); }catch(e){} } return srvSh; },
+  tick:applyTick, alerts:(on)=>setAlerts(on!==false), alerted:()=>({...goAlerted}),
+  timingOf, hot:()=>runScan(true,render,true),
+  kline:onKline, candles:()=>candles, liveSet:()=>[...liveSet()],
+  trade:onTrade, book:onBook, micro:microStats, etaRange,
+  sigs:()=>sigs, setSigs:(a)=>{sigs=a;saveSigs();renderPerf();}, grade:gradeSigs,
+  stats:sigStats, backfill:backfillSigs,
+  openChart:openCoinChart, openSig:openSigChart, closeChart:chClose,
+  openHist, closeHist, insights:buildInsights, quality:qualityTxt, csv:csvText, qStats,
+  traps:trapsOf, secs:secCandles, trend:trendOf, strict:setStrict, qualityNum,
+  depth:onDepth, depthStats,
+  geoLab, setGeom:(s,t)=>{setGeom(s,t);}, geom:()=>({...geom}),
+  deep:deepAnalyze, deepCache:()=>deepCache,
+  setMkt, mkt:()=>mkt, fetchKl, symStats, turfOf,
+  superMetrics, tape:renderTape, gauntlet,
+  trainStart:trStart, trainNext:trNext, trainEnter:trEnter,
+  trainExit:()=>{ trSettle('manual'); trDraw(); }, trainQuit:trQuit,
+  trainState:()=>({on:train.on, idx:train.idx, total:train.cs?train.cs.length:0,
+    pos:train.pos?{...train.pos}:null, practice:{...practice}}),
+  brief:speakBrief, dailyR, tiltActive, journal:renderJournal,
+  galaxy:openGal, closeGalaxy:closeGal, galRects:()=>galRects.slice(),
+  enterPos, exitPos, poss:()=>poss.slice(), myTrades:()=>myTrades.slice(), watchPos,
+  palerts:()=>palerts.slice(), addAlert:addPalert, checkPa:checkPalerts,
+  breadth, simple:(on)=>{ simpleOn=on!==false;
+    try{ localStorage.setItem('na:radar:simple',simpleOn?'1':'0'); }catch(e){} render(); },
+  chart:()=>({mode:chart.mode,sym:chart.sym,sigI:chart.sigI,tf:chart.tf,cs:chart.cs?chart.cs.length:0}),
+  live:()=>({subs:[...klineSubs], lat:liveStat.lat, lastE:liveStat.lastE, open:!!(wsK&&wsK.readyState===1)}),
+  check:checkAlerts, ws:()=>!!ws,
+  universe:()=>universe, scoreOf:scanScore, horizonOf, run:(f)=>runScan(f!==false,render),
+  scanState:()=>scanState, setUniverse:(u)=>{universe=u;universeAt=Date.now();render();} };
+</script>
+</body>
+</html>

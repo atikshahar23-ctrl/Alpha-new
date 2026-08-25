@@ -5,11 +5,19 @@
 // Falls back to manual JSON export/import when not connected.
 // ============================================================
 
+import { mergeTable, tombstonesFirst, TOMBSTONE_KEY } from './syncMerge';
+
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 const FOLDER_NAME = 'Alpha Assistant Backup';
 const TOKEN_KEY = 'alpha_gdrive_token';
 const SYNC_TS_KEY = 'alpha_gdrive_last_sync';
 const CLIENT_ID_KEY = 'alpha_gdrive_client_id';
+// Set once the user has interactively granted Drive consent. As long as this
+// is set (and their Google session is alive), we can silently mint a fresh
+// access token without any popup — the fix for "synced at 13:04 then stopped":
+// GIS access tokens expire after ~1h with no refresh token, so without silent
+// re-auth the periodic sync just died an hour after sign-in.
+const CONSENT_KEY = 'alpha_gdrive_consent';
 
 const SYNC_TABLES = [
   'alpha_leads_v1',
@@ -19,8 +27,29 @@ const SYNC_TABLES = [
   'alpha_tasks',
   'alpha_notes',
   'hg2:index',
+  TOMBSTONE_KEY,
   'hg2:quotes',
   'hg2:tasks',
+  'hg2:customers',
+  'hg2:pricelist',
+  'hg2:quoteseq',
+  'hg2:trips',
+  'hg2:vehicle',
+  'hg2:odometer',
+  'hg2:projects',
+  'hg2:carstock',
+  'hg2:suppliers',
+  'hg2:invoices',
+  'hg2:wanumber',
+  'hg2:init',
+  'hg2:lastbackup',
+  'hg2:crm_data',
+  'hg2:profile',
+  'hg2:samsonix',
+  'alpha:social:drafts',
+  'alpha_name',
+  'char_rot_v3',
+  'alpha_main_character',
   'alpha_brain_memory_v1',
   'alpha_pomodoro_v1',
   'alpha_mood_v1',
@@ -35,6 +64,7 @@ const SYNC_TABLES = [
   'alpha_chat_history_v1',
   'alpha_sentiment_v1',
   'alpha_templates_v1',
+  'alpha_samsonix_forms_v1',
 ];
 
 interface DriveToken {
@@ -46,11 +76,28 @@ let cachedToken: DriveToken | null = null;
 let folderId: string | null = null;
 let syncInProgress = false;
 
+// Default OAuth client — the SAME Google Cloud project the CRM/agents app uses,
+// so the whole platform authenticates through one Google account and one origin
+// registration. Override per-device by entering a different ID in Settings.
+// NOTE: for sign-in to succeed, the app's origin (e.g. the GitHub Pages URL and
+// http://localhost:5173) must be listed under this client's "Authorized
+// JavaScript origins" in the Google Cloud Console — otherwise Google returns
+// "invalid_client / no registered origin".
+const DEFAULT_CLIENT_ID = '243197444145-4go2os4nmvjadncma2c581tr535hl8lo.apps.googleusercontent.com';
 export function getClientId(): string {
-  return localStorage.getItem(CLIENT_ID_KEY) || '';
+  return localStorage.getItem(CLIENT_ID_KEY) || DEFAULT_CLIENT_ID;
 }
 export function setClientId(id: string) {
   localStorage.setItem(CLIENT_ID_KEY, id.trim());
+}
+// Drop any per-device override so getClientId() falls back to the known-good
+// DEFAULT_CLIENT_ID. Fixes a device that has a stale/wrong client id saved
+// (e.g. a phone that fails with invalid_client while the desktop works).
+export function resetClientId() {
+  localStorage.removeItem(CLIENT_ID_KEY);
+}
+export function isUsingDefaultClientId(): boolean {
+  return !localStorage.getItem(CLIENT_ID_KEY);
 }
 
 export function isConnected(): boolean {
@@ -94,30 +141,86 @@ function loadGIS(): Promise<void> {
   });
 }
 
-export async function signIn(): Promise<boolean> {
+// The GIS token client is created once and reused for both the interactive
+// sign-in and every silent refresh. Its single callback resolves whichever
+// request is currently pending.
+let tokenClient: any = null;
+let pendingResolve: ((v: boolean) => void) | null = null;
+
+async function getTokenClient(): Promise<any> {
   const clientId = getClientId();
   if (!clientId) throw new Error('NO_CLIENT_ID');
-
   await loadGIS();
   const google = (window as any).google;
   if (!google?.accounts?.oauth2) throw new Error('GIS_LOAD_FAILED');
-
-  return new Promise((resolve) => {
-    const client = google.accounts.oauth2.initTokenClient({
+  if (!tokenClient) {
+    tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: SCOPES,
       callback: (resp: any) => {
-        if (resp.error) { resolve(false); return; }
-        const token: DriveToken = {
+        const r = pendingResolve; pendingResolve = null;
+        if (resp.error || !resp.access_token) { r?.(false); return; }
+        saveToken({
           access_token: resp.access_token,
           expires_at: Date.now() + (resp.expires_in || 3600) * 1000,
-        };
-        saveToken(token);
-        resolve(true);
+        });
+        try { localStorage.setItem(CONSENT_KEY, '1'); } catch {}
+        r?.(true);
       },
     });
-    client.requestAccessToken();
+  }
+  return tokenClient;
+}
+
+// prompt '' = silent (no UI) — works only if consent was already granted and
+// the Google session is alive; 'consent'/'' handled by GIS. A popup only
+// appears for the interactive sign-in.
+function requestToken(prompt: '' | 'consent'): Promise<boolean> {
+  return new Promise((resolve) => {
+    getTokenClient().then((client) => {
+      // if a request is already pending, don't stomp it
+      if (pendingResolve) { resolve(false); return; }
+      pendingResolve = resolve;
+      try { client.requestAccessToken({ prompt }); }
+      catch { pendingResolve = null; resolve(false); }
+    }).catch(() => resolve(false));
   });
+}
+
+export async function signIn(): Promise<boolean> {
+  // interactive: shows the account/consent popup, then records consent so all
+  // later refreshes can be silent.
+  return requestToken('consent');
+}
+
+// Load the GIS script and build the token client ahead of any click. On mobile,
+// browsers only allow the OAuth popup to open inside the tap that triggered it;
+// if the script still has to download when the button is pressed, that async gap
+// drops the "user gesture" and the popup is silently blocked (works on desktop,
+// fails on phones). Calling this when the login screen mounts means the client
+// is already live, so signIn() opens the popup with (near) no async gap.
+export async function prewarm(): Promise<void> {
+  try { await getTokenClient(); } catch {}
+}
+
+// Ensure we hold a usable access token, silently minting a fresh one when the
+// current one is missing or within 2 min of expiry. Returns false only when an
+// interactive sign-in is genuinely required (no prior consent, or the silent
+// refresh was rejected because the Google session ended).
+export async function ensureToken(): Promise<boolean> {
+  const t = getToken();
+  if (t && t.expires_at > Date.now() + 120_000) return true; // valid, with margin
+  if (getClientId() && localStorage.getItem(CONSENT_KEY) === '1') {
+    const ok = await requestToken('');
+    if (ok) return true;
+  }
+  return !!getToken();
+}
+
+// True when a silent (re)connection is possible without user interaction —
+// used to decide whether to auto-start the periodic sync at load.
+export function canAutoConnect(): boolean {
+  return !!getClientId() && (isConnected() || localStorage.getItem(CONSENT_KEY) === '1');
 }
 
 async function driveRequest(path: string, opts: RequestInit = {}): Promise<any> {
@@ -130,7 +233,12 @@ async function driveRequest(path: string, opts: RequestInit = {}): Promise<any> 
   const res = await fetch(`https://www.googleapis.com/drive/v3${path}`, { ...opts, headers });
   if (!res.ok) {
     if (res.status === 401) { disconnect(); throw new Error('TOKEN_EXPIRED'); }
-    throw new Error(`Drive API error: ${res.status}`);
+    // Surface Google's own reason so a 403 is actionable — the most common one
+    // is "Google Drive API has not been used in project … or it is disabled"
+    // (enable it in the Cloud Console), vs rateLimitExceeded / insufficientPermissions.
+    let detail = '';
+    try { const j = await res.clone().json(); detail = j?.error?.message || j?.error?.errors?.[0]?.reason || ''; } catch {}
+    throw new Error(`Drive API error: ${res.status}${detail ? ' — ' + detail : ''}`);
   }
   const ct = res.headers.get('content-type') || '';
   return ct.includes('json') ? res.json() : res.text();
@@ -167,8 +275,9 @@ async function findFile(name: string, parentId: string): Promise<string | null> 
 async function uploadFile(name: string, content: string, parentId: string): Promise<void> {
   const existingId = await findFile(name, parentId);
   const token = getToken()!;
+  let res: Response;
   if (existingId) {
-    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`, {
+    res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`, {
       method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${token.access_token}`,
@@ -181,11 +290,19 @@ async function uploadFile(name: string, content: string, parentId: string): Prom
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     form.append('file', new Blob([content], { type: 'application/json' }));
-    await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token.access_token}` },
       body: form,
     });
+  }
+  // A write failure used to be swallowed — the sync looked green while nothing
+  // reached the cloud. Surface it (with Google's reason) so it's actionable.
+  if (!res.ok) {
+    if (res.status === 401) { disconnect(); throw new Error('TOKEN_EXPIRED'); }
+    let detail = '';
+    try { const j = await res.clone().json(); detail = j?.error?.message || j?.error?.errors?.[0]?.reason || ''; } catch {}
+    throw new Error(`Drive upload error: ${res.status}${detail ? ' — ' + detail : ''}`);
   }
 }
 
@@ -201,14 +318,33 @@ export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{
   if (syncInProgress) return { ok: false, error: 'Sync already in progress' };
   syncInProgress = true;
   try {
-    if (!isConnected()) return { ok: false, error: 'Not connected to Google Drive' };
+    if (!(await ensureToken())) return { ok: false, error: 'Not connected to Google Drive' };
     const pid = await ensureFolder();
     onProgress?.('Uploading data…');
 
+    // Merge with what's already in the cloud before writing — a plain
+    // overwrite meant whichever device uploaded last wiped every record the
+    // other device had added (the phone→PC vanishing-installs bug). If the
+    // cloud copy can't be fetched, upload local as-is, same as before.
+    let cloudData: Record<string, any> = {};
+    try {
+      const fid = await findFile('alpha_backup.json', pid);
+      if (fid) {
+        const b = JSON.parse(await downloadFile(fid));
+        if (b && b.data) cloudData = b.data;
+      }
+    } catch {}
+
     const allData: Record<string, any> = {};
-    for (const key of SYNC_TABLES) {
-      const raw = localStorage.getItem(key);
-      if (raw) allData[key] = raw;
+    for (const key of tombstonesFirst(SYNC_TABLES)) {
+      const localRaw = localStorage.getItem(key);
+      const cloudRaw = typeof cloudData[key] === 'string' ? cloudData[key] : null;
+      const merged = mergeTable(key, localRaw, cloudRaw, false);
+      if (merged == null) continue;
+      allData[key] = merged;
+      // Heal the local store with records only the cloud had, so the
+      // periodic upload doubles as a pull for id'd tables.
+      if (merged !== localRaw) { try { localStorage.setItem(key, merged); } catch {} }
     }
     const content = JSON.stringify({ version: 1, timestamp: Date.now(), data: allData }, null, 2);
     await uploadFile('alpha_backup.json', content, pid);
@@ -223,11 +359,11 @@ export async function syncToCloud(onProgress?: (msg: string) => void): Promise<{
   }
 }
 
-export async function syncFromCloud(onProgress?: (msg: string) => void): Promise<{ ok: boolean; error?: string; tables?: number }> {
+export async function syncFromCloud(onProgress?: (msg: string) => void): Promise<{ ok: boolean; error?: string; tables?: number; changed?: number }> {
   if (syncInProgress) return { ok: false, error: 'Sync already in progress' };
   syncInProgress = true;
   try {
-    if (!isConnected()) return { ok: false, error: 'Not connected to Google Drive' };
+    if (!(await ensureToken())) return { ok: false, error: 'Not connected to Google Drive' };
     const pid = await ensureFolder();
     onProgress?.('Downloading data…');
 
@@ -238,16 +374,21 @@ export async function syncFromCloud(onProgress?: (msg: string) => void): Promise
     const backup = JSON.parse(raw);
     if (!backup.data) return { ok: false, error: 'Invalid backup format' };
 
-    let count = 0;
-    for (const [key, value] of Object.entries(backup.data)) {
-      if (SYNC_TABLES.includes(key) && typeof value === 'string') {
-        localStorage.setItem(key, value);
-        count++;
-      }
+    // Record-level merge instead of overwrite: restoring can only ADD
+    // records to id'd tables — installs saved on THIS device but not yet in
+    // the cloud survive a restore intact.
+    let count = 0, changed = 0;
+    for (const key of tombstonesFirst(Object.keys(backup.data))) {
+      const value = backup.data[key];
+      if (!SYNC_TABLES.includes(key) || typeof value !== 'string') continue;
+      const prev = localStorage.getItem(key);
+      const merged = mergeTable(key, prev, value, true);
+      if (merged != null && merged !== prev) { localStorage.setItem(key, merged); changed++; }
+      count++;
     }
     localStorage.setItem(SYNC_TS_KEY, new Date().toISOString());
     onProgress?.(`Restored ${count} tables ✓`);
-    return { ok: true, tables: count };
+    return { ok: true, tables: count, changed };
   } catch (e: any) {
     return { ok: false, error: e.message || 'Unknown error' };
   } finally {
@@ -269,11 +410,12 @@ export function importAllData(json: string): { ok: boolean; tables: number; erro
     const backup = JSON.parse(json);
     if (!backup.data) return { ok: false, tables: 0, error: 'Invalid format' };
     let count = 0;
-    for (const [key, value] of Object.entries(backup.data)) {
-      if (SYNC_TABLES.includes(key) && typeof value === 'string') {
-        localStorage.setItem(key, value);
-        count++;
-      }
+    for (const key of tombstonesFirst(Object.keys(backup.data))) {
+      const value = backup.data[key];
+      if (!SYNC_TABLES.includes(key) || typeof value !== 'string') continue;
+      const merged = mergeTable(key, localStorage.getItem(key), value, true);
+      if (merged != null) localStorage.setItem(key, merged);
+      count++;
     }
     return { ok: true, tables: count };
   } catch (e: any) {

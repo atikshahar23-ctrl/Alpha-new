@@ -1,0 +1,745 @@
+// ═══════════════════════════════════════════════════════════════════════
+// PHOTOREAL SUN — shared shader for the assistant's core, used by BOTH the
+// main dashboard orb (src/orb/OrbScene.ts) and the office simulator's giant
+// Alpha hologram (agents/Office3D.jsx). Owner reference: the boot cinematic's
+// golden sun — "שמש אמיתי לחלוטין כמה שיותר".
+//
+// What makes it read as a real sun (all in one unlit fragment shader — a
+// single draw call, identical on desktop and the owner's phone GPU):
+//  • Granulation — domain-warped fbm convection cells (bright cell centers,
+//    dark intergranular lanes) with a finer second layer riding on top.
+//  • Supergranulation mottling at a lower frequency.
+//  • Sunspots — low-frequency noise wells with a dark umbra and a warmer
+//    penumbra ring, plus bright faculae (plage) hugging their boundaries.
+//  • Limb darkening — the real photosphere effect (edge visibly dimmer/redder
+//    than disc center), approximated with the standard linear law.
+//  • Differential rotation — the surface pattern drifts faster at the equator
+//    than at the poles, like the actual sun.
+//  • Chromosphere rim — a thin warm-red glow hugging the limb.
+//  • Voice reactivity — uAudioAmplitude flares the whole photosphere and
+//    speeds the churn, so the star "speaks" with the assistant.
+//
+// ── PHONE-SAFETY: why the fragment shader samples a noise TEXTURE ──
+// The first version computed Ashima simplex noise arithmetically in the
+// fragment shader. On the owner's phone that rendered as a plain BLACK ball:
+// GPUs that run fragment shaders in mediump (fp16, max ~65504) overflow the
+// simplex permute polynomial ((x*34+1)*x on a 0..289 domain reaches ~2.8M)
+// → Inf/NaN → black. Desktop fragments are highp, so it looked perfect there.
+// The fix that works on EVERY device: bake tileable fbm noise into a small
+// CanvasTexture once at startup (CPU-side, ~256², a few ms) and replace all
+// in-shader noise arithmetic with texture lookups — every value the fragment
+// shader touches then stays in the 0..~20 range, safe at any precision.
+// (The VERTEX shader keeps its simplex displacement: GLSL ES mandates highp
+// support in vertex shaders, so it cannot hit the fp16 overflow.)
+// ═══════════════════════════════════════════════════════════════════════
+import * as THREE from 'three';
+
+const NOISE = /* glsl */`
+  // Ashima Arts / Stefan Gustavson 3D simplex noise (MIT-licensed, webgl-noise)
+  vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+  vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+  vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+  float snoise(vec3 v){
+    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+    vec3 i  = floor(v + dot(v, C.yyy));
+    vec3 x0 = v - i + dot(i, C.xxx);
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+    vec3 x1 = x0 - i1 + C.xxx;
+    vec3 x2 = x0 - i2 + C.yyy;
+    vec3 x3 = x0 - D.yyy;
+    i = mod289(i);
+    vec4 p = permute(permute(permute(
+              i.z + vec4(0.0, i1.z, i2.z, 1.0))
+            + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+            + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+    float n_ = 0.142857142857;
+    vec3 ns = n_ * D.wyz - D.xzx;
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);
+    vec4 x = x_ * ns.x + ns.yyyy;
+    vec4 y = y_ * ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+    vec4 s0 = floor(b0)*2.0 + 1.0;
+    vec4 s1 = floor(b1)*2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+    vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+    vec3 p0 = vec3(a0.xy, h.x);
+    vec3 p1 = vec3(a0.zw, h.y);
+    vec3 p2 = vec3(a1.xy, h.z);
+    vec3 p3 = vec3(a1.zw, h.w);
+    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+    p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+  }
+  float fbm4(vec3 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 4; i++) { v += a * snoise(p); p *= 2.03; a *= 0.5; }
+    return v;
+  }
+`;
+
+export const SUN_VERT = /* glsl */`
+  ${NOISE}
+  uniform float uTime;
+  uniform float uAudioAmplitude;
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+  varying vec3 vObjDir;
+
+  void main() {
+    // The photosphere is nearly a perfect sphere — displacement stays subtle:
+    // a slow breathing swell plus a voice ripple that only surfaces on speech.
+    float breathe = fbm4(normal * 1.6 + vec3(0.0, uTime * 0.10, 0.0));
+    float ripple  = fbm4(normal * 4.5 + vec3(uTime * 0.8, uTime * 0.6, uTime * 1.0));
+    vec3 displaced = position + normal * (breathe * 0.015 + ripple * 0.05 * uAudioAmplitude);
+    vUv = uv;
+    vObjDir = normalize(position);
+    vNormal = normalize(normalMatrix * normal);
+    vWorldPos = (modelMatrix * vec4(displaced, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+  }
+`;
+
+// All fragment "noise" is fetched from the tileable fbm texture (uNoise,
+// wrap-repeat both axes). nz() recenters to the simplex-like -1..1 range.
+export const SUN_FRAG = /* glsl */`
+  uniform sampler2D uNoise;
+  uniform float uTime;
+  uniform float uAudioAmplitude;
+  uniform float uGain;
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+
+  float nz(vec2 p) { return texture2D(uNoise, p).r * 2.0 - 1.0; }
+
+  void main() {
+    vec3 n = normalize(vNormal);
+    vec3 viewDir = normalize(cameraPosition - vWorldPos);
+    float mu = clamp(dot(n, viewDir), 0.0, 1.0);
+
+    // ── Differential rotation: equator drifts faster than the poles ──
+    float lat = (vUv.y - 0.5) * 3.14159265;
+    float drift = uTime * (0.0022 + 0.0016 * cos(lat * 2.0));
+    vec2 p = vec2(vUv.x + drift, vUv.y);
+
+    float churn = uTime * (0.006 + uAudioAmplitude * 0.016);
+
+    // ── Granulation: domain-warped convection cells + fine grain ──
+    vec2 q = vec2(nz(p * 1.5), nz(p * 1.5 + vec2(0.37, 0.71)));
+    float gran = nz(p * 4.0 + q * 0.12 + vec2(0.0, churn));
+    float fine = nz(p * 9.0 + q * 0.07 - vec2(churn, 0.0));
+    float fine2 = nz(p * 21.0 + q * 0.04 + vec2(churn * 0.7, 0.0)); // crisp cell grain
+    float heat = 0.62 + 0.40 * gran + fine * 0.14 + fine2 * 0.09;
+
+    // ── Supergranulation mottling ──
+    heat += nz(p * 1.4 - vec2(churn * 0.4, 0.0)) * 0.15;
+
+    // ── Sunspots: umbra / penumbra / faculae ──
+    float spotN = nz(p * 0.8 + vec2(0.61, 0.13));
+    float umbra    = smoothstep(0.42, 0.60, spotN);
+    float penumbra = smoothstep(0.30, 0.44, spotN) - umbra;
+    float facula   = smoothstep(0.20, 0.30, spotN) * (1.0 - smoothstep(0.30, 0.40, spotN));
+    heat += facula * 0.45;
+    heat *= 1.0 - umbra * 0.82;
+    heat *= 1.0 - penumbra * 0.35;
+
+    // ── Limb darkening (linear law, u≈0.62 like the real photosphere) ──
+    heat *= 0.38 + 0.62 * pow(mu, 0.62);
+
+    // ── Voice: the whole photosphere flares while the assistant speaks ──
+    heat *= 1.0 + uAudioAmplitude * 0.55;
+
+    // ── Blackbody-ish ramp: deep ember → orange → gold → white-hot ──
+    vec3 col = mix(vec3(0.50, 0.11, 0.01), vec3(1.0, 0.44, 0.07), smoothstep(0.0, 0.45, heat));
+    col = mix(col, vec3(1.0, 0.78, 0.30), smoothstep(0.35, 0.85, heat));
+    col = mix(col, vec3(1.0, 0.98, 0.90), smoothstep(0.85, 1.35, heat));
+
+    // ── Chromosphere rim: thin warm-red glow hugging the limb ──
+    float rim = pow(1.0 - mu, 3.0);
+    col += vec3(1.0, 0.34, 0.10) * rim * (0.65 + uAudioAmplitude * 0.8);
+
+    // uGain < 1 tames the disc under a post-processing bloom chain (the sim's
+    // UnrealBloomPass threshold is 0.4 — at full brightness the whole disc
+    // blooms and clips to white, erasing all the surface detail).
+    gl_FragColor = vec4(col * uGain, 1.0);
+  }
+`;
+
+// Corona: an additive back-side shell with animated streamers — shares the
+// SAME uniform objects as the core material, so advancing the core's uTime
+// drives the corona for free (no second per-frame update site needed).
+const CORONA_FRAG = /* glsl */`
+  uniform sampler2D uNoise;
+  uniform float uTime;
+  uniform float uAudioAmplitude;
+  uniform float uGain;
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vWorldPos;
+
+  void main() {
+    vec3 n = normalize(vNormal);
+    vec3 viewDir = normalize(cameraPosition - vWorldPos);
+    // BackSide shell: the silhouette edge is where |dot| is small.
+    float edge = 1.0 - abs(dot(n, viewDir));
+    float streaks = 0.75 + 0.9 * (texture2D(uNoise, vUv * 1.8 + vec2(0.0, uTime * 0.008)).r - 0.5);
+    float a = pow(edge, 2.2) * streaks * (0.5 + uAudioAmplitude * 0.7);
+    gl_FragColor = vec4(vec3(1.0, 0.72, 0.32), a * uGain);
+  }
+`;
+
+export interface SunUniforms {
+  uTime: { value: number };
+  uAudioAmplitude: { value: number };
+  [key: string]: { value: unknown };
+}
+
+// ── Tileable fbm noise texture, generated once on the CPU ────────────────
+// 256² · 4 octaves of periodic value noise (lattice wraps at every octave, so
+// the texture tiles seamlessly under the shader's drifting/fract'd UVs).
+let noiseTexture: THREE.Texture | null = null;
+function getNoiseTexture(): THREE.Texture {
+  if (noiseTexture) return noiseTexture;
+  const S = 256;
+  const cvs = document.createElement('canvas');
+  cvs.width = cvs.height = S;
+  const ctx = cvs.getContext('2d')!;
+  const img = ctx.createImageData(S, S);
+  // periodic lattice hash per octave
+  const rand: number[][] = [];
+  let seed = 1337;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const octaves = [4, 8, 16, 32]; // lattice periods (all divide S → tileable)
+  octaves.forEach((per) => {
+    const g: number[] = [];
+    for (let i = 0; i < per * per; i++) g.push(rnd());
+    rand.push(g);
+  });
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      let v = 0, amp = 0.5;
+      for (let o = 0; o < octaves.length; o++) {
+        const per = octaves[o], g = rand[o];
+        const fx = (x / S) * per, fy = (y / S) * per;
+        const x0 = Math.floor(fx) % per, y0 = Math.floor(fy) % per;
+        const x1 = (x0 + 1) % per, y1 = (y0 + 1) % per;
+        const tx = smooth(fx - Math.floor(fx)), ty = smooth(fy - Math.floor(fy));
+        const a = g[y0 * per + x0], b = g[y0 * per + x1];
+        const c = g[y1 * per + x0], d = g[y1 * per + x1];
+        v += amp * ((a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty);
+        amp *= 0.5;
+      }
+      // v ∈ ~[0, 0.94] → normalize to full byte range around 0.5
+      const px = Math.max(0, Math.min(255, Math.round(((v - 0.47) * 1.9 + 0.5) * 255)));
+      const i = (y * S + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = px;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cvs);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  noiseTexture = tex;
+  return tex;
+}
+
+// gain < 1 is for scenes that run the sun through a bloom post-pass (the
+// office sim) — it keeps the disc below the bloom threshold so the surface
+// detail survives instead of clipping to a white ball.
+export function buildSunMaterial(gain = 1.0): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uAudioAmplitude: { value: 0.06 },
+      uGain: { value: gain },
+      uNoise: { value: getNoiseTexture() },
+    },
+    vertexShader: SUN_VERT,
+    fragmentShader: SUN_FRAG,
+  });
+}
+
+export function buildSunCorona(radius: number, sharedUniforms: SunUniforms): THREE.Mesh {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: sharedUniforms.uTime,
+      uAudioAmplitude: sharedUniforms.uAudioAmplitude,
+      uGain: sharedUniforms.uGain || { value: 1.0 },
+      uNoise: { value: getNoiseTexture() },
+    },
+    vertexShader: SUN_VERT,
+    fragmentShader: CORONA_FRAG,
+    transparent: true,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  return new THREE.Mesh(new THREE.SphereGeometry(radius * 1.22, 48, 48), mat);
+}
+
+// Glowing node markers at every vertex of a wireframe cage (owner reference:
+// small bright dots sitting on the cage's lattice points) — one InstancedMesh,
+// one extra draw call regardless of vertex count. Return it as a CHILD of the
+// wire mesh at the call site so it inherits that mesh's rotation for free —
+// no separate per-frame sync needed.
+export function buildWireNodes(geometry: THREE.BufferGeometry, nodeRadius: number, color: number): THREE.InstancedMesh {
+  const pos = geometry.attributes.position;
+  const seen = new Map<string, THREE.Vector3>();
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const key = `${v.x.toFixed(2)},${v.y.toFixed(2)},${v.z.toFixed(2)}`;
+    if (!seen.has(key)) seen.set(key, v.clone());
+  }
+  const verts = Array.from(seen.values());
+  const mesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(nodeRadius, 8, 8),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+    verts.length,
+  );
+  const m = new THREE.Matrix4();
+  verts.forEach((p, i) => { m.makeTranslation(p.x, p.y, p.z); mesh.setMatrixAt(i, m); });
+  mesh.instanceMatrix.needsUpdate = true;
+  return mesh;
+}
+
+// Radiating light-ray starburst (owner reference: gold streaks shooting
+// outward from the sun) — baked once into a canvas texture (a handful of
+// tapered wedges at varied angles/lengths) and shown as a single camera-
+// facing additive sprite. No per-frame cost, no shader, phone-safe by
+// construction (same technique as the existing radial-gradient glow sprites).
+let rayTexture: THREE.Texture | null = null;
+function getRayTexture(): THREE.Texture {
+  if (rayTexture) return rayTexture;
+  const S = 512;
+  const cvs = document.createElement('canvas');
+  cvs.width = cvs.height = S;
+  const ctx = cvs.getContext('2d')!;
+  ctx.translate(S / 2, S / 2);
+  const rays = 14;
+  for (let i = 0; i < rays; i++) {
+    const ang = (i / rays) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+    const len = S * 0.5 * (0.55 + Math.random() * 0.42);
+    const baseW = 2.5 + Math.random() * 5;
+    ctx.save();
+    ctx.rotate(ang);
+    const grad = ctx.createLinearGradient(0, 0, len, 0);
+    grad.addColorStop(0, 'rgba(255,222,150,0.9)');
+    grad.addColorStop(0.35, 'rgba(255,190,100,0.38)');
+    grad.addColorStop(1, 'rgba(255,170,80,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(0, -baseW);
+    ctx.lineTo(len, -0.6);
+    ctx.lineTo(len, 0.6);
+    ctx.lineTo(0, baseW);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  const tex = new THREE.CanvasTexture(cvs);
+  rayTexture = tex;
+  return tex;
+}
+export function buildRaySprite(color = 0xffdb8c, scale = 9): THREE.Sprite {
+  const mat = new THREE.SpriteMaterial({
+    map: getRayTexture(), color, transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.setScalar(scale);
+  return sprite;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CYBER CORE — the owner's chosen central-object look (public/sun-core.html
+// demo, approved for both the main dashboard and the office simulator):
+// a simplex vertex-displaced "boiling" sphere with a white-hot→gold fresnel
+// fragment, an additive back-side halo, and twin sharp edge-line cages with
+// glowing digital nodes at every lattice vertex.
+//
+// The displacement noise runs in the VERTEX stage only — vertex shaders are
+// guaranteed highp on mobile GPUs, while the same Ashima math in an fp16
+// fragment shader overflows to NaN (the phone black-screen bug). The
+// fragment stays noise-free: fresnel + the interpolated vertex noise reused
+// as free "granulation" shading.
+//
+// Uniform contract matches buildSunMaterial (uTime + uAudioAmplitude), so
+// the existing per-frame update code in both mounts drives it unchanged;
+// the demo's gentle scale/brightness "breathing" is derived in-shader from
+// uTime, with uAudioAmplitude flaring it while Alpha speaks.
+// ═══════════════════════════════════════════════════════════════════════
+
+const CYBER_SIMPLEX_GLSL = /* glsl */`
+  vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+  vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+  vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+  vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+  float snoise(vec3 v){
+    const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+    vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+    vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+    vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+    i=mod289(i);
+    vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+    float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+    vec4 j=p-49.0*floor(p*ns.z*ns.z);
+    vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+    vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+    vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+    vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+    vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+    vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+    vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+    p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+    vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+    return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+  }
+`;
+
+// Breathing pulse shared by core + halo, derived purely from the uniforms.
+const CYBER_PULSE_GLSL = /* glsl */`
+  float cyberPulse(float t, float amp) {
+    return 1.0 + sin(t * 1.4) * 0.03 + sin(t * 0.53) * 0.015 + amp * 0.06;
+  }
+`;
+
+// ── Palettes ─────────────────────────────────────────────────────────────
+// The cyber core's colors are uniforms (not literals) so the whole look can
+// be re-skinned live. CYBER_GOLD is the default Alpha look; CYBER_GOAT is
+// the "GOAT Protocol" Argentina/Messi theme (Albiceleste sky-blue + white +
+// World-Cup gold) the owner toggles from the mood grid / Sports Hub.
+export interface CyberPalette {
+  heart: number;      // disc-center hot color
+  mid: number;        // main body color
+  rim: number;        // limb color
+  halo: number;       // back-side halo shell
+  cageInner: number;  // inner lattice cage (lines + nodes)
+  cageOuter: number;  // outer lattice cage
+  light: number;      // point light the core casts on its surroundings
+}
+export const CYBER_GOLD: CyberPalette = {
+  heart: 0xFFFAE6, mid: 0xFFB840, rim: 0xFF7319,
+  halo: 0xFFC759, cageInner: 0xE8C97A, cageOuter: 0x59E8FF, light: 0xE4BC63,
+};
+export const CYBER_GOAT: CyberPalette = {
+  heart: 0xFFFFFF, mid: 0x43A1D5, rim: 0x1D6FA8,
+  halo: 0x7CC4EA, cageInner: 0xFFFFFF, cageOuter: 0x43A1D5, light: 0x43A1D5,
+};
+
+// Both the dashboard orb and the office sim read the same persisted mood key
+// the main UI writes (applyMood in src/ui/app.ts), so the GOAT theme follows
+// the owner across surfaces without any cross-app plumbing.
+export function isGoatMode(): boolean {
+  try { return localStorage.getItem('alpha_mood') === 'goat'; } catch { return false; }
+}
+
+export function buildCyberSunMaterial(gain = 1.0): THREE.ShaderMaterial {
+  const p = isGoatMode() ? CYBER_GOAT : CYBER_GOLD;
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uAudioAmplitude: { value: 0.06 },
+      uGain: { value: gain },
+      uHeart: { value: new THREE.Color(p.heart) },
+      uMid: { value: new THREE.Color(p.mid) },
+      uRim: { value: new THREE.Color(p.rim) },
+    },
+    vertexShader: /* glsl */`
+      uniform float uTime;
+      uniform float uAudioAmplitude;
+      varying vec3 vNormalW;
+      varying vec3 vViewDirW;
+      varying float vDisp;
+      ${CYBER_SIMPLEX_GLSL}
+      ${CYBER_PULSE_GLSL}
+      void main() {
+        float pulse = cyberPulse(uTime, uAudioAmplitude);
+        // Two octaves of slow simplex noise push each vertex along its
+        // normal — the silhouette itself boils instead of reading as a
+        // rigid CG sphere.
+        float n = snoise(normal * 2.2 + vec3(0.0, uTime * 0.25, 0.0)) * 0.6
+                + snoise(normal * 5.5 + vec3(uTime * 0.45)) * 0.4;
+        vDisp = n;
+        vec3 displaced = position * pulse + normal * n * 0.085 * pulse;
+        vec4 worldPos = modelMatrix * vec4(displaced, 1.0);
+        vNormalW  = normalize(mat3(modelMatrix) * normal);
+        vViewDirW = normalize(cameraPosition - worldPos.xyz);
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      uniform float uTime;
+      uniform float uAudioAmplitude;
+      uniform float uGain;
+      uniform vec3 uHeart;
+      uniform vec3 uMid;
+      uniform vec3 uRim;
+      varying vec3 vNormalW;
+      varying vec3 vViewDirW;
+      varying float vDisp;
+      ${CYBER_PULSE_GLSL}
+      void main() {
+        float pulse = cyberPulse(uTime, uAudioAmplitude);
+        // Facing ratio: 1 at the disc center, 0 at the limb.
+        float facing = clamp(dot(normalize(vNormalW), normalize(vViewDirW)), 0.0, 1.0);
+        // Hot heart -> saturated limb, like an over-exposed star.
+        vec3 heart = uHeart;
+        vec3 gold  = uMid;
+        vec3 rim   = uRim;
+        vec3 col = mix(rim, gold, smoothstep(0.0, 0.4, facing));
+        col = mix(col, heart, smoothstep(0.55, 0.95, facing));
+        // The interpolated vertex noise doubles as granulation shading.
+        col *= 0.92 + vDisp * 0.22;
+        col *= (1.05 + 0.3 * (pulse - 1.0) * 10.0) * uGain;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+}
+
+// Additive back-side halo shell — shares the core's uniform objects so one
+// per-frame uTime/amp update drives both.
+export function buildCyberHalo(radius: number, sharedUniforms: { uTime: { value: number }; uAudioAmplitude: { value: number } }): THREE.Mesh {
+  return new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 48, 48),
+    new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: sharedUniforms.uTime as any,
+        uAudioAmplitude: sharedUniforms.uAudioAmplitude as any,
+        uColor: { value: new THREE.Color(isGoatMode() ? CYBER_GOAT.halo : CYBER_GOLD.halo) },
+      },
+      side: THREE.BackSide,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */`
+        varying vec3 vNormalW; varying vec3 vViewDirW;
+        void main() {
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vNormalW  = normalize(mat3(modelMatrix) * normal);
+          vViewDirW = normalize(cameraPosition - worldPos.xyz);
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: /* glsl */`
+        precision highp float;
+        uniform float uTime;
+        uniform float uAudioAmplitude;
+        uniform vec3 uColor;
+        varying vec3 vNormalW; varying vec3 vViewDirW;
+        ${CYBER_PULSE_GLSL}
+        void main() {
+          float pulse = cyberPulse(uTime, uAudioAmplitude);
+          float rim = 1.0 - clamp(dot(normalize(-vNormalW), normalize(vViewDirW)), 0.0, 1.0);
+          float a = pow(rim, 3.4) * 0.32 * pulse;
+          gl_FragColor = vec4(uColor, a);
+        }
+      `,
+    }),
+  );
+}
+
+// Round soft-dot sprite for the lattice nodes, baked once (no asset files).
+let dotTexture: THREE.CanvasTexture | null = null;
+function getDotTexture(): THREE.CanvasTexture {
+  if (dotTexture) return dotTexture;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0.0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,.85)');
+  grad.addColorStop(1.0, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  dotTexture = new THREE.CanvasTexture(c);
+  return dotTexture;
+}
+
+// One lattice cage: sharp single-pixel edge lines + a glowing Points node
+// on every unique vertex (icosahedron buffers repeat corners per-face).
+export function buildCageLines(radius: number, detail: number, color: number, nodeSize: number): THREE.Group {
+  const group = new THREE.Group();
+  const geo = new THREE.IcosahedronGeometry(radius, detail);
+  group.add(new THREE.LineSegments(
+    new THREE.EdgesGeometry(geo),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.38, blending: THREE.AdditiveBlending, depthWrite: false }),
+  ));
+  const pos = geo.attributes.position;
+  const seen = new Set<string>();
+  const verts: number[] = [];
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const key = `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
+    if (!seen.has(key)) { seen.add(key); verts.push(v.x, v.y, v.z); }
+  }
+  geo.dispose(); // only its edges + vertex list survive
+  const nodesGeo = new THREE.BufferGeometry();
+  nodesGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  group.add(new THREE.Points(nodesGeo, new THREE.PointsMaterial({
+    color, size: nodeSize, map: getDotTexture(), transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+  })));
+  return group;
+}
+
+// Recolor a cage group in place (LineSegments + Points children) — cage colors
+// are fixed at construction, so a live theme swap has to walk the materials.
+export function tintCage(cage: THREE.Object3D, color: number): void {
+  cage.traverse((o) => {
+    const mat = (o as THREE.Mesh).material as { color?: THREE.Color } | undefined;
+    if (mat && mat.color) mat.color.setHex(color);
+  });
+}
+
+// Live-recolor an already-built cyber core (core gradient + optional halo).
+// Cage groups and point lights are the caller's to tint — they live outside
+// the shader materials.
+export function applyCyberPalette(coreMat: THREE.ShaderMaterial, palette: CyberPalette, haloMat?: THREE.ShaderMaterial): void {
+  (coreMat.uniforms.uHeart.value as THREE.Color).setHex(palette.heart);
+  (coreMat.uniforms.uMid.value as THREE.Color).setHex(palette.mid);
+  (coreMat.uniforms.uRim.value as THREE.Color).setHex(palette.rim);
+  if (haloMat && haloMat.uniforms.uColor) (haloMat.uniforms.uColor.value as THREE.Color).setHex(palette.halo);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// GHOST IN THE CORE — the "Syrax" holographic figure reaching into the
+// plasma core (owner reference: a translucent gold/cyan wireframe-scan
+// silhouette standing beside the sun, one arm extended toward it). Built
+// the same way every character rig in this codebase is built — a handful
+// of capsule/sphere proxies, no skinned mesh or GLB needed — all sharing
+// ONE ShaderMaterial for a single draw-call-cheap hologram look.
+//
+// The material takes the CORE's own uTime/uAudioAmplitude uniform OBJECTS
+// (not copies), so her scanline sweep and glow brighten in lockstep with
+// Alpha's voice for free — the existing per-frame uAudioAmplitude update
+// (driven by TTS/mic amplitude, see buildAlphaBrain's animate-loop callers)
+// already drives this without any new audio wiring.
+// ═══════════════════════════════════════════════════════════════════════
+export function buildSyraxMaterial(sharedUniforms: { uTime: { value: number }; uAudioAmplitude: { value: number } }): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: sharedUniforms.uTime as any,
+      uAudioAmplitude: sharedUniforms.uAudioAmplitude as any,
+    },
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+      varying vec3 vNormalW;
+      varying vec3 vViewDirW;
+      varying float vLocalY;
+      void main() {
+        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+        vNormalW  = normalize(mat3(modelMatrix) * normal);
+        vViewDirW = normalize(cameraPosition - worldPos.xyz);
+        vLocalY = position.y;
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      uniform float uTime;
+      uniform float uAudioAmplitude;
+      varying vec3 vNormalW;
+      varying vec3 vViewDirW;
+      varying float vLocalY;
+      ${CYBER_PULSE_GLSL}
+      void main() {
+        float pulse = cyberPulse(uTime, uAudioAmplitude);
+        float fresnel = pow(1.0 - clamp(dot(normalize(vNormalW), normalize(vViewDirW)), 0.0, 1.0), 2.2);
+        vec3 gold = vec3(1.0, 0.78, 0.28);
+        vec3 cyan = vec3(0.25, 0.92, 1.0);
+        vec3 col = mix(gold, cyan, fresnel);
+        // A scanline band sweeps her body continuously — faster and
+        // brighter while she "speaks" (uAudioAmplitude), settling to a
+        // slow idle sweep when silent.
+        float speed = 0.35 + uAudioAmplitude * 1.6;
+        float scanY = fract(vLocalY * 0.55 - uTime * speed);
+        float scan = smoothstep(0.97, 1.0, scanY) + smoothstep(0.05, 0.0, scanY) * 0.6;
+        // Kept deliberately dim in the body (mostly-transparent construct,
+        // not a solid figure) — many overlapping additive-blended limb
+        // meshes stack fast, so headroom here is what keeps her reading as
+        // glowing edges + a scanline sweep instead of a blown-out white
+        // silhouette once bloom picks it up.
+        float body = 0.16 + fresnel * 0.38;
+        float glow = (body + scan * (0.45 + uAudioAmplitude * 1.1)) * pulse * (0.65 + uAudioAmplitude * 0.55);
+        gl_FragColor = vec4(col * glow, clamp(0.14 + fresnel * 0.3 + scan * 0.26, 0.0, 0.55));
+      }
+    `,
+  });
+}
+
+export interface SyraxHologram {
+  group: THREE.Group;
+  update(time: number): void;
+}
+
+// A low-poly primitive rig — head/torso/hips/legs plus two shoulder-pivot
+// arm groups (the right one pre-rotated to reach up and across toward the
+// core at the parent group's origin) — every mesh shares the one material
+// above. update(time) drives a slow idle sway/breathing motion so she
+// reads as alive even when uAudioAmplitude is at rest.
+export function buildSyraxHologram(sharedUniforms: { uTime: { value: number }; uAudioAmplitude: { value: number } }): SyraxHologram {
+  const mat = buildSyraxMaterial(sharedUniforms);
+  const group = new THREE.Group();
+  const cap = (r: number, len: number) => new THREE.CapsuleGeometry(r, len, 4, 8);
+  const sph = (r: number) => new THREE.SphereGeometry(r, 12, 12);
+
+  const head = new THREE.Mesh(sph(0.155), mat); head.position.y = 2.32; group.add(head);
+  const neck = new THREE.Mesh(cap(0.055, 0.08), mat); neck.position.y = 2.16; group.add(neck);
+  const torso = new THREE.Mesh(cap(0.21, 0.5), mat); torso.position.y = 1.78; group.add(torso);
+  const hips = new THREE.Mesh(sph(0.2), mat); hips.position.y = 1.38; hips.scale.set(1, 0.72, 0.85); group.add(hips);
+
+  // Legs — standing, slight contrapposto.
+  const thighL = new THREE.Mesh(cap(0.09, 0.46), mat); thighL.position.set(-0.1, 1.02, 0.02); thighL.rotation.z = 0.03; group.add(thighL);
+  const shinL = new THREE.Mesh(cap(0.075, 0.46), mat); shinL.position.set(-0.1, 0.54, 0.02); group.add(shinL);
+  const footL = new THREE.Mesh(sph(0.09), mat); footL.position.set(-0.1, 0.08, 0.08); footL.scale.set(1, 0.6, 1.5); group.add(footL);
+  const thighR = new THREE.Mesh(cap(0.09, 0.46), mat); thighR.position.set(0.11, 1.0, -0.03); thighR.rotation.z = -0.08; group.add(thighR);
+  const shinR = new THREE.Mesh(cap(0.075, 0.46), mat); shinR.position.set(0.15, 0.53, -0.05); shinR.rotation.z = -0.05; group.add(shinR);
+  const footR = new THREE.Mesh(sph(0.09), mat); footR.position.set(0.16, 0.08, 0.02); footR.scale.set(1, 0.6, 1.5); group.add(footR);
+
+  // Left arm — relaxed at her side.
+  const shoulderL = new THREE.Group(); shoulderL.position.set(-0.27, 1.95, 0); group.add(shoulderL);
+  const upperArmL = new THREE.Mesh(cap(0.065, 0.34), mat); upperArmL.position.y = -0.2; upperArmL.rotation.z = 0.18; shoulderL.add(upperArmL);
+  const foreArmL = new THREE.Mesh(cap(0.055, 0.32), mat); foreArmL.position.set(-0.06, -0.52, 0); foreArmL.rotation.z = 0.1; shoulderL.add(foreArmL);
+  const handL = new THREE.Mesh(sph(0.06), mat); handL.position.set(-0.09, -0.78, 0); shoulderL.add(handL);
+
+  // Right arm — reaching up and inward toward the core at [0,0,0].
+  const shoulderR = new THREE.Group(); shoulderR.position.set(0.27, 1.95, 0); group.add(shoulderR);
+  const upperArmR = new THREE.Mesh(cap(0.065, 0.34), mat); upperArmR.position.y = -0.17; shoulderR.add(upperArmR);
+  const foreArmR = new THREE.Mesh(cap(0.055, 0.32), mat); foreArmR.position.set(0, -0.35, 0); shoulderR.add(foreArmR);
+  const handR = new THREE.Mesh(sph(0.065), mat); handR.position.set(0, -0.5, 0); shoulderR.add(handR);
+  shoulderR.rotation.z = -1.15;
+  shoulderR.rotation.x = 0.35;
+
+  const update = (time: number) => {
+    group.rotation.y = Math.sin(time * 0.18) * 0.05;
+    shoulderR.rotation.z = -1.15 + Math.sin(time * 0.6) * 0.04;
+    shoulderL.rotation.z = 0.18 + Math.sin(time * 0.5 + 1.3) * 0.02;
+    head.rotation.y = Math.sin(time * 0.4) * 0.06;
+  };
+
+  return { group, update };
+}

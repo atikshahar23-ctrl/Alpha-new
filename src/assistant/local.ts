@@ -98,6 +98,23 @@ const FACTS_HE = [
   'המלחמה הקצרה בהיסטוריה נמשכה 38 דקות.',
 ];
 
+// JavaScript's \b word boundary is ASCII-only — Hebrew letters aren't \w, so
+// a pattern like /\bמה השעה\b/ can NEVER match plain Hebrew input. Every
+// Hebrew alternative in the command regexes below was silently dead because of
+// this (the assistant simply didn't answer Hebrew commands). anyWord() keeps
+// the same whole-word intent with a boundary that counts Hebrew letters as
+// word characters too.
+const WORD_CLASS = 'A-Za-z0-9_\\u0590-\\u05FF';
+const wordReCache = new Map<string, RegExp>();
+function anyWord(text: string, alts: string): boolean {
+  let re = wordReCache.get(alts);
+  if (!re) {
+    re = new RegExp(`(?:^|[^${WORD_CLASS}])(?:${alts})(?![${WORD_CLASS}])`, 'i');
+    wordReCache.set(alts, re);
+  }
+  return re.test(text);
+}
+
 export function tryLocalCommand(text: string): string | null {
   const t = text.trim();
   const low = t.toLowerCase();
@@ -109,19 +126,19 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- TIME ---
-  if (/\b(what time|the time|מה השעה|כמה שעה|time now)\b/i.test(low)) {
+  if (anyWord(low, "what time|the time|מה השעה|כמה שעה|time now")) {
     const d = new Date();
     const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     return he ? `השעה עכשיו ${time}` : `It's currently ${time}`;
   }
 
   // --- DATE ---
-  if (/\b(what date|today'?s? date|what day|מה התאריך|איזה יום|תאריך)\b/i.test(low)) {
+  if (anyWord(low, "what date|today'?s? date|what day|מה התאריך|איזה יום|תאריך")) {
     return formatDate(new Date(), he);
   }
 
   // --- CALCULATOR ---
-  if (/^[\d(].*[+\-*/^%]/.test(t.replace(/\s/g, '')) || /\b(calculate|calc|חשב|תחשב)\b/i.test(low)) {
+  if (/^[\d(].*[+\-*/^%]/.test(t.replace(/\s/g, '')) || anyWord(low, "calculate|calc|חשב|תחשב")) {
     const expr = t.replace(/^(calculate|calc|חשב|תחשב)\s*/i, '');
     const result = calculate(expr);
     if (result) return he ? `התוצאה: ${result}` : `Result: ${result}`;
@@ -131,13 +148,13 @@ export function tryLocalCommand(text: string): string | null {
   if (/^(add task|new task|הוסף משימה|משימה חדשה)\s*[:\-]?\s*/i.test(t)) {
     const taskText = t.replace(/^(add task|new task|הוסף משימה|משימה חדשה)\s*[:\-]?\s*/i, '').trim();
     if (!taskText) return he ? 'מה המשימה? לדוגמה: "הוסף משימה לקנות חלב"' : 'What\'s the task? Example: "add task buy groceries"';
-    const priority = /\b(urgent|important|דחוף|חשוב|high)\b/i.test(taskText) ? 'high' as const : 'med' as const;
-    addTask(taskText.replace(/\b(urgent|important|דחוף|חשוב)\b/i, '').trim(), priority);
+    const priority = anyWord(taskText, "urgent|important|דחוף|חשוב|high") ? 'high' as const : 'med' as const;
+    addTask(taskText.replace(/\b(urgent|important)\b/i, '').replace(/דחוף|חשוב/, '').trim(), priority);
     return he ? `✅ המשימה נוספה: "${taskText}"` : `✅ Task added: "${taskText}"`;
   }
 
   // --- LIST TASKS ---
-  if (/\b(my tasks|show tasks|list tasks|המשימות שלי|הצג משימות|רשימת משימות|tasks)\b/i.test(low)) {
+  if (anyWord(low, "my tasks|show tasks|list tasks|המשימות שלי|הצג משימות|רשימת משימות|tasks")) {
     return formatTasks(loadTasks(), he);
   }
 
@@ -168,20 +185,20 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- LIST NOTES ---
-  if (/\b(my notes|show notes|list notes|ההערות שלי|הצג הערות)\b/i.test(low)) {
+  if (anyWord(low, "my notes|show notes|list notes|ההערות שלי|הצג הערות")) {
     const notes = loadNotes();
     if (!notes.length) return he ? 'אין הערות שמורות.' : 'No saved notes.';
     return (he ? '📝 הערות:\n' : '📝 Notes:\n') + notes.slice(0, 10).map((n, i) => `${i + 1}. ${n}`).join('\n');
   }
 
   // --- CLEAR NOTES ---
-  if (/\b(clear notes|delete notes|מחק הערות|נקה הערות)\b/i.test(low)) {
+  if (anyWord(low, "clear notes|delete notes|מחק הערות|נקה הערות")) {
     clearNotes();
     return he ? '🗑️ כל ההערות נמחקו.' : '🗑️ All notes cleared.';
   }
 
   // --- TODAY SUMMARY ---
-  if (/^(today|what's today|היום|מה יש היום|מה קורה היום)\b/i.test(low)) {
+  if ((/^(today|what's today)\b/i.test(low) || /^(היום|מה יש היום|מה קורה היום)(?![A-Za-z0-9_\u0590-\u05FF])/.test(low))) {
     const today = new Date().toISOString().slice(0, 10);
     const evs = loadEvents().filter(e => e.date === today);
     const tasks = loadTasks().filter(t => !t.done);
@@ -201,7 +218,7 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- CALENDAR ---
-  if (/\b(my calendar|my schedule|my events|לוח שנה|היומן שלי|אירועים)\b/i.test(low)) {
+  if (anyWord(low, "my calendar|my schedule|my events|לוח שנה|היומן שלי|אירועים")) {
     const today = new Date().toISOString().slice(0, 10);
     const ev = loadEvents().filter(e => e.date >= today);
     if (!ev.length) return he ? '📅 היומן ריק.' : '📅 Calendar is empty.';
@@ -222,17 +239,17 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- COIN FLIP ---
-  if (/\b(flip|coin|heads|tails|הטל מטבע|מטבע|עץ או פלי)\b/i.test(low)) {
+  if (anyWord(low, "flip|coin|heads|tails|הטל מטבע|מטבע|עץ או פלי")) {
     return coinFlip(he);
   }
 
   // --- DICE ---
-  if (/\b(roll|dice|die|הטל קובייה|קובייה)\b/i.test(low)) {
+  if (anyWord(low, "roll|dice|die|הטל קובייה|קובייה")) {
     return diceRoll(he);
   }
 
   // --- RANDOM NUMBER ---
-  if (/\b(random number|random between|מספר אקראי)\b/i.test(low)) {
+  if (anyWord(low, "random number|random between|מספר אקראי")) {
     const nums = t.match(/\d+/g);
     const min = nums?.[0] ? parseInt(nums[0]) : 1;
     const max = nums?.[1] ? parseInt(nums[1]) : 100;
@@ -241,12 +258,12 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- JOKE ---
-  if (/\b(joke|tell me a joke|בדיחה|תספר בדיחה|ספר בדיחה)\b/i.test(low)) {
+  if (anyWord(low, "joke|tell me a joke|בדיחה|תספר בדיחה|ספר בדיחה")) {
     return pick(he ? JOKES_HE : JOKES_EN);
   }
 
   // --- FUN FACT ---
-  if (/\b(fun fact|fact|עובדה|עובדה מעניינת)\b/i.test(low)) {
+  if (anyWord(low, "fun fact|fact|עובדה|עובדה מעניינת")) {
     return pick(he ? FACTS_HE : FACTS_EN);
   }
 
@@ -266,12 +283,12 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- DAILY BRIEFING ---
-  if (/\b(briefing|brief me|daily brief|תדריך|סיכום יומי|morning brief)\b/i.test(low)) {
+  if (anyWord(low, "briefing|brief me|daily brief|תדריך|סיכום יומי|morning brief")) {
     return dailyBriefing();
   }
 
   // --- WEEKLY REPORT ---
-  if (/\b(weekly report|week report|דוח שבועי|סיכום שבועי)\b/i.test(low)) {
+  if (anyWord(low, "weekly report|week report|דוח שבועי|סיכום שבועי")) {
     return weeklyReport();
   }
 
@@ -285,13 +302,13 @@ export function tryLocalCommand(text: string): string | null {
     return he ? `⏱️ מעקב זמן התחיל: ${project}` : `⏱️ Time tracking started: ${project}`;
   }
 
-  if (/\b(stop timer|stop tracking|עצור טיימר|עצור מעקב)\b/i.test(low)) {
+  if (anyWord(low, "stop timer|stop tracking|עצור טיימר|עצור מעקב")) {
     const entry = stopTimer();
     if (!entry) return he ? 'אין טיימר פעיל.' : 'No active timer.';
     return he ? `⏱️ נעצר! ${entry.project} — ${formatDuration(entry.duration)}` : `⏱️ Stopped! ${entry.project} — ${formatDuration(entry.duration)}`;
   }
 
-  if (/\b(time today|tracked time|זמן היום|מעקב זמן)\b/i.test(low)) {
+  if (anyWord(low, "time today|tracked time|זמן היום|מעקב זמן")) {
     const td = todayTime();
     if (!td.total) return he ? '⏱️ לא נרשם זמן היום.' : '⏱️ No time tracked today.';
     const lines = td.byProject.map(p => `• ${p.project}: ${formatDuration(p.minutes)}`).join('\n');
@@ -299,7 +316,7 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- ALPHA SCORE ---
-  if (/\b(my score|alpha score|הציון שלי|ביצועים|score)\b/i.test(low)) {
+  if (anyWord(low, "my score|alpha score|הציון שלי|ביצועים|score")) {
     const sc = calculateScore();
     const label = scoreLabel(sc.total);
     return he
@@ -308,7 +325,7 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- REVENUE / BUSINESS SUMMARY ---
-  if (/\b(revenue|sales|income|הכנסות|מכירות|pipeline|פייפליין)\b/i.test(low)) {
+  if (anyWord(low, "revenue|sales|income|הכנסות|מכירות|pipeline|פייפליין")) {
     try {
       const rev = revenueStats();
       const leads = loadLeads();
@@ -320,7 +337,7 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- EXPENSES ---
-  if (/\b(expenses|spending|my spending|הוצאות|כמה הוצאתי)\b/i.test(low)) {
+  if (anyWord(low, "expenses|spending|my spending|הוצאות|כמה הוצאתי")) {
     try {
       const exp = expenseSummary();
       let out = he ? `💸 הוצאות החודש: ₪${exp.monthTotal.toLocaleString()}\n` : `💸 This month: ₪${exp.monthTotal.toLocaleString()}\n`;
@@ -332,7 +349,7 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- GOALS ---
-  if (/\b(my goals|goals|יעדים|המטרות שלי)\b/i.test(low)) {
+  if (anyWord(low, "my goals|goals|יעדים|המטרות שלי")) {
     try {
       const gs = activeGoalsSummary();
       const goals = loadGoals();
@@ -359,7 +376,7 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- STATUS / QUICK SUMMARY ---
-  if (/\b(status|my status|סטטוס|מה המצב)\b/i.test(low)) {
+  if (anyWord(low, "status|my status|סטטוס|מה המצב")) {
     const tasks = loadTasks();
     const open = tasks.filter(t => !t.done).length;
     const today = new Date().toISOString().slice(0, 10);
@@ -379,7 +396,7 @@ export function tryLocalCommand(text: string): string | null {
 
   // --- WELLNESS COMMANDS ---
   // Log mood
-  if (/\b(mood|מצב רוח|איך אני מרגיש|אני מרגיש)\b/i.test(low)) {
+  if (anyWord(low, "mood|מצב רוח|איך אני מרגיש|אני מרגיש")) {
     const moodMap: Record<string, Mood> = {
       'great': 'great', 'מעולה': 'great', 'מצוין': 'great', 'נהדר': 'great',
       'good': 'good', 'טוב': 'good', 'בסדר גמור': 'good',
@@ -400,7 +417,7 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // Water tracker
-  if (/\b(water|שתיתי מים|שתה מים|מים|כוס מים)\b/i.test(low)) {
+  if (anyWord(low, "water|שתיתי מים|שתה מים|מים|כוס מים")) {
     const glasses = addWater(1);
     const goal = 8;
     const bar = '💧'.repeat(Math.min(glasses, goal)) + '○'.repeat(Math.max(0, goal - glasses));
@@ -410,7 +427,7 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // Sleep log
-  const sleepMatch = t.match(/\b(?:ישנתי|slept|sleep)\s+(\d+(?:\.\d+)?)\s*(?:שעות|hours?)?/i);
+  const sleepMatch = t.match(/(?:^|[^A-Za-z0-9_\u0590-\u05FF])(?:ישנתי|slept|sleep)\s+(\d+(?:\.\d+)?)\s*(?:שעות|hours?)?/i);
   if (sleepMatch) {
     const hours = parseFloat(sleepMatch[1]);
     logSleep(hours, 3);
@@ -421,7 +438,7 @@ export function tryLocalCommand(text: string): string | null {
   }
 
   // --- QUICK HEBREW COMMANDS (short forms) ---
-  if (/^(מה יש מחר|מחר)\b/i.test(low)) {
+  if (/^(מה יש מחר|מחר)(?![A-Za-z0-9_\u0590-\u05FF])/.test(low)) {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
     const evs = loadEvents().filter(e => e.date === tomorrow);
     if (!evs.length) return 'אין אירועים מתוכננים למחר.';
@@ -430,12 +447,12 @@ export function tryLocalCommand(text: string): string | null {
     return out.trim();
   }
 
-  if (/^(פיקאצ'ו|פיקצו|pikachu|pika)\b/i.test(low)) {
+  if (/^(פיקאצ'ו|פיקצו|pikachu|pika)(?![A-Za-z0-9_\u0590-\u05FF])/i.test(low)) {
     return he ? 'פיקה פיקה! ⚡' : 'Pika pika! ⚡';
   }
 
   // --- HELP ---
-  if (/\b(help|what can you do|מה אתה יכול|עזרה|יכולות)\b/i.test(low)) {
+  if (anyWord(low, "help|what can you do|מה אתה יכול|עזרה|יכולות")) {
     return he
       ? `🤖 הנה מה שאני יכול לעשות בלי אינטרנט:
 • "הוסף משימה ..." — ניהול משימות

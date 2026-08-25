@@ -5,8 +5,15 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
+import { pikaEmoteSpeak } from '../assistant/pikaVoice';
+import { buildCyberSunMaterial, buildCyberHalo, buildCageLines, applyCyberPalette, tintCage, CYBER_GOLD, CYBER_GOAT, type CyberPalette } from './sunShader';
+import { readObj, writeObj } from '../util/batchedStore';
+import { GEN1 } from '../data/gen1';
+import { POKEMON_SPRITE_COLOR } from '../data/pokemonColors';
 
 export type PikaEmote = 'happy' | 'curious' | 'excited' | 'sad' | 'surprised';
+
+export interface CharXform { x: number; y: number; z: number; s: number; px: number; py: number; pz: number; }
 
 export interface OrbHandle {
   setEnergy(v: number): void;
@@ -14,6 +21,37 @@ export interface OrbHandle {
   dispose(): void;
   startBodyDetection(): void;
   stopBodyDetection(): void;
+  setCharacter(name: string): void;
+  throwPokeball(onOpen?: () => void, onDone?: () => void): void;
+  pokeballHold?(nx: number, ny: number): void;
+  pokeballThrow?(onArrive?: () => void, speed?: number): void;
+  pokeballRelease?(): void;
+  setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number): void;
+  getCharacterTransform(): CharXform;
+  resetCharacterTransform(): void;
+  pinCharacterTransform(): void;
+  hasPinnedTransform(): boolean;
+  attackCharacter(canvas: HTMLCanvasElement): void;
+  setPerfMode(on: boolean): void;
+  // Optional: register a 0..1 live audio-level source (e.g. a mic AnalyserNode)
+  // the plasma core polls each frame so it ripples to real voice while
+  // listening. Falls back to state-machine energy when unset / returns 0.
+  attachAudioLevel?(fn: () => number): void;
+  // GOAT Protocol — swap the Alpha Brain core between the default gold look
+  // and the Argentina/Messi Albiceleste palette, live (no rebuild).
+  setGoatTheme?(on: boolean): void;
+  // Oriki Protocol — kid-safe mode: bright toon post-process + tap-to-bounce
+  // toy vehicles, toggled live (no rebuild).
+  setOrikiMode?(on: boolean): void;
+  // One-shot chromatic-aberration "glitch" burst (voice activation, mode
+  // switches). The per-frame decay already in the render loop fades it out.
+  pulseGlitch?(strength?: number): void;
+  // Revenue Data-Tornado — gold particle helix around the core whose filled
+  // height is the month's HeavyGuard revenue vs. target (0..1).
+  setRevenueFill?(v: number): void;
+  // Ingestion burst — explosion of light on the tornado when a new
+  // installation is logged.
+  revenueIngest?(): void;
 }
 
 // ============================================================
@@ -56,6 +94,255 @@ const GOLD_VIGNETTE_SHADER = {
     }
   `,
 };
+
+// Radial chromatic-aberration "shockwave" pass — off (uStrength 0) by default,
+// punched to a peak value by the jet-turbine ignition sequence below and left
+// to decay back to 0 every frame after.
+const CHROMATIC_SHOCKWAVE_SHADER = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    uStrength: { value: 0.0 },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float uStrength;
+    varying vec2 vUv;
+    void main() {
+      vec2 dir = vUv - 0.5;
+      vec2 off = dir * length(dir) * uStrength;
+      float r = texture2D(tDiffuse, vUv - off).r;
+      float g = texture2D(tDiffuse, vUv).g;
+      float b = texture2D(tDiffuse, vUv + off).b;
+      gl_FragColor = vec4(r, g, b, 1.0);
+    }
+  `,
+};
+
+// Posterize/saturation-boost pass — the "Oriki Protocol" kid-safe mode's
+// bright cartoonish look. uStrength lerps 0→1 on entry/exit rather than a
+// hard cut, same pattern as CHROMATIC_SHOCKWAVE_SHADER's decay above.
+const TOON_POSTERIZE_SHADER = {
+  uniforms: { tDiffuse: { value: null as THREE.Texture | null }, uStrength: { value: 0.0 } },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float uStrength;
+    varying vec2 vUv;
+    void main() {
+      vec4 texel = texture2D(tDiffuse, vUv);
+      vec3 hsv = texel.rgb;
+      float maxc = max(max(hsv.r, hsv.g), hsv.b);
+      vec3 boosted = mix(vec3(maxc), texel.rgb, 1.6); // punch up saturation
+      const float bands = 5.0;
+      vec3 toon = floor(boosted * bands) / bands;
+      gl_FragColor = vec4(mix(texel.rgb, clamp(toon, 0.0, 1.0), uStrength), texel.a);
+    }
+  `,
+};
+
+// ── Revenue Data-Tornado ────────────────────────────────────────────────
+// A helix column of gold particles orbiting the Alpha core: its filled
+// height IS the month's HeavyGuard revenue (uFill = revenue / target).
+// All motion is computed in the vertex shader from uTime — zero per-frame
+// CPU attribute writes, one draw call. burst() (fired when a new install
+// is logged) spikes uBurst → size/brightness surge the bloom pass turns
+// into an explosion of light, decaying with the same *= 1-dt·k pattern as
+// the chromatic shockwave.
+function buildRevenueTornado(count: number, rBase: number, rSpread: number) {
+  const geo = new THREE.BufferGeometry();
+  const seeds = new Float32Array(count), radii = new Float32Array(count);
+  const speeds = new Float32Array(count), phases = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    seeds[i] = Math.random();
+    radii[i] = rBase + Math.random() * rSpread;
+    speeds[i] = 0.25 + Math.random() * 0.5;
+    phases[i] = Math.random() * PI2;
+  }
+  // three requires a position attribute to know the vertex count; the
+  // shader derives the real position from the per-particle attributes.
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+  geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+  geo.setAttribute('aRadius', new THREE.BufferAttribute(radii, 1));
+  geo.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1));
+  geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uFill: { value: 0.35 },
+      uBurst: { value: 0 },
+      uPx: { value: Math.min(window.devicePixelRatio || 1, 2) },
+    },
+    vertexShader: /* glsl */`
+      attribute float aSeed;
+      attribute float aRadius;
+      attribute float aSpeed;
+      attribute float aPhase;
+      uniform float uTime;
+      uniform float uFill;
+      uniform float uBurst;
+      uniform float uPx;
+      varying float vGlow;
+      void main() {
+        const float H = 4.2;
+        float fill = max(uFill, 0.06);
+        float yN = fract(aSeed + uTime * 0.045 * (0.5 + aSpeed));
+        float y = yN * H * fill - 1.9;
+        float pinch = 1.0 - 0.38 * pow(yN, 2.0);      // tornado silhouette
+        float ang = aPhase + uTime * aSpeed * (1.0 + uBurst * 1.5);
+        float r = aRadius * pinch;
+        vec4 mv = modelViewMatrix * vec4(cos(ang) * r, y, sin(ang) * r, 1.0);
+        float tip = smoothstep(0.72, 1.0, yN);        // brightest at the live edge
+        vGlow = (0.30 + 0.70 * tip) * (1.0 + uBurst * 2.2);
+        gl_PointSize = (1.6 + aSeed * 2.2) * (1.0 + uBurst * 1.2) * uPx * (6.0 / max(0.5, -mv.z));
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      varying float vGlow;
+      void main() {
+        float a = smoothstep(0.5, 0.08, length(gl_PointCoord - 0.5));
+        vec3 col = mix(vec3(0.35, 0.22, 0.02), vec3(1.0, 0.85, 0.45), min(vGlow, 1.0));
+        gl_FragColor = vec4(col * vGlow, a * 0.8);
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false; // positions live in the shader; default bounds would cull it
+  let time = 0;
+  return {
+    points,
+    update(dt: number) {
+      time += dt;
+      mat.uniforms.uTime.value = time;
+      mat.uniforms.uBurst.value *= Math.max(0, 1 - dt * 2.2);
+    },
+    setFill(v: number) { mat.uniforms.uFill.value = Math.max(0, Math.min(1, v)); },
+    burst() { mat.uniforms.uBurst.value = 1; },
+    burstLevel() { return mat.uniforms.uBurst.value as number; },
+    dispose() { geo.dispose(); mat.dispose(); },
+  };
+}
+
+// Hard-banded 3-tone gradient for MeshToonMaterial — flat cel-shaded toy look.
+let _toonGradientMap: THREE.DataTexture | null = null;
+function toonGradientMap(): THREE.DataTexture {
+  if (_toonGradientMap) return _toonGradientMap;
+  const data = new Uint8Array([70, 70, 70, 255, 165, 165, 165, 255, 255, 255, 255, 255]);
+  const tex = new THREE.DataTexture(data, 3, 1, THREE.RGBAFormat);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.needsUpdate = true;
+  _toonGradientMap = tex;
+  return tex;
+}
+
+// One friendly original toy rescue vehicle — round cartoon eyes on the hood,
+// bright toon-shaded body. Deliberately an original design (not a licensed
+// character) built the same way this file bakes every other canvas decal.
+function buildToyVehicle(bodyColor: number, capColor: number): THREE.Group {
+  const gradientMap = toonGradientMap();
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshToonMaterial({ color: bodyColor, gradientMap });
+  const capMat = new THREE.MeshToonMaterial({ color: capColor, gradientMap });
+  const wheelMat = new THREE.MeshToonMaterial({ color: 0x1c1c1c, gradientMap });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.28, 0.34), bodyMat);
+  body.position.y = 0.22;
+  g.add(body);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.22, 0.30), capMat);
+  cab.position.set(-0.06, 0.42, 0);
+  g.add(cab);
+  const wheelGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.08, 14);
+  ([[-0.2, -0.19], [0.2, -0.19], [-0.2, 0.19], [0.2, 0.19]] as [number, number][]).forEach(([x, z]) => {
+    const w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(x, 0.11, z);
+    g.add(w);
+  });
+  const eyeCvs = document.createElement('canvas'); eyeCvs.width = 128; eyeCvs.height = 64;
+  const ectx = eyeCvs.getContext('2d')!;
+  ectx.fillStyle = '#fff';
+  ectx.beginPath(); ectx.ellipse(38, 32, 22, 22, 0, 0, PI2); ectx.ellipse(90, 32, 22, 22, 0, 0, PI2); ectx.fill();
+  ectx.fillStyle = '#20242c';
+  ectx.beginPath(); ectx.ellipse(42, 30, 10, 10, 0, 0, PI2); ectx.ellipse(94, 30, 10, 10, 0, 0, PI2); ectx.fill();
+  const eyeTex = new THREE.CanvasTexture(eyeCvs);
+  const eyes = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.17), new THREE.MeshBasicMaterial({ map: eyeTex, transparent: true }));
+  eyes.position.set(0.32, 0.25, 0);
+  eyes.rotation.y = PI / 2;
+  g.add(eyes);
+  g.scale.setScalar(0.85);
+  return g;
+}
+
+interface ToyPhysics { mesh: THREE.Group; vel: THREE.Vector3; angVel: number; spawn: THREE.Vector3; }
+interface ToyPlayground {
+  group: THREE.Group;
+  update(dt: number): void;
+  handleTap(ndcX: number, ndcY: number, camera: THREE.Camera): void;
+  setActive(on: boolean): void;
+}
+// Three original toy rescue vehicles that bounce with simple gravity + floor-
+// bounce physics when tapped — the "Oriki Protocol" play toy for a locked-
+// down kid-safe mode. Self-contained: mounts add/remove its own raycast tap
+// listener only while active, so it never competes with normal-mode gestures.
+function createToyPlayground(): ToyPlayground {
+  const group = new THREE.Group();
+  group.position.set(0, -1.35, 1.4);
+  group.visible = false;
+  const specs: [number, number][] = [[0x3E8EF7, 0xffffff], [0xFF5A4E, 0xffe27a], [0xFFC93C, 0x2fbf71]];
+  const toys: ToyPhysics[] = specs.map((c, i) => {
+    const mesh = buildToyVehicle(c[0], c[1]);
+    const spawn = new THREE.Vector3((i - 1) * 1.15, 0, 0);
+    mesh.position.copy(spawn);
+    group.add(mesh);
+    return { mesh, vel: new THREE.Vector3(), angVel: 0, spawn };
+  });
+  const raycaster = new THREE.Raycaster();
+  const GRAVITY = 6.4;
+  const update = (dt: number) => {
+    toys.forEach((t) => {
+      t.vel.y -= GRAVITY * dt;
+      t.mesh.position.addScaledVector(t.vel, dt);
+      t.mesh.rotation.y += t.angVel * dt;
+      if (t.mesh.position.y < 0) {
+        t.mesh.position.y = 0;
+        if (t.vel.y < 0) t.vel.y *= -0.55;
+        t.vel.x *= 0.85; t.vel.z *= 0.85; t.angVel *= 0.85;
+        if (Math.abs(t.vel.y) < 0.15 && Math.abs(t.vel.x) < 0.05 && Math.abs(t.vel.z) < 0.05) { t.vel.set(0, 0, 0); t.angVel = 0; }
+      }
+    });
+  };
+  const handleTap = (ndcX: number, ndcY: number, cam: THREE.Camera) => {
+    if (!group.visible) return;
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), cam);
+    const hits = raycaster.intersectObjects(group.children, true);
+    if (!hits.length) return;
+    let obj: THREE.Object3D | null = hits[0].object;
+    while (obj && obj.parent !== group) obj = obj.parent;
+    const toy = toys.find((t) => t.mesh === obj);
+    if (toy) {
+      toy.vel.set((Math.random() - 0.5) * 2.6, 3.6 + Math.random() * 1.3, (Math.random() - 0.5) * 1.6);
+      toy.angVel = (Math.random() - 0.5) * 10;
+    }
+  };
+  const setActive = (on: boolean) => {
+    group.visible = on;
+    if (on) toys.forEach((t) => { t.mesh.position.copy(t.spawn); t.mesh.rotation.set(0, 0, 0); t.vel.set(0, 0, 0); t.angVel = 0; });
+  };
+  return { group, update, handleTap, setActive };
+}
 
 // ============================================================
 // Grid floor shaders — upgraded with data flow + holographic flicker
@@ -994,6 +1281,369 @@ function buildPikachu(mats: PikachuMaterials, detail: number): PikachuParts {
   return { group, head: headGroup, leftEye, rightEye, leftPupil, rightPupil, leftEyelid, rightEyelid, leftEarGroup, rightEarGroup, cheekMatL, cheekMatR, tail, leftArm, rightArm, mouthMesh, tongue, sparks, sparkMats, sparkMeshes, auraMat, coronaMats };
 }
 
+// ============================================================
+// JET-TURBINE IGNITION SEQUENCE — a one-shot "OS boot-up" cinematic that fires
+// once per orb mount: a synthesized (no external audio file, matching the
+// procedural-chime convention already used by index.html's own boot sound)
+// 3-phase jet-turbine spool-up → brownout flicker → ignition shockwave, with
+// camera shake and light intensity driven directly off live Web Audio
+// analyser data rather than a fixed animation curve.
+// ============================================================
+
+// Trauma-based camera shake (Squirrel Eiserloh's GDC pattern): a single
+// `trauma` scalar decays over time; the actual shake offset is trauma^2 so it
+// reads as a sharp rattle that tails off, not a linear wobble. Per-axis
+// "noise" is a couple of desynced sine waves — cheap, smooth, good enough for
+// a screen-space camera jitter (no need for the GPU-only simplex noise here).
+interface CameraShakeRig {
+  addTrauma(amount: number): void;
+  update(dt: number, time: number): { x: number; y: number; roll: number };
+}
+function createCameraShake(): CameraShakeRig {
+  let trauma = 0;
+  const seedX = Math.random() * 100, seedY = Math.random() * 100, seedR = Math.random() * 100;
+  return {
+    addTrauma(amount: number) { trauma = Math.min(1, trauma + amount); },
+    update(dt: number, time: number) {
+      trauma = Math.max(0, trauma - dt * 1.6);
+      const power = trauma * trauma;
+      const freq = 22;
+      const nx = Math.sin(time * freq + seedX) * 0.6 + Math.sin(time * freq * 2.3 + seedX * 1.7) * 0.4;
+      const ny = Math.sin(time * freq * 1.15 + seedY) * 0.6 + Math.sin(time * freq * 2.7 + seedY * 1.3) * 0.4;
+      const nr = Math.sin(time * freq * 0.9 + seedR) * 0.6 + Math.sin(time * freq * 2.1 + seedR * 1.9) * 0.4;
+      return { x: nx * power * 0.06, y: ny * power * 0.05, roll: nr * power * 0.05 };
+    },
+  };
+}
+
+// Per-frame flicker/slam driver for a fixed set of lights, keyed off elapsed
+// seconds since ignite() fired. Phase 2 (2.6-3.1s) is the mechanical
+// "brownout" — a stuttering square-wave dim. Phase 3 (3.1s+) slams every
+// light to a bright peak then eases back down (exponential decay) to its
+// normal operating intensity.
+function createIgnitionLightRig(lights: THREE.Light[]) {
+  const bases = lights.map((l) => l.intensity);
+  return {
+    update(elapsed: number) {
+      if (elapsed >= 2.6 && elapsed < 3.1) {
+        const glitch = Math.random() < 0.5 ? 0.12 + Math.random() * 0.18 : 0.85 + Math.random() * 0.3;
+        lights.forEach((l, i) => { l.intensity = bases[i] * glitch; });
+      } else if (elapsed >= 3.1 && elapsed < 4.0) {
+        const since = elapsed - 3.1;
+        const mult = 1 + 2.4 * Math.exp(-since * 7);
+        lights.forEach((l, i) => { l.intensity = bases[i] * mult; });
+      } else {
+        lights.forEach((l, i) => { l.intensity = bases[i]; });
+      }
+    },
+    settle() { lights.forEach((l, i) => { l.intensity = bases[i]; }); },
+  };
+}
+
+// Synthesized jet-turbine cue — noise through a resonant lowpass (the
+// "20-60Hz weight" the spool-up needs) plus a rising-pitch whine, a
+// stuttering brownout dip, then a boom transient + sub thump at ignition.
+// Routed through a real THREE.PositionalAudio anchored on the plasma core so
+// it's spatialized, and tapped by a THREE.AudioAnalyser so the camera shake
+// and core glow can react to the actual live signal, not a canned curve.
+interface IgnitionAudioRig {
+  analyser: THREE.AudioAnalyser;
+  ignite(): void;
+  isRunning(): boolean;
+  unlock(): void;
+  dispose(): void;
+}
+function createIgnitionAudioRig(camera: THREE.PerspectiveCamera, coreGroup: THREE.Object3D): IgnitionAudioRig | null {
+  let listener: THREE.AudioListener;
+  let posAudio: THREE.PositionalAudio;
+  try {
+    listener = new THREE.AudioListener();
+    camera.add(listener);
+    posAudio = new THREE.PositionalAudio(listener);
+    posAudio.setRefDistance(3);
+    posAudio.setRolloffFactor(1.5);
+    coreGroup.add(posAudio);
+  } catch {
+    return null; // Web Audio unavailable — ignition runs visual-only.
+  }
+
+  const ctx = listener.context;
+  const master = ctx.createGain();
+  master.gain.value = 0.0001;
+  // BiquadFilterNode lowpass — the "20-60Hz, feel the weight" sub-bass boost.
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = 55;
+  lowpass.Q.value = 8;
+  lowpass.connect(master);
+  posAudio.setNodeSource(master);
+
+  const analyser = new THREE.AudioAnalyser(posAudio, 256);
+
+  function makeNoiseBuffer(seconds: number) {
+    const buf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * seconds)), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    return buf;
+  }
+
+  function ignite() {
+    // Autoplay policies leave a fresh AudioContext 'suspended' until a user
+    // gesture; resume defensively so the cue isn't silently dropped.
+    if (ctx.state !== 'running') { ctx.resume().catch(() => {}); }
+    const t0 = ctx.currentTime;
+
+    // ── Phase 1 (0-3.0s) — spool-up: noise through the resonant lowpass,
+    // opening up as the "turbine" winds toward ignition, plus a rising whine.
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = makeNoiseBuffer(3.4);
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.0001, t0);
+    noiseGain.gain.exponentialRampToValueAtTime(0.9, t0 + 3.0);
+    noiseSrc.connect(noiseGain).connect(lowpass);
+    noiseSrc.start(t0);
+    noiseSrc.stop(t0 + 3.4);
+
+    lowpass.frequency.setValueAtTime(55, t0);
+    lowpass.frequency.exponentialRampToValueAtTime(70, t0 + 1.2);
+    lowpass.frequency.exponentialRampToValueAtTime(240, t0 + 2.9);
+
+    const whine = ctx.createOscillator();
+    whine.type = 'sawtooth';
+    whine.frequency.setValueAtTime(60, t0);
+    whine.frequency.exponentialRampToValueAtTime(340, t0 + 3.0);
+    const whineGain = ctx.createGain();
+    whineGain.gain.setValueAtTime(0.0001, t0);
+    whineGain.gain.exponentialRampToValueAtTime(0.32, t0 + 3.0);
+    whine.connect(whineGain).connect(master);
+    whine.start(t0);
+    whine.stop(t0 + 3.2);
+
+    master.gain.setValueAtTime(0.0001, t0);
+    master.gain.exponentialRampToValueAtTime(0.9, t0 + 2.5);
+
+    // ── Phase 2 (2.6-3.1s) — mechanical brownout: a stuttering gain dip.
+    const bT = t0 + 2.6;
+    for (let i = 0; i < 6; i++) {
+      master.gain.setValueAtTime(i % 2 === 0 ? 0.22 : 0.9, bT + i * 0.08);
+    }
+    master.gain.setValueAtTime(0.9, bT + 0.5);
+
+    // ── Phase 3 (3.1s) — ignition boom: noise transient + sub thump, then
+    // the whole cue settles back to silence.
+    const igT = t0 + 3.1;
+    const boomSrc = ctx.createBufferSource();
+    boomSrc.buffer = makeNoiseBuffer(0.6);
+    const boomFilter = ctx.createBiquadFilter();
+    boomFilter.type = 'lowpass';
+    boomFilter.frequency.setValueAtTime(400, igT);
+    boomFilter.frequency.exponentialRampToValueAtTime(60, igT + 0.5);
+    const boomGain = ctx.createGain();
+    boomGain.gain.setValueAtTime(1.3, igT);
+    boomGain.gain.exponentialRampToValueAtTime(0.0001, igT + 0.9);
+    boomSrc.connect(boomFilter).connect(boomGain).connect(master);
+    boomSrc.start(igT);
+    boomSrc.stop(igT + 0.9);
+
+    const thump = ctx.createOscillator();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(90, igT);
+    thump.frequency.exponentialRampToValueAtTime(30, igT + 0.4);
+    const thumpGain = ctx.createGain();
+    thumpGain.gain.setValueAtTime(1.0, igT);
+    thumpGain.gain.exponentialRampToValueAtTime(0.0001, igT + 0.6);
+    thump.connect(thumpGain).connect(master);
+    thump.start(igT);
+    thump.stop(igT + 0.7);
+
+    master.gain.setValueAtTime(0.9, igT);
+    master.gain.exponentialRampToValueAtTime(0.0001, igT + 2.2);
+  }
+
+  return {
+    analyser,
+    ignite,
+    isRunning() { return ctx.state === 'running'; },
+    // resume() only actually takes effect when called synchronously inside a
+    // real user-gesture handler — which is exactly where armIgnitionOnGesture
+    // invokes this, so the context is running by the time ignite() fires.
+    unlock() { if (ctx.state !== 'running') { ctx.resume().catch(() => {}); } },
+    dispose() {
+      try { camera.remove(listener); } catch {}
+      try { coreGroup.remove(posAudio); } catch {}
+    },
+  };
+}
+
+// Arm the ignition on the first real user gesture so the synthesized turbine
+// audio — which the browser autoplay policy keeps suspended until a gesture —
+// unlocks and starts exactly in sync with the visuals. If audio is
+// unavailable, or a gesture already unlocked it earlier in the boot flow (the
+// common case, since the user clicks through the biometric intro first), arm
+// immediately. Returns a cleanup fn to drop the listeners if the orb unmounts
+// before any gesture arrives.
+function armIgnitionOnGesture(rig: IgnitionAudioRig | null, arm: () => void): () => void {
+  if (!rig || rig.isRunning()) { arm(); return () => {}; }
+  const cleanup = () => {
+    window.removeEventListener('pointerdown', onGesture);
+    window.removeEventListener('keydown', onGesture);
+    window.removeEventListener('touchstart', onGesture);
+  };
+  const onGesture = () => { cleanup(); rig.unlock(); arm(); };
+  window.addEventListener('pointerdown', onGesture);
+  window.addEventListener('keydown', onGesture);
+  window.addEventListener('touchstart', onGesture);
+  return cleanup;
+}
+
+// ============================================================
+// ALPHA BRAIN — default centerpiece (gold holographic energy-ball), shown
+// instead of a Pokemon/robot until the user picks one. Mirrors the "sunGroup"
+// hologram already built for the office app's owner-assistant globe (solid
+// icosahedron core + wireframe shell + canvas-glow sprite + point light) —
+// reproduced procedurally here since the two apps don't share a bundle.
+//
+// SENTIENT NEURAL PLASMA CORE — Phase 1 (mesh + fluid shader material).
+// The core mesh went from a static faceted MeshStandardMaterial icosahedron
+// to a high-resolution SphereGeometry displaced in the vertex shader by
+// layered 3D simplex noise (fbm), so the surface undulates continuously
+// like boiling liquid metal instead of sitting rigid. `uAudioAmplitude` is
+// wired to the orb's existing `amp` energy value (already smoothed each
+// frame from the speaking/listening/armed state machine — see
+// `orb.setEnergy()`), so the breathing-vs-spiking behavior works today.
+// Phase 2 (tapping a real AnalyserNode off the TTS output for per-frequency
+// reactivity, replacing this discrete-state proxy) is a separate, awaited
+// follow-up — not wired in yet.
+// ============================================================
+// (The old procedural plasma-core shaders — and their local simplex-noise
+// block — were replaced by the shared photoreal sun in ./sunShader.)
+
+// Phase 2 — voice-reactive amplitude. The browser's speechSynthesis TTS never
+// routes through Web Audio, so there is no PCM stream to hang a real
+// AnalyserNode on; instead we synthesize the *behaviour* Phase 2 asks for
+// straight off the smoothed speaking/listening energy that already drives the
+// orb: a slow breathing floor in silence, plus fast multi-rate "formant"
+// spikes that only surface as that energy rises — rapid ripples while the
+// assistant talks, a calm pulse when it's idle.
+function voiceReactiveAmp(amp: number, time: number): number {
+  const breathe = 0.06 + 0.025 * Math.sin(time * 1.05);
+  const formant = 0.55 * Math.abs(Math.sin(time * 12.7))
+                + 0.45 * Math.abs(Math.sin(time * 21.3 + 1.7));
+  const speech = amp * (0.45 + 0.55 * formant);
+  return Math.min(1.25, breathe + speech);
+}
+
+// SINGULARITY CORE — Phase 3: Data-Stream Tendrils. A slow-orbiting shell of
+// glowing motes with a subset wired to the core by faint additive lines that
+// bow tangentially (bezier-ish). On speech the whole lattice brightens and
+// contracts *inward* — reading as data streaming into the singularity. All
+// unlit Points + LineSegments (additive), so it renders identically on the
+// owner's phone (no PBR / no transmission). Geometry is static; only the
+// group transform + material opacity move per frame — cheap enough for mobile.
+interface DataTendrils {
+  group: THREE.Group;
+  update: (dt: number, amp: number, time: number) => void;
+}
+function buildDataTendrils(particleCount: number, tendrilCount: number): DataTendrils {
+  const group = new THREE.Group();
+  const pos = new Float32Array(particleCount * 3);
+  const shell: [number, number, number][] = [];
+  for (let i = 0; i < particleCount; i++) {
+    const r = 1.7 + Math.random() * 1.7;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    const x = r * Math.sin(ph) * Math.cos(th);
+    const y = r * Math.sin(ph) * Math.sin(th);
+    const z = r * Math.cos(ph);
+    pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
+    if (shell.length < tendrilCount) shell.push([x, y, z]);
+  }
+  const pgeo = new THREE.BufferGeometry();
+  pgeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pmat = new THREE.PointsMaterial({
+    color: 0xffe1a0, size: 0.03, transparent: true, opacity: 0.6,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false,
+  });
+  group.add(new THREE.Points(pgeo, pmat));
+  // Tendrils: 2 segments per particle (particle → bowed midpoint → near-core).
+  const seg: number[] = [];
+  for (const [x, y, z] of shell) {
+    const ex = x * 0.26, ey = y * 0.26, ez = z * 0.26;      // inner endpoint, near the core
+    const mx = (x + ex) / 2 - y * 0.14, my = (y + ey) / 2 + x * 0.14, mz = (z + ez) / 2; // tangential bow
+    seg.push(x, y, z, mx, my, mz, mx, my, mz, ex, ey, ez);
+  }
+  const lgeo = new THREE.BufferGeometry();
+  lgeo.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
+  const lmat = new THREE.LineBasicMaterial({
+    color: 0x7fe3ff, transparent: true, opacity: 0.18,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  });
+  group.add(new THREE.LineSegments(lgeo, lmat));
+  let flow = 0;
+  return {
+    group,
+    update(dt, amp, time) {
+      group.rotation.y += dt * 0.12;
+      group.rotation.x = Math.sin(time * 0.16) * 0.16;
+      const target = amp > 0.5 ? 1 : 0;      // "speaking" → pull the lattice in
+      flow += (target - flow) * Math.min(1, dt * 3);
+      group.scale.setScalar(1 - flow * 0.2 - amp * 0.05);
+      pmat.opacity = 0.4 + amp * 0.5;
+      pmat.size = 0.03 + amp * 0.02;
+      lmat.opacity = 0.14 + flow * 0.5 + amp * 0.28;
+    },
+  };
+}
+
+interface AlphaBrainParts {
+  group: THREE.Group;
+  core: THREE.Mesh;
+  coreMat: THREE.ShaderMaterial;
+  wire: THREE.Object3D;
+  wire2: THREE.Object3D;
+  tendrils: DataTendrils;
+  light: THREE.PointLight;
+  setPalette(p: CyberPalette): void;
+}
+function buildAlphaBrain(segments = 96): AlphaBrainParts {
+  const gold = 0xE4BC63;
+  const group = new THREE.Group();
+  // Cyber core — the owner's approved central-object look (the
+  // public/sun-core.html demo): simplex vertex-displaced boiling sphere
+  // with a white-hot→gold fresnel, an additive back-side halo, and twin
+  // sharp edge-line cages (pale gold inner, cyan outer) with glowing
+  // digital nodes on every lattice vertex. Same uniform contract as the
+  // old photoreal sun (uTime/uAudioAmplitude), so the mount loops keep
+  // driving it unchanged; the breathing pulse is derived in-shader.
+  // (buildCyberSunMaterial/buildCyberHalo self-apply the GOAT palette when
+  // alpha_mood==='goat' is already persisted — setPalette is the LIVE swap.)
+  const coreMat = buildCyberSunMaterial();
+  const core = new THREE.Mesh(new THREE.SphereGeometry(1.1, segments, segments), coreMat);
+  group.add(core);
+  const halo = buildCyberHalo(1.1 * 1.28, coreMat.uniforms as any);
+  group.add(halo);
+  const goat = (() => { try { return localStorage.getItem('alpha_mood') === 'goat'; } catch { return false; } })();
+  const wire = buildCageLines(1.55, 1, goat ? CYBER_GOAT.cageInner : 0xE8C97A, 0.13);
+  group.add(wire);
+  const wire2 = buildCageLines(1.95, 1, goat ? CYBER_GOAT.cageOuter : 0x59E8FF, 0.12);
+  group.add(wire2);
+  // Data-Stream Tendrils (denser on desktop, lighter on mobile) — kept:
+  // they fly INTO the core on speech and read naturally with the new look.
+  const tendrils = buildDataTendrils(segments >= 100 ? 2200 : 900, segments >= 100 ? 150 : 80);
+  group.add(tendrils.group);
+  const light = new THREE.PointLight(goat ? CYBER_GOAT.light : gold, 1.6, 9);
+  group.add(light);
+  // (The "Ghost in the Core" Syrax hologram that used to stand beside the
+  //  core was removed per user request — fewer draw calls, cleaner frame.)
+  const setPalette = (p: CyberPalette) => {
+    applyCyberPalette(coreMat, p, halo.material as THREE.ShaderMaterial);
+    tintCage(wire, p.cageInner);
+    tintCage(wire2, p.cageOuter);
+    light.color.setHex(p.light);
+  };
+  return { group, core, coreMat, wire, wire2, tendrils, light, setPalette };
+}
+
 // Atmosphere glow shaders — volumetric, animated, multi-fresnel
 const ATMOSPHERE_VERT = /* glsl */`
   varying vec3 vNormal;
@@ -1265,30 +1915,1239 @@ function setupChuEffect(
 }
 
 // ============================================================
+// Replace procedural Pikachu body with a purchased GLB model.
+// Keeps all effects (sparks, aura, lights) from buildPikachu.
+// Body meshes use MeshPhysicalMaterial; face decal uses
+// MeshBasicMaterial with a canvas texture map — both are hidden.
+// ============================================================
+// Registry of swappable main characters. Pikachu is the built-in (vertex-color
+// GLB); the others are textured GLBs the user provided (converted from FBX/DAE).
+const CHARACTER_FILES: Record<string, string> = {
+  robot:      'ar-models/robot.glb',
+  pikachu:    'pikachu.glb?v=5',
+  charmander: 'ar-models/charmander.glb',
+  squirtle:   'ar-models/squirtle.glb',
+  meowth:     'ar-models/meowth.glb',
+  bulbasaur:  'ar-models/bulbasaur.glb',
+  eevee:      'ar-models/eevee.glb',
+  mewtwo:     'ar-models/mewtwo.glb',
+  articuno:   'ar-models/articuno.glb',
+  suicune:    'ar-models/suicune.glb',
+  raikou:     'ar-models/raikou.glb',
+  entei:      'ar-models/entei.glb',
+  moltres:    'ar-models/moltres.glb',
+  zapdos:     'ar-models/zapdos.glb',
+  lugia:      'ar-models/lugia.glb',
+  'ho-oh':    'ar-models/ho-oh.glb',
+};
+// Merge the imported Gen-1 pack (untextured, type-tinted GLBs, loaded on demand).
+for (const g of GEN1) CHARACTER_FILES[g.id] = `ar-models/${g.id}.glb`;
+export const CHARACTER_NAMES = Object.keys(CHARACTER_FILES);
+
+// Per-character scene background — the orb canvas is opaque and fills the whole
+// screen, so this clear colour IS the app background. Switching characters
+// recolours the entire backdrop to match the Pokemon (kept dark so the 3D model
+// and UI stay readable). Pairs with the CSS .char-ambient glow + body tint.
+const CHAR_BG: Record<string, number> = {
+  robot:      0x0a0620, // purple space (matches the intro vault video ending)
+  pikachu:    0x0c0a04, // electric warm
+  charmander: 0x140803, // ember red
+  squirtle:   0x04101c, // water blue
+  meowth:     0x100614, // hypnosis purple
+  bulbasaur:  0x05140c, // grass green
+  eevee:      0x140d06, // warm amber
+  mewtwo:     0x0e0618, // psychic violet
+  articuno:   0x041524, // ice blue
+  suicune:    0x04161c, // aurora teal
+  raikou:     0x141004, // electric amber
+  entei:      0x1a0703, // volcanic red
+  moltres:    0x1c0903, // fire orange
+  zapdos:     0x161202, // lightning yellow
+  lugia:      0x081020, // deep-sea silver
+  'ho-oh':    0x180e03, // sacred gold
+  alphabrain: 0x120d02, // warm near-black, complements the gold hologram
+};
+function charBg(name: string): number { return CHAR_BG[name] ?? 0x0a0620; }
+
+// Per-character ACCENT — the bright colour for the orb's cage / rings / lines.
+// Swapping a Pokemon hue-shifts the whole gold framework to this colour so the
+// surrounding sphere matches the active Pokemon instead of always being gold.
+const CHAR_ACCENT: Record<string, number> = {
+  pikachu:    0xffd633, // electric yellow
+  charmander: 0xff7a2a, // ember orange
+  squirtle:   0x33b5ff, // water blue
+  meowth:     0xc26bff, // hypnosis purple
+  bulbasaur:  0x5fd64d, // grass green
+  eevee:      0xe0a85a, // warm amber
+  mewtwo:     0xb060ff, // psychic violet
+  articuno:   0x66ccff, // ice blue
+  suicune:    0x3fd6c8, // aurora teal
+  raikou:     0xffd633, // electric amber
+  entei:      0xff5a28, // volcanic red
+  moltres:    0xff7a18, // fire orange
+  zapdos:     0xfff04d, // lightning yellow
+  lugia:      0x8fb6ff, // deep-sea silver-blue
+  'ho-oh':    0xffb020, // sacred gold
+  alphabrain: 0xE4BC63, // Alpha Brain gold
+};
+function charAccent(name: string): number { return CHAR_ACCENT[name] ?? 0xdaa520; }
+
+// ──────────────────────────────────────────────────────────────
+// POKEMON CRIES — load from PokeAPI cries CDN on first play.
+// Audio is module-scoped so swapping characters stops the old cry.
+// ──────────────────────────────────────────────────────────────
+const POKEMON_CRY_ID: Record<string, number> = {
+  pikachu: 25, charmander: 4, squirtle: 7, meowth: 52, bulbasaur: 1,
+  eevee: 133, mewtwo: 150, articuno: 144, suicune: 245, raikou: 243,
+  entei: 244, moltres: 146, zapdos: 145, lugia: 249, 'ho-oh': 250,
+};
+for (const g of GEN1) POKEMON_CRY_ID[g.id] = g.dex;   // PokeAPI cries for imported Pokémon
+let _activeCry: HTMLAudioElement | null = null;
+let _cryEnabled = true;
+// Master on/off for the PokeAPI swap cries (every character), wired to the
+// "character voices" setting so turning it off silences all of them.
+export function setCryEnabled(on: boolean) { _cryEnabled = on; if (!on) stopCry(); }
+function playCry(name: string) {
+  if (_activeCry) { _activeCry.pause(); _activeCry.src = ''; _activeCry = null; }
+  if (!_cryEnabled) return;
+  const id = POKEMON_CRY_ID[name]; if (!id) return;
+  const audio = new Audio(`https://cdn.jsdelivr.net/gh/PokeAPI/cries@main/cries/pokemon/latest/${id}.ogg`);
+  audio.volume = 0.55;
+  audio.play().catch(() => {});
+  _activeCry = audio;
+}
+function stopCry() {
+  if (_activeCry) { _activeCry.pause(); _activeCry.src = ''; _activeCry = null; }
+}
+
+// ──────────────────────────────────────────────────────────────
+// PER-POKEMON PARTICLE EFFECTS — Points cloud around the orb.
+// Mobile: half count. Uses additive blending to look "glowy".
+// ──────────────────────────────────────────────────────────────
+interface PFXCfg { color: number; count: number; size: number; speed: number; upward: boolean; }
+const POKEMON_PFX: Record<string, PFXCfg> = {
+  pikachu:    { color: 0xffee22, count: 30, size: 0.05, speed: 0.012, upward: true  },
+  charmander: { color: 0xff6622, count: 35, size: 0.05, speed: 0.014, upward: true  },
+  squirtle:   { color: 0x44bbff, count: 28, size: 0.06, speed: 0.008, upward: false },
+  meowth:     { color: 0xcc88ff, count: 22, size: 0.05, speed: 0.010, upward: true  },
+  bulbasaur:  { color: 0x55dd44, count: 30, size: 0.07, speed: 0.009, upward: true  },
+  eevee:      { color: 0xddaa55, count: 22, size: 0.05, speed: 0.010, upward: true  },
+  mewtwo:     { color: 0xcc66ff, count: 32, size: 0.06, speed: 0.011, upward: true  },
+  articuno:   { color: 0x99ddff, count: 35, size: 0.05, speed: 0.007, upward: false },
+  suicune:    { color: 0x33cccc, count: 30, size: 0.06, speed: 0.008, upward: false },
+  raikou:     { color: 0xffee22, count: 28, size: 0.04, speed: 0.015, upward: true  },
+  entei:      { color: 0xff5522, count: 38, size: 0.05, speed: 0.013, upward: true  },
+  moltres:    { color: 0xff8811, count: 40, size: 0.05, speed: 0.014, upward: true  },
+  zapdos:     { color: 0xffff22, count: 32, size: 0.04, speed: 0.016, upward: true  },
+  lugia:      { color: 0xaabbff, count: 25, size: 0.06, speed: 0.008, upward: false },
+  'ho-oh':    { color: 0xff9922, count: 38, size: 0.05, speed: 0.013, upward: true  },
+};
+
+type AttackType = 'electric' | 'fire' | 'water' | 'grass' | 'psychic' | 'ice' | 'normal';
+
+const POKEMON_ATTACK_TYPE: Record<string, AttackType> = {
+  pikachu:    'electric',
+  charmander: 'fire',
+  squirtle:   'water',
+  meowth:     'normal',
+  bulbasaur:  'grass',
+  eevee:      'normal',
+  mewtwo:     'psychic',
+  articuno:   'ice',
+  suicune:    'water',
+  raikou:     'electric',
+  entei:      'fire',
+  moltres:    'fire',
+  zapdos:     'electric',
+  lugia:      'psychic',
+  'ho-oh':    'fire',
+};
+for (const g of GEN1) POKEMON_ATTACK_TYPE[g.id] = g.attack;   // type-based attack fx
+
+const ATTACK_COLORS: Record<AttackType, [number,number,number]> = {
+  electric: [255, 238, 34],
+  fire:     [255, 88, 20],
+  water:    [50, 180, 255],
+  grass:    [70, 210, 60],
+  psychic:  [210, 60, 255],
+  ice:      [160, 230, 255],
+  normal:   [220, 190, 80],
+};
+
+interface PFXState { pts: THREE.Points; pos: Float32Array; vel: Float32Array; count: number; }
+
+function createParticles(scene: THREE.Scene, name: string, isMobile: boolean): PFXState | null {
+  const cfg = POKEMON_PFX[name]; if (!cfg) return null;
+  const count = isMobile ? Math.ceil(cfg.count * 0.55) : cfg.count;
+  const pos = new Float32Array(count * 3);
+  const vel = new Float32Array(count * 3);
+  const rng = () => (Math.random() - 0.5) * 2;
+  for (let i = 0; i < count; i++) {
+    // Distribute on a sphere of radius ~1.7–2.2 (just outside the orb)
+    const phi = Math.random() * Math.PI * 2;
+    const theta = Math.random() * Math.PI;
+    const r = 1.7 + Math.random() * 0.5;
+    pos[i * 3    ] = r * Math.sin(theta) * Math.cos(phi);
+    pos[i * 3 + 1] = r * Math.sin(theta) * Math.sin(phi);
+    pos[i * 3 + 2] = r * Math.cos(theta);
+    const sp = cfg.speed * (0.5 + Math.random() * 0.8);
+    vel[i * 3    ] = rng() * sp * 0.4;
+    vel[i * 3 + 1] = cfg.upward ? sp * (0.4 + Math.random() * 0.6) : rng() * sp;
+    vel[i * 3 + 2] = rng() * sp * 0.4;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    color: cfg.color, size: cfg.size, transparent: true, opacity: 0.75,
+    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
+  });
+  const pts = new THREE.Points(geo, mat);
+  scene.add(pts);
+  return { pts, pos, vel, count };
+}
+
+function updateParticles(pfx: PFXState, cfg: PFXCfg) {
+  for (let i = 0; i < pfx.count; i++) {
+    pfx.pos[i * 3    ] += pfx.vel[i * 3    ];
+    pfx.pos[i * 3 + 1] += pfx.vel[i * 3 + 1];
+    pfx.pos[i * 3 + 2] += pfx.vel[i * 3 + 2];
+    const x = pfx.pos[i * 3], y = pfx.pos[i * 3 + 1], z = pfx.pos[i * 3 + 2];
+    const dist = Math.sqrt(x * x + y * y + z * z);
+    if (dist > 3.0 || (cfg.upward && y > 2.8) || (!cfg.upward && y < -2.8)) {
+      // Respawn near the orb surface
+      const phi = Math.random() * Math.PI * 2;
+      const theta = Math.random() * Math.PI;
+      const r = 1.6 + Math.random() * 0.3;
+      pfx.pos[i * 3    ] = r * Math.sin(theta) * Math.cos(phi);
+      pfx.pos[i * 3 + 1] = r * Math.sin(theta) * Math.sin(phi);
+      pfx.pos[i * 3 + 2] = r * Math.cos(theta);
+    }
+  }
+  (pfx.pts.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+}
+
+function disposeParticles(pfx: PFXState | null, scene: THREE.Scene) {
+  if (!pfx) return;
+  scene.remove(pfx.pts);
+  pfx.pts.geometry.dispose();
+  (pfx.pts.material as THREE.Material).dispose();
+}
+
+// Recolour a collection of gold materials to an accent, preserving each one's
+// original lightness so the layered look survives the hue change.
+type AccentMat = { mat: any; baseL: number; baseS: number };
+function applyAccentToMats(mats: AccentMat[], hex: number) {
+  const tgt = new THREE.Color(hex);
+  const thsl = { h: 0, s: 0, l: 0 }; tgt.getHSL(thsl);
+  for (const a of mats) {
+    a.mat.color.setHSL(thsl.h, Math.min(1, a.baseS * 0.4 + thsl.s * 0.6), a.baseL);
+  }
+}
+function flashAttack(model: THREE.Object3D, type: AttackType): void {
+  const [r, g, b] = ATTACK_COLORS[type];
+  const typeColor = new THREE.Color(r/255, g/255, b/255);
+  const mats: { m: any; oe: THREE.Color; oi: number }[] = [];
+  model.traverse((o: any) => {
+    if (!o.isMesh) return;
+    const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+    for (const m of ms) {
+      if (m && m.emissive) {
+        mats.push({ m, oe: m.emissive.clone(), oi: m.emissiveIntensity ?? 1 });
+        m.emissive.copy(typeColor);
+        m.emissiveIntensity = 2.2;
+      }
+    }
+  });
+  if (!mats.length) return;
+  const start = performance.now();
+  const dur = 500;
+  function step(now: number) {
+    const t = Math.min(1, (now - start) / dur);
+    for (const e of mats) {
+      e.m.emissive.copy(typeColor).lerp(e.oe, t);
+      e.m.emissiveIntensity = 2.2 * (1 - t) + e.oi * t;
+    }
+    if (t < 1) requestAnimationFrame(step);
+    else for (const e of mats) { e.m.emissive.copy(e.oe); e.m.emissiveIntensity = e.oi; }
+  }
+  requestAnimationFrame(step);
+}
+
+function runAttackFx(canvas: HTMLCanvasElement, charName: string): void {
+  const type: AttackType = POKEMON_ATTACK_TYPE[charName] || 'normal';
+  const [cr, cg, cb] = ATTACK_COLORS[type];
+  const ctxMaybe = canvas.getContext('2d');
+  if (!ctxMaybe) return;
+  const ctx: CanvasRenderingContext2D = ctxMaybe;
+
+  const W = canvas.width, H = canvas.height;
+  const CX = W / 2, CY = H * 0.44;
+  const R = Math.min(W, H) * 0.36;
+  const t0 = performance.now();
+  const DUR = 1500;
+
+  // Cancel any previous attack animation
+  if ((canvas as any).__atkRaf) { cancelAnimationFrame((canvas as any).__atkRaf); (canvas as any).__atkRaf = 0; }
+
+  // Pre-generate particles
+  interface P { x: number; y: number; vx: number; vy: number; r: number; a: number; life: number; }
+  const particles: P[] = [];
+  const COUNT = type === 'normal' ? 14 : 24;
+  for (let i = 0; i < COUNT; i++) {
+    const ang = (i / COUNT) * Math.PI * 2 + Math.random() * 0.4;
+    const spd = (R * 0.006) * (0.5 + Math.random());
+    particles.push({
+      x: CX + (Math.random() - 0.5) * R * 0.2,
+      y: CY + (Math.random() - 0.5) * R * 0.2,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd + (type === 'fire' ? -spd * 1.2 : 0),
+      r: 3 + Math.random() * 5,
+      a: ang,
+      life: Math.random() * 0.4,
+    });
+  }
+
+  // Lightning bolt zigzag paths
+  interface Bolt { pts: [number,number][]; }
+  const bolts: Bolt[] = [];
+  if (type === 'electric') {
+    for (let b = 0; b < 5; b++) {
+      const startAng = (b / 5) * Math.PI * 2;
+      const pts: [number,number][] = [];
+      const steps = 7;
+      for (let s = 0; s <= steps; s++) {
+        const f = s / steps;
+        const jitter = (1 - f) * R * 0.35;
+        pts.push([
+          CX + Math.cos(startAng) * R * 1.5 * (1 - f) + (Math.random() - 0.5) * jitter,
+          CY + Math.sin(startAng) * R * 1.5 * (1 - f) + (Math.random() - 0.5) * jitter,
+        ]);
+      }
+      bolts.push({ pts });
+    }
+  }
+
+  // Ice shard directions
+  const shardAngles: number[] = [];
+  if (type === 'ice') {
+    for (let i = 0; i < 8; i++) shardAngles.push((i / 8) * Math.PI * 2);
+  }
+
+  // Leaf rotations for grass
+  const leafRots: number[] = [];
+  if (type === 'grass') {
+    for (let i = 0; i < 12; i++) leafRots.push(Math.random() * Math.PI * 2);
+  }
+
+  function frame(now: number) {
+    const t = Math.min(1, (now - t0) / DUR);
+    ctx.clearRect(0, 0, W, H);
+    const fade = t > 0.7 ? (1 - t) / 0.3 : 1;
+
+    // Update particle physics
+    for (const p of particles) {
+      p.life += 0.018;
+      if (p.life > 1) { p.life -= 1; p.x = CX + (Math.random()-0.5)*R*0.3; p.y = CY + (Math.random()-0.5)*R*0.3; }
+      if (t > 0.05) { p.x += p.vx; p.y += p.vy; }
+      if (type === 'water') p.vy += 0.15;
+      if (type === 'fire')  p.vy += 0.04;
+    }
+
+    // ELECTRIC
+    if (type === 'electric') {
+      // Center glow
+      const g0 = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 0.6);
+      g0.addColorStop(0, `rgba(${cr},${cg},${cb},${0.4 * fade})`);
+      g0.addColorStop(1, 'rgba(255,238,34,0)');
+      ctx.fillStyle = g0; ctx.beginPath(); ctx.arc(CX, CY, R * 0.6, 0, Math.PI*2); ctx.fill();
+
+      // Bolts — show in first 60% of animation
+      if (t < 0.6) {
+        const bAlpha = t < 0.1 ? t/0.1 : t > 0.4 ? (0.6-t)/0.2 : 1;
+        for (const bolt of bolts) {
+          ctx.shadowColor = `rgb(${cr},${cg},${cb})`; ctx.shadowBlur = 12;
+          ctx.strokeStyle = `rgba(255,255,255,${bAlpha * fade})`; ctx.lineWidth = 2.5;
+          ctx.beginPath(); ctx.moveTo(bolt.pts[0][0], bolt.pts[0][1]);
+          for (let i = 1; i < bolt.pts.length; i++) ctx.lineTo(bolt.pts[i][0], bolt.pts[i][1]);
+          ctx.stroke();
+          ctx.strokeStyle = `rgba(${cr},${cg},${cb},${0.5 * bAlpha * fade})`; ctx.lineWidth = 6;
+          ctx.beginPath(); ctx.moveTo(bolt.pts[0][0], bolt.pts[0][1]);
+          for (let i = 1; i < bolt.pts.length; i++) ctx.lineTo(bolt.pts[i][0], bolt.pts[i][1]);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+      }
+      // Sparks
+      for (const p of particles) {
+        const a = Math.max(0, 1 - p.life) * fade;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 - p.life * 0.6), 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    // FIRE
+    else if (type === 'fire') {
+      const burst = R * t * 1.3;
+      const g1 = ctx.createRadialGradient(CX, CY, 0, CX, CY, burst);
+      g1.addColorStop(0, `rgba(255,240,200,${0.9*fade})`);
+      g1.addColorStop(0.35, `rgba(${cr},${cg},${cb},${0.7*fade})`);
+      g1.addColorStop(0.7, `rgba(200,40,0,${0.3*fade})`);
+      g1.addColorStop(1, 'rgba(200,40,0,0)');
+      ctx.fillStyle = g1; ctx.beginPath(); ctx.arc(CX, CY, burst, 0, Math.PI*2); ctx.fill();
+      for (const p of particles) {
+        const a = Math.max(0, 1 - p.life * 1.2) * fade;
+        if (a <= 0) continue;
+        const frac = p.life;
+        const col = `rgba(${Math.round(255-frac*120)},${Math.round(cg*(1-frac*0.7))},${Math.round(frac<0.3?40:0)},${a})`;
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 - frac * 0.5), 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    // WATER
+    else if (type === 'water') {
+      for (let ring = 0; ring < 3; ring++) {
+        const rt = Math.max(0, t - ring * 0.2);
+        if (rt <= 0) continue;
+        const rad = R * rt * 1.6;
+        const rAlpha = rt < 0.3 ? rt/0.3 : (1 - rt) * fade;
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},${rAlpha * 0.8})`;
+        ctx.lineWidth = 3 - ring;
+        ctx.shadowColor = `rgba(${cr},${cg},${cb},0.6)`;
+        ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.arc(CX, CY, rad, 0, Math.PI*2); ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+      for (const p of particles) {
+        const a = Math.max(0, 1 - p.life) * fade;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a * 0.7})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.7, 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    // GRASS
+    else if (type === 'grass') {
+      const g2 = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 0.5);
+      g2.addColorStop(0, `rgba(${cr},${cg},${cb},${0.3*fade})`);
+      g2.addColorStop(1, 'rgba(70,210,60,0)');
+      ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(CX, CY, R * 0.5, 0, Math.PI*2); ctx.fill();
+      leafRots.forEach((baseRot, i) => {
+        const ang = (i / leafRots.length) * Math.PI * 2;
+        const dist = R * 0.2 + R * t * 1.1;
+        const lx = CX + Math.cos(ang) * dist;
+        const ly = CY + Math.sin(ang) * dist;
+        const a = t < 0.7 ? Math.min(1, t/0.2) * fade : (1-t)/0.3 * fade;
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(baseRot + t * Math.PI * 1.5);
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a * 0.85})`;
+        ctx.beginPath();
+        ctx.moveTo(0, -(12 + R*0.025));
+        ctx.bezierCurveTo(8, -4, 8, 4, 0, 12 + R*0.025);
+        ctx.bezierCurveTo(-8, 4, -8, -4, 0, -(12 + R*0.025));
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    // PSYCHIC
+    else if (type === 'psychic') {
+      for (let ring = 0; ring < 2; ring++) {
+        const rt = Math.max(0, t - ring * 0.15);
+        const rad = R * 0.3 + R * rt * 1.2;
+        const rAlpha = (rt < 0.3 ? rt/0.3 : (1-rt)) * fade;
+        ctx.save();
+        ctx.translate(CX, CY); ctx.rotate(rt * Math.PI * (ring === 0 ? 2 : -1.5));
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},${rAlpha * 0.9})`;
+        ctx.lineWidth = 2.5; ctx.setLineDash([8, 6]);
+        ctx.shadowColor = `rgba(${cr},${cg},${cb},0.8)`;
+        ctx.shadowBlur = 14;
+        ctx.beginPath(); ctx.arc(0, 0, rad, 0, Math.PI*2); ctx.stroke();
+        ctx.shadowBlur = 0; ctx.setLineDash([]);
+        ctx.restore();
+      }
+      for (const p of particles) {
+        const orbitR = R * 0.7 * (1 - p.life * 0.4);
+        const ox = CX + Math.cos(p.a + t * Math.PI * 3) * orbitR;
+        const oy = CY + Math.sin(p.a + t * Math.PI * 3) * orbitR;
+        const a = Math.max(0, 1 - p.life * 1.5) * fade;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a * 0.8})`;
+        ctx.beginPath(); ctx.arc(ox, oy, p.r * 0.6, 0, Math.PI*2); ctx.fill();
+      }
+      const g3 = ctx.createRadialGradient(CX, CY, 0, CX, CY, R * 0.45);
+      g3.addColorStop(0, `rgba(255,200,255,${0.35*fade})`);
+      g3.addColorStop(1, 'rgba(210,60,255,0)');
+      ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(CX, CY, R * 0.45, 0, Math.PI*2); ctx.fill();
+    }
+
+    // ICE
+    else if (type === 'ice') {
+      // Snowflake at center
+      const sfAlpha = (t < 0.4 ? t/0.4 : (1-t)/0.6) * fade;
+      for (let arm = 0; arm < 6; arm++) {
+        const ang = (arm / 6) * Math.PI * 2 + t * 0.5;
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},${sfAlpha * 0.9})`;
+        ctx.lineWidth = 2;
+        ctx.shadowColor = `rgba(${cr},${cg},${cb},0.7)`; ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(CX, CY);
+        ctx.lineTo(CX + Math.cos(ang) * R * 0.4, CY + Math.sin(ang) * R * 0.4);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+      // Crystal shards flying out
+      for (let s = 0; s < 8; s++) {
+        const sang = shardAngles[s] + t * 0.3;
+        const dist = R * 0.3 + R * t * 1.3;
+        const sx = CX + Math.cos(sang) * dist;
+        const sy = CY + Math.sin(sang) * dist;
+        const sAlpha = (t < 0.6 ? 1 : (1-t)/0.4) * fade;
+        ctx.save();
+        ctx.translate(sx, sy); ctx.rotate(sang + Math.PI/2);
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${sAlpha * 0.85})`;
+        ctx.beginPath();
+        ctx.moveTo(0, -(R*0.08)); ctx.lineTo(R*0.03, 0); ctx.lineTo(0, R*0.08); ctx.lineTo(-R*0.03, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      for (const p of particles) {
+        const a = Math.max(0, 1 - p.life) * fade * 0.6;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.5, 0, Math.PI*2); ctx.fill();
+      }
+    }
+
+    // NORMAL
+    else {
+      for (let ray = 0; ray < 8; ray++) {
+        const ang = (ray / 8) * Math.PI * 2;
+        const len = R * Math.min(1, t * 3) * 1.2;
+        const alpha = t < 0.3 ? t/0.3 : (1-t)/0.7;
+        ctx.strokeStyle = `rgba(${cr},${cg},${cb},${alpha * fade * 0.8})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(CX + Math.cos(ang) * R * 0.2, CY + Math.sin(ang) * R * 0.2);
+        ctx.lineTo(CX + Math.cos(ang) * len, CY + Math.sin(ang) * len);
+        ctx.stroke();
+      }
+      for (const p of particles) {
+        const a = Math.max(0, 1 - p.life * 1.4) * fade;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${a * 0.7})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r * (1 - p.life * 0.5), 0, Math.PI * 2); ctx.fill();
+        // 4-pointed star
+        ctx.save();
+        ctx.translate(p.x, p.y); ctx.rotate(p.a + t * 3);
+        ctx.fillStyle = `rgba(255,255,200,${a * 0.6})`;
+        for (let sp = 0; sp < 4; sp++) {
+          const sa = (sp / 4) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(0,0); ctx.lineTo(Math.cos(sa)*p.r*1.5, Math.sin(sa)*p.r*1.5);
+          ctx.lineWidth=1.5; ctx.strokeStyle=`rgba(255,255,200,${a*0.5})`; ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+
+    if (t < 1) (canvas as any).__atkRaf = requestAnimationFrame(frame);
+    else { ctx.clearRect(0, 0, W, H); (canvas as any).__atkRaf = 0; }
+  }
+  (canvas as any).__atkRaf = requestAnimationFrame(frame);
+}
+
+// Red-laser arrival flash: tint a freshly-loaded model bright red, then fade it
+// back to its natural colours over ~0.55s (matches the swap pokeball burst).
+function flashArrival(model: THREE.Object3D) {
+  const RED = new THREE.Color(0xff2418);
+  const mats: { m: any; oe: THREE.Color; oi: number }[] = [];
+  model.traverse((o: any) => {
+    if (!o.isMesh) return;
+    const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+    for (const m of ms) {
+      if (m && m.emissive) {
+        mats.push({ m, oe: m.emissive.clone(), oi: m.emissiveIntensity ?? 1 });
+        m.emissive.copy(RED);
+        m.emissiveIntensity = 1.6;
+      }
+    }
+  });
+  if (!mats.length) return;
+  const start = performance.now();
+  const dur = 550;
+  function step(now: number) {
+    const t = Math.min(1, (now - start) / dur);
+    for (const e of mats) {
+      e.m.emissive.copy(RED).lerp(e.oe, t);
+      e.m.emissiveIntensity = 1.6 * (1 - t) + e.oi * t;
+    }
+    if (t < 1) requestAnimationFrame(step);
+    else for (const e of mats) { e.m.emissive.copy(e.oe); e.m.emissiveIntensity = e.oi; }
+  }
+  requestAnimationFrame(step);
+}
+
+function collectAccentMats(root: THREE.Object3D, skip: THREE.Object3D | THREE.Object3D[]): AccentMat[] {
+  const out: AccentMat[] = [];
+  const skips = Array.isArray(skip) ? skip : [skip];
+  const underSkip = (o: THREE.Object3D | null) => { while (o) { if (skips.indexOf(o) >= 0) return true; o = o.parent; } return false; };
+  root.traverse((o: any) => {
+    if (underSkip(o)) return;
+    const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+    for (const m of ms) {
+      if (m && m.color && (m.isLineBasicMaterial || m.isMeshBasicMaterial)) {
+        const hsl = { h: 0, s: 0, l: 0 }; m.color.getHSL(hsl);
+        out.push({ mat: m, baseL: hsl.l, baseS: hsl.s });
+      }
+    }
+  });
+  return out;
+}
+
+// CharXform — full per-character transform: rotation (radians), scale multiplier,
+// and position offset relative to auto-centered position. Exported via OrbHandle.
+const CHAR_XFORM_LS_KEY = 'char_xform_v1';
+
+function defaultXform(character: string): CharXform {
+  // Rotation defaults vary by model source format; scale/position default to identity.
+  const ROT: Record<string, {x:number;y:number;z:number}> = {
+    robot:      { x: 0,            y: 0,       z: 0 },   // rigged FBX → GLB; adjust via pose if needed
+    pikachu:    { x: 0,            y: Math.PI, z: 0 },
+    charizard:  { x: 0,            y: 0,       z: 0 },   // new FBX model — already faces front, upright
+    charmander: { x: 0,            y: Math.PI, z: 0 },
+    squirtle:   { x: -Math.PI / 2, y: 0,       z: Math.PI },
+    meowth:     { x: 0,            y: Math.PI, z: 0 },
+    bulbasaur:  { x: 0,            y: Math.PI, z: 0 },
+    eevee:      { x: 0,            y: Math.PI, z: 0 },
+    mewtwo:     { x: 0,            y: Math.PI, z: 0 },
+    articuno:   { x: 0,            y: Math.PI, z: 0 },
+    suicune:    { x: -Math.PI / 2, y: 0,       z: Math.PI },
+    raikou:     { x: 0,            y: Math.PI, z: 0 },
+    entei:      { x: 0,            y: Math.PI, z: 0 },
+    moltres:    { x: 0,            y: Math.PI, z: 0 },
+    zapdos:     { x: 0,            y: Math.PI, z: 0 },
+    lugia:      { x: 0,            y: Math.PI, z: 0 },
+    'ho-oh':    { x: 0,            y: Math.PI, z: 0 },
+    alphabrain: { x: 0,            y: 0,       z: 0 },   // symmetric icosahedron — no default tilt needed
+  };
+  const r = ROT[character] ?? { x: 0, y: Math.PI, z: 0 };
+  return { x: r.x, y: r.y, z: r.z, s: 1, px: 0, py: 0, pz: 0 };
+}
+
+// All transform reads/writes go through the batched store so dragging a slider
+// (which calls saveCharXform on every input) never blocks on synchronous IO.
+function getCharXform(character: string): CharXform {
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_LS_KEY, {});
+  return all[character] ?? defaultXform(character);
+}
+
+// Apply a transform AND re-centre the model for the CURRENT rotation: rotate+scale
+// first, measure the resulting bounding box, then position so its centre sits at the
+// orb centre (plus the user's offset). Without this, rotating a model left its old
+// (load-time) centre stale, so it drifted off-screen and "auto-centre" missed.
+function applyModelXform(model: THREE.Object3D, baseS: number, x: number, y: number, z: number, s: number, px: number, py: number, pz: number): void {
+  model.rotation.set(x, y, z);
+  model.scale.setScalar(baseS * s);
+  model.position.set(0, 0, 0);
+  model.updateMatrixWorld(true);
+  const c = new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3());
+  model.position.set(-c.x + px, -c.y + py, -c.z + pz);
+}
+
+function saveCharXform(character: string, xf: CharXform): void {
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_LS_KEY, {});
+  all[character] = xf;
+  writeObj(CHAR_XFORM_LS_KEY, all);
+}
+
+function clearCharXform(character: string): void {
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_LS_KEY, {});
+  if (!(character in all)) return;
+  delete all[character];
+  writeObj(CHAR_XFORM_LS_KEY, all);
+}
+
+// Pinned transforms — user-chosen defaults per character. When reset is pressed,
+// we restore to the pinned transform instead of the factory default if one exists.
+const CHAR_XFORM_PIN_KEY = 'char_xform_pin_v1';
+
+function getPinnedXform(character: string): CharXform | null {
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_PIN_KEY, {});
+  return all[character] ?? null;
+}
+
+function savePinnedXform(character: string, xf: CharXform): void {
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_PIN_KEY, {});
+  all[character] = xf;
+  writeObj(CHAR_XFORM_PIN_KEY, all);
+}
+
+function hasPinnedXform(character: string): boolean {
+  const all = readObj<Record<string, CharXform>>(CHAR_XFORM_PIN_KEY, {});
+  return !!all[character];
+}
+
+// Stores auto-normalization values per model so real-time transform changes can
+// re-apply scale and offset without reloading.
+type BaseTransform = { s: number; cx: number; cy: number; cz: number };
+const modelBaseTransform = new WeakMap<THREE.Object3D, BaseTransform>();
+
+// Holds the currently-loaded swappable model per pikaGroup so we can replace it.
+const loadedModels = new WeakMap<THREE.Group, THREE.Object3D>();
+
+// ── Per-character ambient aura (type-themed idle particles) ─────────────────
+// Each Pokémon gets a distinct living effect that matches its element, floating
+// around it while idle. Cheap (one additive Points cloud, ~36–72 sprites) and
+// fully torn down on character swap.
+type AuraType = AttackType;
+function auraColors(type: AuraType): [THREE.Color, THREE.Color] {
+  switch (type) {
+    case 'electric': return [new THREE.Color(0xfff066), new THREE.Color(0xffffff)];
+    case 'fire':     return [new THREE.Color(0xff6a18), new THREE.Color(0xffd23f)];
+    case 'water':    return [new THREE.Color(0x35a7ff), new THREE.Color(0xa6e9ff)];
+    case 'grass':    return [new THREE.Color(0x4fd06a), new THREE.Color(0xcaff8f)];
+    case 'ice':      return [new THREE.Color(0x8fe9ff), new THREE.Color(0xffffff)];
+    case 'psychic':  return [new THREE.Color(0xc24fff), new THREE.Color(0xff95e6)];
+    default:         return [new THREE.Color(0xe4bc63), new THREE.Color(0xfff2c0)]; // normal → gold
+  }
+}
+let _auraSprite: THREE.Texture | null = null;
+function auraSprite(): THREE.Texture {
+  if (_auraSprite) return _auraSprite;
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(.35, 'rgba(255,255,255,.55)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+  _auraSprite = new THREE.CanvasTexture(c);
+  return _auraSprite;
+}
+interface AuraHandle { points: THREE.Points; ring?: THREE.Mesh; update: (dt: number, t: number) => void; }
+// Legendaries get a stronger signature: a slowly-rotating magic-circle ring at
+// their feet + a denser aura, so they feel special vs. the regular roster.
+const LEGENDARY = new Set(['articuno', 'moltres', 'zapdos', 'entei', 'raikou', 'suicune', 'lugia', 'ho-oh', 'mewtwo']);
+function attachAura(host: THREE.Group, character: string): void {
+  const prev = (host as any).__aura as AuraHandle | undefined;
+  if (prev) {
+    try {
+      host.remove(prev.points); prev.points.geometry.dispose(); (prev.points.material as THREE.Material).dispose();
+      if (prev.ring) { host.remove(prev.ring); prev.ring.geometry.dispose(); (prev.ring.material as THREE.Material).dispose(); }
+    } catch {}
+    (host as any).__aura = null;
+  }
+  if (character === 'robot' || character === 'none' || character === 'alphabrain') return;   // robot/alphabrain keep their own look, no aura
+  const type: AuraType = POKEMON_ATTACK_TYPE[character] || 'normal';
+  const legendary = LEGENDARY.has(character);
+  const perfLite = typeof document !== 'undefined' && document.documentElement.classList.contains('perf-lite');
+  // Mobile/touch GPUs do less per-frame CPU work happily — use fewer particles
+  // there, and (below) update them every other frame. perf-lite trims further.
+  const isMobile = typeof window !== 'undefined' && (matchMedia('(max-width: 900px)').matches || 'ontouchstart' in window);
+  const base = perfLite ? 30 : isMobile ? 42 : 70;
+  const N = Math.round(base * (legendary ? (perfLite || isMobile ? 1.3 : 1.55) : 1));
+  const R = 1.45, H = 2.6, yBase = -1.25;
+  const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+  const data: { ang: number; rad: number; y: number; sp: number; ph: number }[] = [];
+  const [c1, c2] = auraColors(type);
+  for (let i = 0; i < N; i++) {
+    const ang = Math.random() * Math.PI * 2, rad = R * (0.35 + Math.random() * 0.65), y = yBase + Math.random() * H;
+    data.push({ ang, rad, y, sp: 0.3 + Math.random() * 0.9, ph: Math.random() * Math.PI * 2 });
+    pos[i * 3] = Math.cos(ang) * rad; pos[i * 3 + 1] = y; pos[i * 3 + 2] = Math.sin(ang) * rad;
+    const c = Math.random() < 0.5 ? c1 : c2;
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const mat = new THREE.PointsMaterial({ size: type === 'electric' ? 0.085 : 0.12, map: auraSprite(), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.85, sizeAttenuation: true, toneMapped: false });
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  host.add(points);
+  // Legendary signature: a flat magic-circle ring at the feet (two concentric
+  // additive rings) that slowly rotates.
+  let ring: THREE.Mesh | undefined;
+  if (legendary) {
+    const ringGeo = new THREE.RingGeometry(1.05, 1.32, 64);
+    const ringMat = new THREE.MeshBasicMaterial({ color: c1.clone().lerp(c2, 0.4), transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+    ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2; ring.position.y = yBase + 0.02; ring.frustumCulled = false;
+    host.add(ring);
+  }
+  let _acc = 0, _fc = 0;
+  const update = (dt: number, t: number) => {
+    // Ring spins smoothly every frame with the real dt.
+    if (ring) { ring.rotation.z += dt * 0.5; (ring.material as THREE.MeshBasicMaterial).opacity = 0.4 + Math.sin(t * 1.4) * 0.18; }
+    // On mobile, recompute particle positions every OTHER frame (accumulating dt
+    // so motion speed is unchanged) — halves the per-frame CPU cost of the aura.
+    if (isMobile) { _acc += dt; if ((_fc++ & 1) === 0) return; dt = _acc; _acc = 0; }
+    const p = geo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < N; i++) {
+      const d = data[i]; let x = 0, y = 0, z = 0;
+      switch (type) {
+        case 'fire':
+          d.y += d.sp * dt * 0.95; if (d.y > yBase + H) { d.y = yBase; d.ang = Math.random() * Math.PI * 2; d.rad = R * (0.2 + Math.random() * 0.5); }
+          { const taper = 1 - (d.y - yBase) / H * 0.65; x = Math.cos(d.ang) * d.rad * taper + Math.sin(t * 3 + d.ph) * 0.05; y = d.y; z = Math.sin(d.ang) * d.rad * taper; }
+          break;
+        case 'water':
+          d.y += d.sp * dt * 0.5; if (d.y > yBase + H) d.y = yBase;
+          x = Math.cos(d.ang) * d.rad + Math.sin(t * 2 + d.ph) * 0.08; y = d.y; z = Math.sin(d.ang) * d.rad + Math.cos(t * 2 + d.ph) * 0.08;
+          break;
+        case 'grass':
+          d.y -= d.sp * dt * 0.4; if (d.y < yBase) d.y = yBase + H;
+          d.ang += dt * 0.5 * Math.sin(t + d.ph);
+          x = Math.cos(d.ang) * d.rad; y = d.y; z = Math.sin(d.ang) * d.rad;
+          break;
+        case 'ice':
+          d.y -= d.sp * dt * 0.28; if (d.y < yBase) d.y = yBase + H;
+          x = Math.cos(d.ang) * d.rad; y = d.y + Math.sin(t * 1.5 + d.ph) * 0.03; z = Math.sin(d.ang) * d.rad;
+          break;
+        case 'electric':
+          x = Math.cos(d.ang) * d.rad + (Math.random() - 0.5) * 0.18; y = d.y + (Math.random() - 0.5) * 0.18; z = Math.sin(d.ang) * d.rad + (Math.random() - 0.5) * 0.18;
+          break;
+        case 'psychic':
+          { d.ang += dt * 1.1; const rr = d.rad + Math.sin(t * 1.5 + d.ph) * 0.15; x = Math.cos(d.ang) * rr; y = d.y + Math.sin(t * 1.2 + d.ph) * 0.2; z = Math.sin(d.ang) * rr; }
+          break;
+        default: // normal → gentle gold motes
+          x = Math.cos(d.ang) * d.rad; y = d.y + Math.sin(t * 1.1 + d.ph) * 0.18; z = Math.sin(d.ang) * d.rad;
+      }
+      p.setXYZ(i, x, y, z);
+    }
+    p.needsUpdate = true;
+    if (type === 'electric') mat.opacity = 0.55 + Math.random() * 0.45;   // crackle flicker
+  };
+  (host as any).__aura = { points, ring, update };
+}
+
+// ── One-shot impact burst: an expanding additive ring + flying sparks. Used
+// when the pokéball pops open (and on throw arrival). Self-animating; removes
+// itself when finished so it never touches the main render loop. ─────────────
+function spawnBurst(parent: THREE.Object3D, pos: THREE.Vector3, color: number): void {
+  const grp = new THREE.Group(); grp.position.copy(pos); parent.add(grp);
+  const ringGeo = new THREE.RingGeometry(0.1, 0.17, 48);
+  const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const ring = new THREE.Mesh(ringGeo, ringMat); grp.add(ring);
+  const N = 30;
+  const sp = new Float32Array(N * 3);
+  const vel: THREE.Vector3[] = [];
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2, b = (Math.random() - 0.5) * Math.PI, s = 1.4 + Math.random() * 1.8;
+    vel.push(new THREE.Vector3(Math.cos(a) * Math.cos(b), Math.sin(b), Math.sin(a) * Math.cos(b)).multiplyScalar(s));
+  }
+  const sgeo = new THREE.BufferGeometry(); sgeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+  const smat = new THREE.PointsMaterial({ color, size: 0.13, map: auraSprite(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const sparks = new THREE.Points(sgeo, smat); sparks.frustumCulled = false; grp.add(sparks);
+  const start = performance.now(), dur = 640;
+  const tick = (now: number) => {
+    const t = Math.min(1, (now - start) / dur);
+    ring.scale.setScalar(1 + t * 8); ringMat.opacity = 0.9 * (1 - t);
+    const p = sgeo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < N; i++) p.setXYZ(i, vel[i].x * t, vel[i].y * t, vel[i].z * t);
+    p.needsUpdate = true; smat.opacity = 1 - t;
+    if (t < 1) requestAnimationFrame(tick);
+    else { parent.remove(grp); ringGeo.dispose(); ringMat.dispose(); sgeo.dispose(); smat.dispose(); }
+  };
+  requestAnimationFrame(tick);
+}
+
+function loadAndReplaceBody(
+  pikaGroup: THREE.Group,
+  _mats: PikachuMaterials,
+  base: string,
+  character = 'pikachu',
+  onLoaded?: (model: THREE.Object3D) => void,
+): void {
+  const file = CHARACTER_FILES[character] || CHARACTER_FILES.pikachu;
+  import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
+    const loader = new GLTFLoader();
+    loader.load(
+      base + file,
+      (gltf) => {
+        // Hide all procedural body/head geometry (only needs doing once, but
+        // harmless to repeat on swaps).
+        pikaGroup.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            const mat = Array.isArray(child.material) ? child.material[0] : child.material;
+            if (mat instanceof THREE.MeshPhysicalMaterial) child.visible = false;
+            if (mat instanceof THREE.MeshBasicMaterial && (mat as THREE.MeshBasicMaterial).map) {
+              child.visible = false;
+            }
+          }
+        });
+
+        // Remove a previously-swapped model if present.
+        const prev = loadedModels.get(pikaGroup);
+        if (prev) { pikaGroup.remove(prev); }
+
+        const model = gltf.scene;
+        // Accurate per-Pokemon body colour pulled from the official Gen-1 sprite
+        // sheet (keyed by National Dex number). Used only for untextured models;
+        // textured GLBs keep their own maps.
+        const dex = POKEMON_CRY_ID[character] ?? (character.indexOf('pikachu') === 0 ? 25 : 0);
+        const spriteCol = POKEMON_SPRITE_COLOR[dex];
+        // Some GLBs carry embedded textures (keep them); the imported pack ships
+        // untextured (single flat colour). Collect the untextured meshes so we can
+        // paint them with the real sprite via front planar projection further down.
+        const untex: { mesh: THREE.Mesh; mats: THREE.MeshStandardMaterial[] }[] = [];
+        model.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.geometry.computeVertexNormals();
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            const myUntex: THREE.MeshStandardMaterial[] = [];
+            for (const m of mats) {
+              if (!m) continue;
+              (m as any).side = THREE.DoubleSide;
+              const sm = m as THREE.MeshStandardMaterial;
+              if (sm.map) {
+                sm.map.colorSpace = THREE.SRGBColorSpace;
+                // The imported Charizard (many meshes, awkward normals) renders dark
+                // under the orb lights, so self-light it with its own texture to keep
+                // the real colours bright. Other textured models look fine as-is.
+                if (character === 'charizard') {
+                  sm.emissiveMap = sm.map;
+                  sm.emissive.setRGB(1, 1, 1);
+                  sm.emissiveIntensity = 0.55;
+                  sm.roughness = 1; sm.metalness = 0;
+                  sm.needsUpdate = true;
+                }
+              }
+              else if (character === 'robot') {
+                // The original white/black robot lost its textures in conversion, so
+                // re-assign by material: the large shell → white, accents → black.
+                const nm = (m.name || '').toLowerCase();
+                if (nm.indexOf('001') >= 0 || nm.indexOf('002') >= 0) {
+                  sm.color.setRGB(0.10, 0.11, 0.14);   // black accents
+                  sm.metalness = 0.5; sm.roughness = 0.5;
+                } else {
+                  sm.color.setRGB(0.94, 0.95, 0.97);   // white shell
+                  sm.metalness = 0.18; sm.roughness = 0.42;
+                }
+                if (sm.emissive) sm.emissive.setRGB(0, 0, 0);
+                (sm as any).envMapIntensity = 1.0;
+                sm.needsUpdate = true;
+              }
+              else if (sm.color) {
+                // Fallback flat colour (shown until the sprite texture loads, and
+                // kept if no sprite exists). Matte + gentle dim keeps bloom in check.
+                if (spriteCol !== undefined) sm.color.setHex(spriteCol);
+                sm.color.multiplyScalar(0.7);
+                sm.roughness = 1; sm.metalness = 0;
+                if (sm.emissive) sm.emissive.setRGB(0, 0, 0);
+                (sm as any).envMapIntensity = 0.3;
+                myUntex.push(sm);
+              }
+            }
+            if (myUntex.length) untex.push({ mesh: child, mats: myUntex });
+            child.castShadow = true;
+          }
+        });
+
+        // The robot model ships standing on a large flat ground plane — drop any
+        // thin/wide mesh so only the robot remains (and so the size-normalisation
+        // below fits the robot, not the floor).
+        if (character === 'robot') {
+          model.updateMatrixWorld(true);
+          const drop: THREE.Object3D[] = [];
+          model.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              const sz = new THREE.Box3().setFromObject(child).getSize(new THREE.Vector3());
+              const dims = [sz.x, sz.y, sz.z].sort((a, b) => a - b);
+              if (dims[2] > 1e-4 && dims[0] < dims[2] * 0.06) drop.push(child);   // flat + wide → floor
+            }
+          });
+          drop.forEach((m) => m.parent && m.parent.remove(m));
+        }
+
+        // Auto-normalize so every Pokemon is roughly the SAME apparent size and
+        // fills the orb sphere. Rotation is applied FIRST, then the bounding box
+        // is measured in the rotated frame — otherwise rotated models (suicune,
+        // squirtle) end up off-centre. Normalise by the largest of all 3 dims so
+        // the model's full extent fits consistently regardless of its shape.
+        const xf = getCharXform(character);
+        model.rotation.set(xf.x, xf.y, xf.z);
+        model.scale.setScalar(1);
+        model.position.set(0, 0, 0);
+        model.updateMatrixWorld(true);
+        const bb = new THREE.Box3().setFromObject(model);
+        const bbSize = bb.getSize(new THREE.Vector3());
+        const bbCenter = bb.getCenter(new THREE.Vector3());
+
+        // ── Sprite projection ──────────────────────────────────────────────
+        // Paint untextured models with their actual Pokemon sprite. The sprites are
+        // front views and the model faces the camera, so we planar-project the image
+        // onto the mesh along Z: each vertex's XY position (in the current rotated,
+        // unscaled frame — same frame as bb) becomes its UV. Result: the real colours
+        // and features (eyes, belly, patterns) land on the front of the 3D model.
+        if (untex.length && dex >= 1 && dex <= 151) {
+          const minX = bb.min.x, minY = bb.min.y;
+          const spanX = Math.max(1e-4, bbSize.x), spanY = Math.max(1e-4, bbSize.y);
+          const v = new THREE.Vector3();
+          for (const { mesh } of untex) {
+            const geo = mesh.geometry as THREE.BufferGeometry;
+            const pos = geo.attributes.position as THREE.BufferAttribute;
+            const uv = new Float32Array(pos.count * 2);
+            for (let i = 0; i < pos.count; i++) {
+              v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+              uv[i * 2]     = (v.x - minX) / spanX;
+              uv[i * 2 + 1] = (v.y - minY) / spanY;
+            }
+            geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+          }
+          const tex = new THREE.TextureLoader().load(`${base}pokemon-sprites/${dex}.png`);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.magFilter = THREE.LinearFilter;
+          tex.minFilter = THREE.LinearMipmapLinearFilter;
+          tex.anisotropy = 4;
+          for (const { mats } of untex) {
+            for (const sm of mats) {
+              sm.map = tex;
+              sm.color.setRGB(1, 1, 1);   // let the texture show its true colours
+              // Also drive the sprite as an emissive (self-lit) map so the model is
+              // always brightly coloured regardless of mesh complexity / lighting —
+              // complex imported meshes were rendering nearly black otherwise.
+              sm.emissiveMap = tex;
+              sm.emissive.setRGB(1, 1, 1);
+              sm.emissiveIntensity = 0.6;
+              sm.needsUpdate = true;
+            }
+          }
+        }
+        // ────────────────────────────────────────────────────────────────────
+
+        const target = 2.5;   // fill the sphere (radius ~1.6)
+        // Normalize primarily by HEIGHT so EVERY character stands at the same
+        // apparent size (uniform default like the reference image). Width/depth
+        // are clamped (×0.8) so very wide models (spread wings, long tails) still
+        // can't overflow the orb, but compact and tall models both end up the
+        // same standing height — instead of max-dim, which made wide/long models
+        // look smaller than compact ones like Eevee.
+        const s = target / Math.max(bbSize.y, bbSize.x * 0.8, bbSize.z * 0.8);
+        // Store the base transform so real-time adjustments can re-apply without reload.
+        modelBaseTransform.set(model, { s, cx: -bbCenter.x * s, cy: -bbCenter.y * s, cz: -bbCenter.z * s });
+        // Apply stored user transform (scale multiplier + position offset on top).
+        model.scale.setScalar(s * xf.s);
+        model.position.set(-bbCenter.x * s + xf.px, -bbCenter.y * s + xf.py, -bbCenter.z * s + xf.pz);
+
+        // Robot: the eyes were a (lost) texture, so add two neon-blue emissive eye
+        // spheres at the front-top of the head (camera looks down -z, so +z faces us).
+        if (character === 'robot') {
+          model.updateMatrixWorld(true);
+          const wbb = new THREE.Box3().setFromObject(model);
+          const wsz = wbb.getSize(new THREE.Vector3());
+          const eyeR = Math.max(0.035, wsz.y * 0.045);
+          const eyeMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: new THREE.Color(0x18a8ff), emissiveIntensity: 3.2, toneMapped: false, roughness: 0.2, metalness: 0 });
+          const cxw = (wbb.min.x + wbb.max.x) / 2;
+          const eyeY = wbb.max.y - wsz.y * 0.17;
+          const eyeZ = wbb.max.z;
+          for (const sgn of [-1, 1]) {
+            const eye = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 18, 18), eyeMat);
+            const wp = new THREE.Vector3(cxw + sgn * wsz.x * 0.12, eyeY, eyeZ);
+            model.worldToLocal(wp);
+            eye.position.copy(wp);
+            model.add(eye);
+          }
+        }
+
+        // Baked animation (e.g., the rigged robot) — drive it with a mixer that
+        // the render loop updates. Stash on the group so the loop can find it.
+        const prevMx = (pikaGroup as any).__mixer as THREE.AnimationMixer | undefined;
+        if (prevMx) { try { prevMx.stopAllAction(); prevMx.uncacheRoot(prevMx.getRoot() as any); } catch {} (pikaGroup as any).__mixer = null; }
+        if (gltf.animations && gltf.animations.length) {
+          const mixer = new THREE.AnimationMixer(model);
+          gltf.animations.forEach((clip: THREE.AnimationClip) => { const a = mixer.clipAction(clip); a.play(); });
+          (pikaGroup as any).__mixer = mixer;
+        }
+
+        pikaGroup.add(model);
+        loadedModels.set(pikaGroup, model);
+        attachAura(pikaGroup, character);   // type-themed idle particles
+        onLoaded?.(model);
+      },
+      undefined,
+      (err) => console.warn(`[OrbScene] ${file} load failed:`, err),
+    );
+  });
+}
+
+// ============================================================
+// Pokeball throw — renders the real 3D Pokéball INSIDE the orb scene (same
+// proven WebGL context as the characters), so it's always visible. Hides the
+// character mesh during the throw and reveals the new one when it "opens".
+// Returns a throwPokeball(onOpen,onDone) bound to the given scene group.
+// ============================================================
+function makeThrowPokeball(group: THREE.Group, pikaGroup: THREE.Group, base: string, camera?: THREE.Camera) {
+  let ball: THREE.Object3D | null = null;
+  let loading: Promise<THREE.Object3D | null> | null = null;
+  let raf = 0;
+  let holdRaf = 0;
+  function ensure(): Promise<THREE.Object3D | null> {
+    if (ball) return Promise.resolve(ball);
+    if (loading) return loading;
+    loading = import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) =>
+      new Promise<THREE.Object3D | null>((res) => {
+        new GLTFLoader().load(base + 'ar-models/pokeball.glb', (g: any) => {
+          const m: THREE.Object3D = g.scene;
+          m.traverse((o: any) => {
+            if (!o.isMesh) return;
+            o.geometry.computeVertexNormals();
+            // Premium polished-metal look: low roughness + high metalness picks up
+            // the scene env reflections (scene.environment is set), so the shell
+            // reads as glossy enamel rather than flat plastic.
+            const t = (mm: any) => { mm.roughness = 0.18; mm.metalness = 0.85; mm.envMapIntensity = 1.4; mm.side = THREE.FrontSide; };
+            Array.isArray(o.material) ? o.material.forEach(t) : (o.material && t(o.material));
+          });
+          const bb = new THREE.Box3().setFromObject(m);
+          const sz = bb.getSize(new THREE.Vector3()); const ctr = bb.getCenter(new THREE.Vector3());
+          const s = 1.5 / Math.max(sz.x, sz.y, sz.z);
+          const wrap = new THREE.Group();
+          m.scale.setScalar(s); m.position.set(-ctr.x * s, -ctr.y * s, -ctr.z * s);
+          // Glowing centre gem on the front face (+z) so the ball reads as "charged".
+          const gemR = 0.18;
+          const gem = new THREE.Mesh(
+            new THREE.SphereGeometry(gemR, 20, 20),
+            new THREE.MeshStandardMaterial({ color: 0x081018, emissive: new THREE.Color(0x9fe6ff), emissiveIntensity: 2.6, roughness: 0.15, metalness: 0, toneMapped: false }),
+          );
+          gem.position.set(0, 0, 0.74);
+          const gemLight = new THREE.PointLight(0x9fe6ff, 1.4, 2.2, 1.4);
+          gemLight.position.copy(gem.position);
+          wrap.add(gem); wrap.add(gemLight);
+          (wrap as any).__gem = gem;
+          wrap.add(m); wrap.visible = false; group.add(wrap); ball = wrap; res(wrap);
+        }, undefined, () => res(null));
+      })).catch(() => null);
+    return loading;
+  }
+  // ── Hand grab/throw: project a screen point to a 3D point in front of the orb
+  // so the REAL 3D pokéball can be "held" in the hand and thrown. ──
+  function screenToWorld(nx: number, ny: number): THREE.Vector3 {
+    const cam = camera as THREE.PerspectiveCamera;
+    const v = new THREE.Vector3(nx * 2 - 1, -(ny * 2 - 1), 0.5).unproject(cam);
+    const dir = v.sub(cam.position).normalize();
+    const targetZ = 2.3;                                  // a plane in front of the orb
+    const dist = (targetZ - cam.position.z) / dir.z;
+    return cam.position.clone().add(dir.multiplyScalar(dist));
+  }
+  function hold(nx: number, ny: number) {
+    if (!camera) return;
+    ensure().then((b) => {
+      if (!b) return;
+      cancelAnimationFrame(holdRaf);
+      b.visible = true; b.scale.setScalar(0.95);
+      b.position.copy(screenToWorld(nx, ny));
+      b.rotation.y += 0.06; b.rotation.x = 0.2;
+    });
+  }
+  function release() { if (ball) ball.visible = false; }
+  /**
+   * Animate the held pokéball flying from its current position to the orb,
+   * with duration/arc height/spin rate scaled by the real gesture speed so a
+   * hard flick genuinely looks and feels different from a gentle release.
+   * @param onArrive - called once the ball reaches the orb and the arrival burst fires.
+   * @param speed - hand-flick speed from the gesture detector (px/frame, roughly
+   *   0–100 in practice; see app.ts's flick threshold of ~26). Omit for the
+   *   default gentle toss used by "hold to summon" (no real flick occurred).
+   */
+  function throwIt(onArrive?: () => void, speed = 30) {
+    ensure().then((b) => {
+      if (!b || !camera) { onArrive && onArrive(); return; }
+      b.visible = true;
+      const from = b.position.clone();
+      const to = new THREE.Vector3(0, 0, 0);
+      const intensity = Math.max(0, Math.min(1, (speed - 20) / 80)); // 0..1
+      const dur = 520 - intensity * 260;          // 520ms gentle → 260ms hard flick
+      const arcHeight = 0.35 + intensity * 0.9;   // a real arc instead of a flat lerp
+      const spinRate = 0.3 + intensity * 0.7;
+      const start = performance.now();
+      cancelAnimationFrame(holdRaf);
+      const tick = (now: number) => {
+        const t = Math.min(1, (now - start) / dur);
+        const e = t * t * (3 - 2 * t);
+        b.position.lerpVectors(from, to, e);
+        b.position.y += Math.sin(t * Math.PI) * arcHeight; // parabolic arc, peaks mid-flight
+        b.scale.setScalar(0.95 * (1 - e) + 0.2 * e);
+        b.rotation.y += 0.45 * spinRate; b.rotation.x += 0.22 * spinRate;
+        if (t < 1) holdRaf = requestAnimationFrame(tick);
+        else { b.visible = false; try { spawnBurst(group, new THREE.Vector3(0, 0, 0), 0x9fe6ff); } catch {} try { onArrive && onArrive(); } catch {} }
+      };
+      holdRaf = requestAnimationFrame(tick);
+    });
+  }
+
+  const throwPokeball = function throwPokeball(onOpen?: () => void, onDone?: () => void) {
+    let opened = false, doneF = false;
+    const fo = () => { if (!opened) { opened = true; pikaGroup.visible = true; try { spawnBurst(group, ball ? ball.position.clone() : new THREE.Vector3(0, 0, 0), 0x9fe6ff); } catch {} try { onOpen && onOpen(); } catch {} } };
+    const fd = () => { if (!doneF) { doneF = true; if (ball) ball.visible = false; try { onDone && onDone(); } catch {} } };
+    const wd1 = setTimeout(fo, 1500), wd2 = setTimeout(() => { fo(); fd(); }, 2700);
+    pikaGroup.visible = false; // character vanishes (laser hit)
+    ensure().then((b) => {
+      if (!b) { clearTimeout(wd1); clearTimeout(wd2); fo(); fd(); return; }
+      b.visible = true; b.position.set(0, 0, 0); b.scale.setScalar(0.01); b.rotation.set(0, 0, 0);
+      const start = performance.now(); cancelAnimationFrame(raf);
+      const tick = (now: number) => {
+        const t = (now - start) / 1000;
+        if (t < 0.5) {                              // fly in from below, spin
+          const p = t / 0.5, e = 1 - Math.pow(1 - p, 3);
+          b.position.y = -2.4 + 2.4 * e; b.scale.setScalar(0.3 + 0.9 * e);
+          b.rotation.y = t * 16; b.rotation.x = 0.25;
+        } else if (t < 1.05) {                       // wobble
+          b.position.y = 0; b.scale.setScalar(1.2);
+          b.rotation.z = Math.sin((t - 0.5) * 22) * 0.42 * Math.max(0, 1 - (t - 0.5) / 0.55);
+          b.rotation.y += 0.05;
+        } else if (t < 1.5) {                        // open: reveal char, ball spins away
+          if (!opened) { clearTimeout(wd1); fo(); }
+          const p = (t - 1.05) / 0.45;
+          b.scale.setScalar(1.2 * (1 - p)); b.rotation.y += 0.3; b.position.y = p * 0.4;
+        } else { clearTimeout(wd2); fd(); return; }
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    });
+  };
+  return Object.assign(throwPokeball, { hold, throwIt, release });
+}
+
+// ============================================================
 // Mobile orb scene — holographic AI core (MAXIMUM QUALITY)
 // ============================================================
 function mountMobileOrb(container: HTMLElement): OrbHandle {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
-    alpha: false,
+    alpha: true,
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setClearColor(0x0a0806, 1);
+  let perfFast = false;
+  // Adaptive quality tier, bumped automatically when the GPU can't keep a smooth
+  // framerate: 0 = full (post-fx on), 1 = post-fx off, 2 = post-fx off + lower res.
+  let qTier = 0;
+  const bigTouch = false;   // (desktop-scene only concept; mobile is already light)
+  // DPR 2 was tuned for phone-sized canvases (~1.3M px/frame). An iPad-class
+  // screen at DPR 2 pushes ~5.6M px/frame — 4× a phone — through the same
+  // shaders, which is what actually janks iPads. Cap big touch screens lower;
+  // at these sizes the difference is invisible at arm's length.
+  const bigScreen = Math.min(window.innerWidth, window.innerHeight) >= 700;
+  const prCap = () => {
+    const base = Math.min(window.devicePixelRatio || 1, perfFast ? 1 : bigScreen ? 1.25 : 2);
+    return qTier >= 2 ? Math.min(base, 1) : base;
+  };
+  renderer.setPixelRatio(prCap());
+  renderer.setClearColor(charBg('alphabrain'), 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.65;
+  container.dataset.orbMode = 'mobile'; // which scene tier actually mounted (debug/QA)
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
   camera.position.set(0, 0, 6);
   camera.lookAt(0, 0, 0);
+  // Camera never otherwise moves on mobile — re-applied every frame as the
+  // base orientation the ignition sequence's camera shake rotates on top of.
+  const mobileBaseCamQuat = camera.quaternion.clone();
 
   // Try full post-processing pipeline; if it fails use direct render
   let composer: EffectComposer | null = null;
   let mBloom: UnrealBloomPass | null = null;
   let mFxaa: ShaderPass | null = null;
+  let mChroma: ShaderPass | null = null;
+  let mToon: ShaderPass | null = null;
   let useComposer = false;
   try {
     const pr0 = Math.min(window.devicePixelRatio || 1, 2);
@@ -1296,18 +3155,30 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const mRT = new THREE.WebGLRenderTarget(
       Math.max(1, Math.floor((container.clientWidth || window.innerWidth) * pr0)),
       Math.max(1, Math.floor((container.clientHeight || window.innerHeight) * pr0)),
-      { samples: 4 },
+      // 2x MSAA (not 4x): FXAA later in the chain already smooths what's
+      // left, and halving the multisample count is a real bandwidth win at
+      // retina pixel ratios — this was a "feels stuck" contributor.
+      { samples: 2 },
     );
     composer = new EffectComposer(renderer, mRT);
     composer.addPass(new RenderPass(scene, camera));
     mBloom = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth * pr0, window.innerHeight * pr0),
-      0.08, 0.5, 0.78,
+      0.05, 0.5, 0.86,   // gentle glow + high threshold so it doesn't wash the robot's colours
     );
     composer.addPass(mBloom);
     const mVignette = new ShaderPass(GOLD_VIGNETTE_SHADER);
     mVignette.uniforms.darkness.value = 0.7;
     composer.addPass(mVignette);
+    // Chromatic-aberration shockwave pass — off (uStrength 0) except during
+    // the ignition sequence's Phase 3 boom. Sits before FXAA so the AA pass
+    // smooths the split-channel edges instead of sharpening them.
+    mChroma = new ShaderPass(CHROMATIC_SHOCKWAVE_SHADER);
+    composer.addPass(mChroma);
+    // Oriki Protocol toon pass — before FXAA so the posterize bands still
+    // get smoothed, off (uStrength 0) outside kid-safe mode.
+    mToon = new ShaderPass(TOON_POSTERIZE_SHADER);
+    composer.addPass(mToon);
     mFxaa = new ShaderPass(FXAAShader);
     composer.addPass(mFxaa);
     composer.addPass(new OutputPass());
@@ -1317,14 +3188,20 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   } catch {
     composer = null;
     mBloom = null;
+    mChroma = null;
     mFxaa = null;
     useComposer = false;
   }
 
+  // Revenue Data-Tornado — smaller radius than desktop so the column stays
+  // inside a phone's narrow horizontal frustum (visible width ≈2.8 units).
+  const revTornado = buildRevenueTornado(1200, 1.55, 0.4);
+  scene.add(revTornado.points);
+
   function resize() {
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
-    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    const pr = prCap();
     renderer.setPixelRatio(pr);
     renderer.setSize(w, h, true);
     if (composer) composer.setSize(w * pr, h * pr);
@@ -1364,6 +3241,51 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const pikaGroup = pika.group;
   pikaGroup.scale.setScalar(0.95);
   group.add(pikaGroup);
+  // The procedural Pikachu body flashes for a frame before any GLTF swap
+  // finishes loading, so it's hidden from frame 0 regardless of which
+  // character (GLTF or the Alpha Brain hologram) ends up shown.
+  pikaGroup.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      const mat = Array.isArray(child.material) ? child.material[0] : child.material;
+      if (mat instanceof THREE.MeshPhysicalMaterial) child.visible = false;
+      if (mat instanceof THREE.MeshBasicMaterial && (mat as THREE.MeshBasicMaterial).map) child.visible = false;
+    }
+  });
+  // The default centerpiece is the ALPHA BRAIN hologram, not a GLTF character —
+  // no model to load, so pikaGroup just stays hidden until the user picks one.
+  // Mobile GPUs get a lower-resolution plasma sphere (48 segments) — still
+  // plenty smooth for the noise displacement, far cheaper than the desktop's.
+  const alphaBrain = buildAlphaBrain(48);
+  group.add(alphaBrain.group);
+  pikaGroup.visible = false;
+  let mobileCurrentChar = 'alphabrain';
+  let mobileCurrentModel: THREE.Object3D | null = null;
+  let mobPFX: PFXState | null = null;
+
+  // Oriki Protocol — kid-safe toy vehicles, spawned into the scene but
+  // hidden/inert until setOrikiMode(true).
+  const toyPlayground = createToyPlayground();
+  group.add(toyPlayground.group);
+  let oriToonTarget = 0;
+  let oriActive = false;
+  const onOriTap = (e: PointerEvent) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    toyPlayground.handleTap(ndcX, ndcY, camera);
+  };
+
+  // ── JET-TURBINE IGNITION SEQUENCE — one-shot OS boot-up cinematic ──
+  const ignitionShake = createCameraShake();
+  const ignitionAudio = createIgnitionAudioRig(camera, alphaBrain.group);
+  const ignitionLights = createIgnitionLightRig([mKey, mFill, mFront, mRim, mAmbient]);
+  let ignitionPending = false;
+  let ignitionStartTime: number | null = null;
+  let ignitionClimaxFired = false;
+  // Gate the whole sequence on the first real gesture so audio + visuals fire
+  // together (arms immediately if audio's already unlocked or unavailable).
+  const ignitionGestureCleanup = armIgnitionOnGesture(ignitionAudio, () => { ignitionPending = true; });
+  const mobileThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — gold halo, champagne, rose
@@ -1549,25 +3471,102 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
   const particles = new THREE.Points(pGeo, pMat);
   group.add(particles);
 
+  // ── Minimal-orb mode (default ON) — only the central object is active ──
+  // Every decorative layer around it (rings, halo sprites, pulse waves,
+  // ambient particles) is hidden outright: transparent additive overdraw is
+  // the single biggest GPU cost in this scene, and visible=false pays zero,
+  // unlike "update less". The characters themselves (Alpha core + cages,
+  // Pikachu, Oriki toys) and anything added later (pokeball throw, Pokemon
+  // FX) stay live. Escape hatch: localStorage alpha:orb_minimal = '0'.
+  const orbMinimal = (() => { try { return localStorage.getItem('alpha:orb_minimal') !== '0'; } catch { return true; } })();
+  if (orbMinimal) {
+    const keep = new Set<THREE.Object3D>([pikaGroup, alphaBrain.group, toyPlayground.group]);
+    group.children.forEach((c) => { if (!keep.has(c)) c.visible = false; });
+    alphaBrain.tendrils.group.visible = false;
+    revTornado.points.visible = false; // reappears only during an ingestion burst
+  }
+
   // ────────────────────────────────────────────
   // ANIMATION — maximum flow
   // ────────────────────────────────────────────
   let chargeLevel = 0;
   const disposeChu = setupChuEffect(container, renderer.domElement, (lv) => { chargeLevel = lv; });
 
+  // Drag rotation state
+  let userRotY = 0, rotVel = 0;
+  let dragActive = false, dragLastX = 0;
+  const cvs = renderer.domElement;
+  function onDragStart(x: number) { dragActive = true; dragLastX = x; rotVel = 0; }
+  function onDragMove(x: number) {
+    if (!dragActive) return;
+    const dx = x - dragLastX; dragLastX = x;
+    rotVel = dx * 0.012;
+    userRotY += rotVel;
+  }
+  function onDragEnd() { dragActive = false; }
+  cvs.addEventListener('mousedown', (e) => onDragStart(e.clientX));
+  cvs.addEventListener('mousemove', (e) => onDragMove(e.clientX));
+  cvs.addEventListener('mouseup', onDragEnd);
+  cvs.addEventListener('mouseleave', onDragEnd);
+  cvs.addEventListener('touchstart', (e) => { if (e.touches[0]) onDragStart(e.touches[0].clientX); }, { passive: true });
+  cvs.addEventListener('touchmove', (e) => { if (e.touches[0]) onDragMove(e.touches[0].clientX); }, { passive: true });
+  cvs.addEventListener('touchend', onDragEnd);
+
   let time = 0, raf = 0;
   let amp = 0.06, ampTarget = 0.06;
+  // Phase 2 (mic) — optional live 0..1 audio-level source (a real AnalyserNode
+  // off the assistant's mic), polled each frame so the plasma core ripples to
+  // the user's actual voice while listening.
+  let audioLevelFn: (() => number) | null = null;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
   let lastFrame = 0;
+  let fpsT = 0, fpsN = 0, warmT = 0, lowStreak = 0;
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    if (document.hidden || document.body.classList.contains('bg-paused')) return;
-    if (now - lastFrame < 33) return;
+    // The boot intro video plays over this scene at opacity:0 (CSS alone
+    // doesn't stop WebGL work) — full bloom/FXAA/MSAA rendering competing
+    // with video decode for the GPU is exactly what was causing the boot
+    // video to stutter on phones. Stay paused (still scheduling the next
+    // rAF so state resumes instantly) until index.html removes 'booting'.
+    if (document.hidden || document.body.classList.contains('bg-paused') || document.documentElement.classList.contains('booting')) return;
+    // Always render at the display's native refresh (60/120Hz) — no fps cap.
+    // A hard cap (the old Fast-mode 45fps throttle) reads as "low framerate" on
+    // ProMotion iPads; instead we shed *cost per frame* via perfFast + the
+    // adaptive qTier (post-fx off, then lower resolution) and let the rAF run
+    // free, which is what actually makes motion feel smooth.
+    // Frame-rate-independent timing: advance by *real* elapsed seconds (clamped so a
+    // backgrounded tab or GC pause can't make the scene leap). This also restores the
+    // authored cadence — "hop every ~8s", blinks, etc. — which the old fixed 0.016
+    // step ran in slow-motion once the framerate was capped.
+    // rawDt feeds the fps watchdog (clamped time makes its clock run 10x
+    // slow exactly when frames are slowest); clamped dt drives animation.
+    const rawDt = lastFrame ? (now - lastFrame) / 1000 : 0.016;
+    const dt = Math.min(rawDt, 0.05);
     lastFrame = now;
-    const dt = 0.016;
     time += dt;
+    { const __mx = (pikaGroup as any).__mixer as THREE.AnimationMixer | undefined; if (__mx) __mx.update(dt); }
+    { const __au = (pikaGroup as any).__aura as { update:(dt:number,t:number)=>void } | undefined; if (__au) __au.update(dt, time); }
+    // Adaptive quality: if the GPU can't sustain ~55fps over two 1s windows, shed
+    // cost (first the post-fx pipeline, then resolution) so motion stays smooth.
+    // Sticky downgrade only — never auto-upgrades, to avoid hitching back and forth.
+    // Skipped when the user has forced Fast mode (perfFast handles it). A 3s warm-up
+    // ignores the initial model-load spike.
+    if (!perfFast && qTier < 2) {
+      warmT += rawDt; fpsT += rawDt; fpsN++;
+      if (warmT > 3 && fpsT >= 1) {
+        const fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
+        // iPad-class drops quality after a single slow window (fast relief); others
+        // wait for two so a momentary dip doesn't permanently lower quality.
+        const need = bigTouch ? 1 : 2;
+        // <40fps is unambiguous — shed immediately instead of waiting for a
+        // second slow window (a full extra second of visible jank).
+        if (fps < 55) { if (fps < 40 || ++lowStreak >= need) { lowStreak = 0; qTier++; resize(); } }
+        else lowStreak = 0;
+      }
+    }
     amp += (ampTarget - amp) * 0.07;
+    if (!dragActive) { rotVel *= 0.92; userRotY += rotVel; }
 
     // Long-press charge: ramp up bloom and exposure
     if (mBloom) mBloom.strength = 0.08 + chargeLevel * 2.0;
@@ -1586,7 +3585,7 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     // ── Pikachu "life" animation ──
     // Body sway — gentle side-to-side idle tilting
     const sway = Math.sin(time * 0.45) * 0.04;
-    pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35;
+    pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35 + userRotY;
     pikaGroup.rotation.z = sway;
     // Periodic happy hop — quick bounce every ~8 seconds
     const hopCycle = time % 8.0;
@@ -1597,6 +3596,55 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     const bounce = 1.0 + Math.max(0, Math.sin(time * 3.0)) * 0.008;
     const hopSquash = hopActive ? 1.0 + Math.sin((hopCycle - 7.4) / 0.4 * PI) * 0.04 : 1.0;
     pikaGroup.scale.set(0.95 * breath * (1.0 / bounce) * (1.0 / hopSquash), 0.95 * breath * bounce * hopSquash, 0.95 * breath);
+    // Alpha Brain — slow counter-rotating core/shell, hologram-style idle spin.
+    alphaBrain.core.rotation.y += dt * 0.25;
+    alphaBrain.core.rotation.x += dt * 0.08;
+    alphaBrain.wire.rotation.y -= dt * 0.18;
+    alphaBrain.wire.rotation.x += dt * 0.05;
+    // Phase 3 — containment ring counter-rotates against the gold shell.
+    alphaBrain.wire2.rotation.y += dt * 0.12;
+    alphaBrain.wire2.rotation.z -= dt * 0.09;
+    // Phase 2 — voice-reactive amplitude: breathes in silence, sharp ripples
+    // while speaking, synthesized from the smoothed speaking/listening energy.
+    const micLevel = audioLevelFn ? Math.max(0, Math.min(1, audioLevelFn())) : 0;
+    const coreAmp = voiceReactiveAmp(Math.max(amp, micLevel), time);
+    alphaBrain.coreMat.uniforms.uTime.value = time;
+    alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
+    alphaBrain.tendrils.update(dt, coreAmp, time); // data streams into the core on speech
+
+    // ── Jet-turbine ignition sequence — fires once, right at boot ──
+    if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }
+    if (ignitionStartTime !== null) {
+      const ignElapsed = time - ignitionStartTime;
+      const ignFreq = ignitionAudio ? ignitionAudio.analyser.getAverageFrequency() / 255 : Math.min(1, ignElapsed / 3);
+      if (ignElapsed < 3.1) {
+        ignitionShake.addTrauma(ignFreq * dt * 2.4);
+      } else if (!ignitionClimaxFired) {
+        ignitionClimaxFired = true;
+        ignitionShake.addTrauma(1.0);
+        if (mChroma) mChroma.uniforms.uStrength.value = 0.05;
+      }
+      ignitionLights.update(ignElapsed);
+      const ignCoreBoost = ignElapsed < 3.1 ? ignFreq * 0.85 : Math.max(0, 2.0 * Math.exp(-(ignElapsed - 3.1) * 2.0));
+      alphaBrain.coreMat.uniforms.uAudioAmplitude.value = Math.max(coreAmp, ignCoreBoost);
+      if (ignElapsed > 6.5) { ignitionStartTime = null; ignitionLights.settle(); }
+    }
+    // Phase 4 — a voice peak splits the RGB channels a touch (desktop composer
+    // only); the decay below relaxes it back to zero over the next frames.
+    if (mChroma && coreAmp > 0.6) {
+      mChroma.uniforms.uStrength.value = Math.max(mChroma.uniforms.uStrength.value, (coreAmp - 0.6) * 0.03);
+    }
+    if (mChroma) mChroma.uniforms.uStrength.value *= Math.max(0, 1 - dt * 3.2);
+    revTornado.update(dt);
+    if (orbMinimal) revTornado.points.visible = revTornado.burstLevel() > 0.03;
+    // Re-anchor to the resting orientation every frame, then layer the
+    // ignition camera shake on top — keeps the jolt from drifting/compounding.
+    camera.quaternion.copy(mobileBaseCamQuat);
+    const ignShakeMobile = ignitionShake.update(dt, time);
+    camera.rotateX(ignShakeMobile.y);
+    camera.rotateY(ignShakeMobile.x);
+    camera.rotateZ(ignShakeMobile.roll);
+
     if (pika.head) {
       // Curious head tilt — cycles between looking around and tilting curiously
       const curiousCycle = time % 12.0;
@@ -1746,27 +3794,63 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     // Face the viewer at all times — only a tiny "looking around" sway, no full spin
     group.rotation.y = Math.sin(time * 0.25) * 0.12;
 
-    if (useComposer && composer) {
-      try { composer.render(); } catch { useComposer = false; }
+    if (mobPFX) {
+      const cfg = POKEMON_PFX[mobileCurrentChar]; if (cfg) updateParticles(mobPFX, cfg);
     }
-    if (!useComposer) {
-      renderer.render(scene, camera);
+
+    // Oriki Protocol — toy physics + toon-look lerp, both no-ops when off.
+    if (oriActive) toyPlayground.update(dt);
+    if (mToon) mToon.uniforms.uStrength.value += (oriToonTarget - mToon.uniforms.uStrength.value) * Math.min(1, dt * 4);
+
+    if (useComposer && composer && !perfFast && qTier === 0) {
+      try { composer.render(); } catch { useComposer = false; }
+    } else {
+      renderer.render(scene, camera);   // fast mode / low tier / no composer: skip post
     }
   }
 
   raf = requestAnimationFrame(frame);
 
+  // Collect the gold cage / ring / line materials so the framework recolours to
+  // match the active Pokemon (skips the character model itself and the Alpha
+  // Brain hologram, which keeps its own gold regardless of accent swaps).
+  const mobAccentMats = collectAccentMats(group, [pikaGroup, alphaBrain.group]);
+  function mobApplyAccent(name: string) { applyAccentToMats(mobAccentMats, charAccent(name)); }
+  mobApplyAccent('alphabrain');
+
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
+    attachAudioLevel(fn: () => number) { audioLevelFn = fn; },
+    setGoatTheme(on: boolean) { alphaBrain.setPalette(on ? CYBER_GOAT : CYBER_GOLD); },
+    pulseGlitch(strength = 0.12) {
+      if (mChroma) mChroma.uniforms.uStrength.value = Math.max(mChroma.uniforms.uStrength.value, strength);
+    },
+    setRevenueFill(v: number) { revTornado.setFill(v); },
+    revenueIngest() { revTornado.burst(); },
+    setOrikiMode(on: boolean) {
+      oriActive = on;
+      oriToonTarget = on ? 1 : 0;
+      toyPlayground.setActive(on);
+      if (on) renderer.domElement.addEventListener('pointerdown', onOriTap);
+      else renderer.domElement.removeEventListener('pointerdown', onOriTap);
+    },
     pikaEmote(emote: PikaEmote) {
+      pikaEmoteSpeak(emote);
       if (emote === 'excited' || emote === 'happy') { ampTarget = 0.85; setTimeout(() => { ampTarget = 0.06; }, 1200); }
       if (emote === 'surprised') { ampTarget = 0.7; setTimeout(() => { ampTarget = 0.06; }, 800); }
       if (emote === 'curious') { ampTarget = 0.45; setTimeout(() => { ampTarget = 0.06; }, 900); }
+      if (emote === 'sad') { ampTarget = 0.15; setTimeout(() => { ampTarget = 0.06; }, 1500); }
     },
     dispose() {
       cancelAnimationFrame(raf);
+      stopCry();
+      disposeParticles(mobPFX, scene);
       disposeChu();
+      ignitionGestureCleanup();
+      ignitionAudio?.dispose();
       window.removeEventListener('resize', resize);
+      renderer.domElement.removeEventListener('pointerdown', onOriTap);
+      revTornado.dispose();
       if (envMap) envMap.dispose();
       if (composer) composer.dispose();
       renderer.dispose();
@@ -1774,6 +3858,73 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
     },
     startBodyDetection() {},
     stopBodyDetection() {},
+    setCharacter(name: string) {
+      stopCry();
+      disposeParticles(mobPFX, scene); mobPFX = null;
+      mobileCurrentChar = name;
+      if (name === 'alphabrain') {
+        alphaBrain.group.visible = true;
+        pikaGroup.visible = false;
+        attachAura(pikaGroup, 'none');   // tear down any leftover Pokemon aura
+        renderer.setClearColor(charBg('alphabrain'), 0);
+        mobApplyAccent('alphabrain');
+        return;
+      }
+      alphaBrain.group.visible = false;
+      if (name === 'none') {
+        pikaGroup.visible = false;
+        attachAura(pikaGroup, 'none');   // tear down any aura
+        renderer.setClearColor(charBg('none'), 0);
+        return;
+      }
+      pikaGroup.visible = true;
+      renderer.setClearColor(charBg(name), 0);
+      mobApplyAccent(name);
+      mobPFX = createParticles(scene, name, true);
+      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => {
+        mobileCurrentModel = m;
+        flashArrival(m);
+        playCry(name);
+      });
+    },
+    throwPokeball: mobileThrowPokeball,
+    pokeballHold: (nx: number, ny: number) => mobileThrowPokeball.hold(nx, ny),
+    pokeballThrow: (onArrive?: () => void, speed?: number) => mobileThrowPokeball.throwIt(onArrive, speed),
+    pokeballRelease: () => mobileThrowPokeball.release(),
+    setPerfMode(on: boolean) { perfFast = on; resize(); },
+    getCharacterTransform() { return getCharXform(mobileCurrentChar); },
+    setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {
+      if (mobileCurrentChar === 'robot' || mobileCurrentChar === 'alphabrain') x = 0;   // stays upright — X locked at 0
+      saveCharXform(mobileCurrentChar, { x, y, z, s, px, py, pz });
+      if (mobileCurrentModel) {
+        const bt = modelBaseTransform.get(mobileCurrentModel);
+        applyModelXform(mobileCurrentModel, bt ? bt.s : 1, x, y, z, s, px, py, pz);
+      }
+    },
+    resetCharacterTransform() {
+      clearCharXform(mobileCurrentChar);
+      const pinned = getPinnedXform(mobileCurrentChar);
+      const def = pinned ?? defaultXform(mobileCurrentChar);
+      if (mobileCurrentModel) {
+        const bt = modelBaseTransform.get(mobileCurrentModel);
+        applyModelXform(mobileCurrentModel, bt ? bt.s : 1, def.x, def.y, def.z, pinned ? def.s : 1, pinned ? def.px : 0, pinned ? def.py : 0, pinned ? def.pz : 0);
+      }
+    },
+    pinCharacterTransform() {
+      const xf = getCharXform(mobileCurrentChar);
+      savePinnedXform(mobileCurrentChar, xf);
+    },
+    hasPinnedTransform() {
+      return hasPinnedXform(mobileCurrentChar);
+    },
+    attackCharacter(canvas: HTMLCanvasElement) {
+      playCry(mobileCurrentChar);
+      const type: AttackType = POKEMON_ATTACK_TYPE[mobileCurrentChar] || 'normal';
+      if (mobileCurrentModel) flashAttack(mobileCurrentModel, type);
+      canvas.width = canvas.offsetWidth || 300;
+      canvas.height = canvas.offsetHeight || 300;
+      runAttackFx(canvas, mobileCurrentChar);
+    },
   };
 }
 
@@ -1781,19 +3932,58 @@ function mountMobileOrb(container: HTMLElement): OrbHandle {
 // MAIN: mountOrb — desktop renders same orb concept with full pipeline
 // ============================================================
 export function mountOrb(container: HTMLElement): OrbHandle {
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+  let displayPref = 'auto';
+  try { displayPref = localStorage.getItem('alpha_display_mode') || 'auto'; } catch {}
+  // iPadOS 13+ masquerades as a desktop Mac ("Macintosh" UA), so the UA test
+  // alone routed iPads to the heavy desktop scene (bloom/MSAA composer, 128-seg
+  // brain, full particle counts) — the "central sun freezes my iPad" report.
+  // A Mac UA with ANY touch support is an iPad, never a real Mac
+  // (maxTouchPoints 0 on real Macs, 5 on iPads): give it the same light
+  // mobile scene phones get. An explicit display-mode pref ('desktop')
+  // still overrides.
+  const iPadMasquerade = (navigator.maxTouchPoints || 0) > 0 && /Mac/i.test(navigator.userAgent);
+  const autoMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || iPadMasquerade || window.innerWidth < 768;
+  const isMobile = displayPref === 'mobile' ? true : displayPref === 'desktop' ? false : autoMobile;
   if (isMobile) return mountMobileOrb(container);
 
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
-    alpha: false,
+    alpha: true,
     powerPreference: 'high-performance',
     failIfMajorPerformanceCaveat: false,
   });
-  renderer.setPixelRatio(window.devicePixelRatio || 1);
-  renderer.setClearColor(0x0a0806, 1);
+  // iPad-class device: big, high-DPR, touch (often reports a desktop "Macintosh" UA
+  // so it lands on this heavier desktop scene). Its huge retina screen makes a high
+  // pixel ratio the #1 bottleneck, so cap it hard — at DPR 1.0 the screen is still
+  // razor-sharp but renders ~2.25x fewer pixels than 1.5, which is what makes it
+  // smooth.
+  const bigTouch = (navigator.maxTouchPoints || 0) > 1 && (window.devicePixelRatio || 1) >= 1.5 && Math.min(window.innerWidth, window.innerHeight) >= 700;
+  // Perf: cap the pixel ratio — retina/iPad (DPR 2) through bloom+MSAA+FXAA is
+  // 4× the pixels for little visible gain. Fast mode caps harder and skips post.
+  // Auto-enable the cheap render path on iPad-class / perf-lite devices: the
+  // EffectComposer (bloom + FXAA) is the single biggest cost and is skipped
+  // entirely when perfFast — this is what fixes the "stuck/limited" feel on iPad.
+  const perfLiteActive = typeof document !== 'undefined' && document.documentElement.classList.contains('perf-lite');
+  let perfFast = bigTouch || perfLiteActive;
+  // Adaptive quality tier, bumped automatically when the GPU can't keep a smooth
+  // framerate: 0 = full (post-fx on), 1 = post-fx off, 2 = post-fx off + lower res.
+  let qTier = 0;
+  const prCap = () => {
+    // True desktops render the main object at native retina sharpness (DPR 2)
+    // — the orb is the centerpiece of the whole dashboard and a 1.5 cap
+    // visibly softens it on 2x displays. This is safe because the adaptive
+    // qTier watchdog below sheds post-fx and then resolution the moment the
+    // GPU can't hold ~55fps, so weaker machines settle exactly where they
+    // rendered before; iPad-class (bigTouch) and Fast mode keep their hard caps.
+    const cap = perfFast ? 1 : (bigTouch ? 1.0 : 2);
+    const base = Math.min(window.devicePixelRatio || 1, cap);
+    return qTier >= 2 ? Math.min(base, 1) : base;
+  };
+  renderer.setPixelRatio(prCap());
+  renderer.setClearColor(charBg('alphabrain'), 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.75;
+  container.dataset.orbMode = 'desktop'; // which scene tier actually mounted (debug/QA)
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -1812,19 +4002,21 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   // ────────────────────────────────────────────
   // POST-PROCESSING PIPELINE
   // ────────────────────────────────────────────
-  const dpr0 = window.devicePixelRatio || 1;
+  const dpr0 = prCap();
   // Multisampled (MSAA) render target — crisp edges through the post pipeline
   const deskRT = new THREE.WebGLRenderTarget(
     Math.max(1, Math.floor((container.clientWidth || window.innerWidth) * dpr0)),
     Math.max(1, Math.floor((container.clientHeight || window.innerHeight) * dpr0)),
-    { samples: 4 },
+    // 2x MSAA (not 4x) — FXAA already smooths the remainder; halving the
+    // multisample bandwidth at dpr≤2 is a real per-frame win on mid GPUs.
+    { samples: 2 },
   );
   const composer = new EffectComposer(renderer, deskRT);
   composer.addPass(new RenderPass(scene, camera));
 
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth * dpr0, window.innerHeight * dpr0),
-    0.2, 0.4, 0.7,
+    0.07, 0.4, 0.86,   // gentle glow + high threshold so it doesn't wash the robot's colours
   );
   composer.addPass(bloom);
 
@@ -1832,16 +4024,30 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   vignette.uniforms.darkness.value = 0.5;
   composer.addPass(vignette);
 
+  // Chromatic-aberration shockwave pass — off (uStrength 0) except during the
+  // jet-turbine ignition sequence's Phase 3 boom. Before FXAA so the AA pass
+  // smooths the split-channel edges instead of sharpening them.
+  const chroma = new ShaderPass(CHROMATIC_SHOCKWAVE_SHADER);
+  composer.addPass(chroma);
+
+  // Oriki Protocol toon pass — off (uStrength 0) outside kid-safe mode.
+  const toonPass = new ShaderPass(TOON_POSTERIZE_SHADER);
+  composer.addPass(toonPass);
+
   // FXAA — screen-space AA needed because MSAA is lost in EffectComposer
   const fxaa = new ShaderPass(FXAAShader);
   composer.addPass(fxaa);
 
   composer.addPass(new OutputPass());
 
+  // Revenue Data-Tornado — wide-radius gold helix framing the core.
+  const revTornado = buildRevenueTornado(2200, 2.35, 0.55);
+  scene.add(revTornado.points);
+
   function resize() {
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
-    const pr = window.devicePixelRatio || 1;
+    const pr = prCap();
     renderer.setPixelRatio(pr);
     renderer.setSize(w, h, true);
     composer.setSize(w * pr, h * pr);
@@ -1885,6 +4091,48 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const pika = buildPikachu(pikaMats, 1.0);
   const pikaGroup = pika.group;
   group.add(pikaGroup);
+  // The procedural Pikachu body flashes for a frame before any GLTF swap
+  // finishes loading, so it's hidden from frame 0 regardless of which
+  // character (GLTF or the Alpha Brain hologram) ends up shown.
+  pikaGroup.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      const mat = Array.isArray(child.material) ? child.material[0] : child.material;
+      if (mat instanceof THREE.MeshPhysicalMaterial) child.visible = false;
+      if (mat instanceof THREE.MeshBasicMaterial && (mat as THREE.MeshBasicMaterial).map) child.visible = false;
+    }
+  });
+  // The default centerpiece is the ALPHA BRAIN hologram, not a GLTF character —
+  // no model to load, so pikaGroup just stays hidden until the user picks one.
+  const alphaBrain = buildAlphaBrain(isMobile ? 64 : 128);
+  // Oriki Protocol — kid-safe toy vehicles, hidden/inert until setOrikiMode(true).
+  const toyPlayground = createToyPlayground();
+  group.add(toyPlayground.group);
+  let oriToonTarget = 0;
+  let oriActive = false;
+  const onOriTap = (e: PointerEvent) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    toyPlayground.handleTap(ndcX, ndcY, camera);
+  };
+  group.add(alphaBrain.group);
+  pikaGroup.visible = false;
+  let deskCurrentChar = 'alphabrain';
+  let deskCurrentModel: THREE.Object3D | null = null;
+
+  // ── JET-TURBINE IGNITION SEQUENCE — one-shot OS boot-up cinematic ──
+  const ignitionShake = createCameraShake();
+  const ignitionAudio = createIgnitionAudioRig(camera, alphaBrain.group);
+  const ignitionLights = createIgnitionLightRig([keyLight, fillLight, rimLight, bottomLight, ambientLight]);
+  let ignitionPending = false;
+  let ignitionStartTime: number | null = null;
+  let ignitionClimaxFired = false;
+  // Gate the whole sequence on the first real gesture so audio + visuals fire
+  // together (arms immediately if audio's already unlocked or unavailable).
+  const ignitionGestureCleanup = armIgnitionOnGesture(ignitionAudio, () => { ignitionPending = true; });
+  let deskPFX: PFXState | null = null;
+  const deskThrowPokeball = makeThrowPokeball(group, pikaGroup, import.meta.env.BASE_URL || '/', camera);
+
 
   // ────────────────────────────────────────────
   // ORBITAL RINGS — prominent gold halo, champagne, rose
@@ -2311,6 +4559,24 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   const dustParticles = new THREE.Points(dustGeo, dustMat);
   scene.add(dustParticles);
 
+  // ── Minimal-orb mode (default ON) — only the central object is active ──
+  // Hides all ~13 decorative systems (orbital rings, pulse waves, energy
+  // tendrils, lens flares, glow sprites, network nodes, grid floor, DNA
+  // helix, 200 motes, atmosphere shell, 500 surface particles, far stars,
+  // dust): their transparent additive overdraw is the reason the orb here
+  // never felt as smooth as single-orb assistants. The characters (Alpha
+  // core + cages, Pikachu, Oriki toys) and lazily-added FX (pokeball throw,
+  // Pokemon particles) stay live. Escape: localStorage alpha:orb_minimal='0'.
+  const orbMinimal = (() => { try { return localStorage.getItem('alpha:orb_minimal') !== '0'; } catch { return true; } })();
+  if (orbMinimal) {
+    const keep = new Set<THREE.Object3D>([pikaGroup, alphaBrain.group, toyPlayground.group]);
+    group.children.forEach((c) => { if (!keep.has(c)) c.visible = false; });
+    starGroup.visible = false;
+    dustParticles.visible = false;
+    alphaBrain.tendrils.group.visible = false;
+    revTornado.points.visible = false; // reappears only during an ingestion burst
+  }
+
   // ────────────────────────────────────────────
   // BODY DETECTION (MediaPipe)
   // ────────────────────────────────────────────
@@ -2426,19 +4692,81 @@ export function mountOrb(container: HTMLElement): OrbHandle {
   let chargeLevel = 0;
   const disposeChu = setupChuEffect(container, renderer.domElement, (lv) => { chargeLevel = lv; });
 
+  // Drag rotation state
+  let userRotY = 0, rotVel = 0;
+  let dragActive = false, dragLastX = 0;
+  const deskCvs = renderer.domElement;
+  function onDragStart(x: number) { dragActive = true; dragLastX = x; rotVel = 0; }
+  function onDragMove(x: number) {
+    if (!dragActive) return;
+    const dx = x - dragLastX; dragLastX = x;
+    rotVel = dx * 0.012;
+    userRotY += rotVel;
+  }
+  function onDragEnd() { dragActive = false; }
+  deskCvs.addEventListener('mousedown', (e) => onDragStart(e.clientX));
+  deskCvs.addEventListener('mousemove', (e) => onDragMove(e.clientX));
+  deskCvs.addEventListener('mouseup', onDragEnd);
+  deskCvs.addEventListener('mouseleave', onDragEnd);
+  deskCvs.addEventListener('touchstart', (e) => { if (e.touches[0]) onDragStart(e.touches[0].clientX); }, { passive: true });
+  deskCvs.addEventListener('touchmove', (e) => { if (e.touches[0]) onDragMove(e.touches[0].clientX); }, { passive: true });
+  deskCvs.addEventListener('touchend', onDragEnd);
+
   let time = 0, raf = 0;
   let amp = 0.06, ampTarget = 0.06;
+  // Phase 2 (mic) — optional live 0..1 audio-level source (a real AnalyserNode
+  // off the assistant's mic), polled each frame so the plasma core ripples to
+  // the user's actual voice while listening.
+  let audioLevelFn: (() => number) | null = null;
   let glitchStr = 0, nextGlitch = 3 + Math.random() * 5, glitchTimer = 0;
   let lastFrame = 0;
+  let fpsT = 0, fpsN = 0, warmT = 0, lowStreak = 0;
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    if (document.hidden || document.body.classList.contains('bg-paused')) return;
-    if (now - lastFrame < 33) return;
+    // The boot intro video plays over this scene at opacity:0 (CSS alone
+    // doesn't stop WebGL work) — full bloom/FXAA/MSAA rendering competing
+    // with video decode for the GPU is exactly what was causing the boot
+    // video to stutter on phones. Stay paused (still scheduling the next
+    // rAF so state resumes instantly) until index.html removes 'booting'.
+    if (document.hidden || document.body.classList.contains('bg-paused') || document.documentElement.classList.contains('booting')) return;
+    // Always render at the display's native refresh (60/120Hz) — no fps cap.
+    // A hard cap (the old Fast-mode 45fps throttle) reads as "low framerate" on
+    // ProMotion iPads; instead we shed *cost per frame* via perfFast + the
+    // adaptive qTier (post-fx off, then lower resolution) and let the rAF run
+    // free, which is what actually makes motion feel smooth.
+    // Frame-rate-independent timing: advance by *real* elapsed seconds (clamped so a
+    // backgrounded tab or GC pause can't make the scene leap). This also restores the
+    // authored cadence — "hop every ~8s", blinks, etc. — which the old fixed 0.016
+    // step ran in slow-motion once the framerate was capped.
+    // rawDt feeds the fps watchdog (clamped time makes its clock run 10x
+    // slow exactly when frames are slowest); clamped dt drives animation.
+    const rawDt = lastFrame ? (now - lastFrame) / 1000 : 0.016;
+    const dt = Math.min(rawDt, 0.05);
     lastFrame = now;
-    const dt = 0.016;
     time += dt;
+    { const __mx = (pikaGroup as any).__mixer as THREE.AnimationMixer | undefined; if (__mx) __mx.update(dt); }
+    { const __au = (pikaGroup as any).__aura as { update:(dt:number,t:number)=>void } | undefined; if (__au) __au.update(dt, time); }
+    // Adaptive quality: if the GPU can't sustain ~55fps over two 1s windows, shed
+    // cost (first the post-fx pipeline, then resolution) so motion stays smooth.
+    // Sticky downgrade only — never auto-upgrades, to avoid hitching back and forth.
+    // Skipped when the user has forced Fast mode (perfFast handles it). A 3s warm-up
+    // ignores the initial model-load spike.
+    if (!perfFast && qTier < 2) {
+      warmT += rawDt; fpsT += rawDt; fpsN++;
+      if (warmT > 3 && fpsT >= 1) {
+        const fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
+        // iPad-class drops quality after a single slow window (fast relief); others
+        // wait for two so a momentary dip doesn't permanently lower quality.
+        const need = bigTouch ? 1 : 2;
+        // <40fps is unambiguous — shed immediately instead of waiting for a
+        // second slow window (a full extra second of visible jank).
+        if (fps < 55) { if (fps < 40 || ++lowStreak >= need) { lowStreak = 0; qTier++; resize(); } }
+        else lowStreak = 0;
+      }
+    }
     amp += (ampTarget - amp) * 0.07;
+    if (!dragActive) { rotVel *= 0.92; userRotY += rotVel; }
 
     // Long-press charge: ramp bloom and exposure
     bloom.strength = 0.2 + chargeLevel * 4.5;
@@ -2459,7 +4787,7 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     // ── Pikachu "life" animation ──
     // Body sway — gentle side-to-side idle tilting
     const sway = Math.sin(time * 0.45) * 0.04;
-    pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35;
+    pikaGroup.rotation.y = Math.sin(time * 0.35) * 0.35 + userRotY;
     pikaGroup.rotation.z = sway;
     // Periodic happy hop — quick bounce every ~8 seconds
     const hopCycle = time % 8.0;
@@ -2470,6 +4798,47 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     const bounce = 1.0 + Math.max(0, Math.sin(time * 3.0)) * 0.008;
     const hopSquash = hopActive ? 1.0 + Math.sin((hopCycle - 7.4) / 0.4 * PI) * 0.04 : 1.0;
     pikaGroup.scale.set(breath * (1.0 / bounce) * (1.0 / hopSquash), breath * bounce * hopSquash, breath);
+    // Alpha Brain — slow counter-rotating core/shell, hologram-style idle spin.
+    alphaBrain.core.rotation.y += dt * 0.25;
+    alphaBrain.core.rotation.x += dt * 0.08;
+    alphaBrain.wire.rotation.y -= dt * 0.18;
+    alphaBrain.wire.rotation.x += dt * 0.05;
+    // Phase 3 — containment ring counter-rotates against the gold shell.
+    alphaBrain.wire2.rotation.y += dt * 0.12;
+    alphaBrain.wire2.rotation.z -= dt * 0.09;
+    // Phase 2 — voice-reactive amplitude: breathes in silence, sharp ripples
+    // while speaking, synthesized from the smoothed speaking/listening energy.
+    const micLevel = audioLevelFn ? Math.max(0, Math.min(1, audioLevelFn())) : 0;
+    const coreAmp = voiceReactiveAmp(Math.max(amp, micLevel), time);
+    alphaBrain.coreMat.uniforms.uTime.value = time;
+    alphaBrain.coreMat.uniforms.uAudioAmplitude.value = coreAmp;
+    alphaBrain.tendrils.update(dt, coreAmp, time); // data streams into the core on speech
+
+    // ── Jet-turbine ignition sequence — fires once, right at boot ──
+    if (ignitionPending) { ignitionPending = false; ignitionStartTime = time; ignitionAudio?.ignite(); }
+    if (ignitionStartTime !== null) {
+      const ignElapsed = time - ignitionStartTime;
+      const ignFreq = ignitionAudio ? ignitionAudio.analyser.getAverageFrequency() / 255 : Math.min(1, ignElapsed / 3);
+      if (ignElapsed < 3.1) {
+        ignitionShake.addTrauma(ignFreq * dt * 2.4);
+      } else if (!ignitionClimaxFired) {
+        ignitionClimaxFired = true;
+        ignitionShake.addTrauma(1.0);
+        chroma.uniforms.uStrength.value = 0.05;
+      }
+      ignitionLights.update(ignElapsed);
+      const ignCoreBoost = ignElapsed < 3.1 ? ignFreq * 0.85 : Math.max(0, 2.0 * Math.exp(-(ignElapsed - 3.1) * 2.0));
+      alphaBrain.coreMat.uniforms.uAudioAmplitude.value = Math.max(coreAmp, ignCoreBoost);
+      if (ignElapsed > 6.5) { ignitionStartTime = null; ignitionLights.settle(); }
+    }
+    // Phase 4 — a voice peak splits the RGB channels a touch; the decay below
+    // relaxes it back to zero over the next frames.
+    if (coreAmp > 0.6) {
+      chroma.uniforms.uStrength.value = Math.max(chroma.uniforms.uStrength.value, (coreAmp - 0.6) * 0.03);
+    }
+    chroma.uniforms.uStrength.value *= Math.max(0, 1 - dt * 3.2);
+    revTornado.update(dt);
+    if (orbMinimal) revTornado.points.visible = revTornado.burstLevel() > 0.03;
     if (pika.head) {
       // Curious head tilt — cycles between looking around and tilting curiously
       const curiousCycle = time % 12.0;
@@ -2671,6 +5040,12 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     camera.position.x += (tCamX - camera.position.x) * 0.035;
     camera.position.y += (tCamY - camera.position.y) * 0.035;
     camera.lookAt(0, 0, 0);
+    // Ignition camera shake layers on top of the mouse-parallax lookAt that
+    // just ran, so it never fights the orbit/parallax drift.
+    const ignShakeDesktop = ignitionShake.update(dt, time);
+    camera.rotateX(ignShakeDesktop.y);
+    camera.rotateY(ignShakeDesktop.x);
+    camera.rotateZ(ignShakeDesktop.roll);
 
     stMat.uniforms.uTime.value = time;
     starGroup.rotation.y = time * 0.004;
@@ -2689,14 +5064,47 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     }
     dp.needsUpdate = true;
 
-    composer.render();
+    if (deskPFX) {
+      const cfg = POKEMON_PFX[deskCurrentChar]; if (cfg) updateParticles(deskPFX, cfg);
+    }
+
+    // Oriki Protocol — toy physics + toon-look lerp, both no-ops when off.
+    if (oriActive) toyPlayground.update(dt);
+    toonPass.uniforms.uStrength.value += (oriToonTarget - toonPass.uniforms.uStrength.value) * Math.min(1, dt * 4);
+
+    // Fast mode skips the whole post-processing pipeline (bloom/vignette/FXAA) —
+    // the single biggest GPU cost — and renders the scene straight to screen.
+    if (perfFast || qTier > 0) renderer.render(scene, camera);
+    else composer.render();
   }
 
   raf = requestAnimationFrame(frame);
 
+  // Collect the gold cage / ring / line materials so the whole framework can be
+  // recoloured to match the active Pokemon (skips the character model itself and
+  // the Alpha Brain hologram, which keeps its own gold regardless of accent swaps).
+  const deskAccentMats = collectAccentMats(group, [pikaGroup, alphaBrain.group]);
+  function deskApplyAccent(name: string) { applyAccentToMats(deskAccentMats, charAccent(name)); }
+  deskApplyAccent('alphabrain');
+
   return {
     setEnergy(v: number) { ampTarget = Math.max(0, Math.min(1, v)); },
+    attachAudioLevel(fn: () => number) { audioLevelFn = fn; },
+    setGoatTheme(on: boolean) { alphaBrain.setPalette(on ? CYBER_GOAT : CYBER_GOLD); },
+    pulseGlitch(strength = 0.12) {
+      chroma.uniforms.uStrength.value = Math.max(chroma.uniforms.uStrength.value, strength);
+    },
+    setRevenueFill(v: number) { revTornado.setFill(v); },
+    revenueIngest() { revTornado.burst(); },
+    setOrikiMode(on: boolean) {
+      oriActive = on;
+      oriToonTarget = on ? 1 : 0;
+      toyPlayground.setActive(on);
+      if (on) renderer.domElement.addEventListener('pointerdown', onOriTap);
+      else renderer.domElement.removeEventListener('pointerdown', onOriTap);
+    },
     pikaEmote(emote: PikaEmote) {
+      pikaEmoteSpeak(emote);
       if (emote === 'excited' || emote === 'happy') {
         ampTarget = 0.85;
         setTimeout(() => { ampTarget = 0.06; }, 1200);
@@ -2706,14 +5114,23 @@ export function mountOrb(container: HTMLElement): OrbHandle {
       } else if (emote === 'curious') {
         ampTarget = 0.45;
         setTimeout(() => { ampTarget = 0.06; }, 900);
+      } else if (emote === 'sad') {
+        ampTarget = 0.15;
+        setTimeout(() => { ampTarget = 0.06; }, 1500);
       }
     },
     dispose() {
       cancelAnimationFrame(raf);
+      stopCry();
+      disposeParticles(deskPFX, scene);
       disposeChu();
       stopBodyDetection();
+      ignitionGestureCleanup();
+      ignitionAudio?.dispose();
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', onDeskMouseMove);
+      renderer.domElement.removeEventListener('pointerdown', onOriTap);
+      revTornado.dispose();
       if (envMap) envMap.dispose();
       renderer.dispose();
       composer.dispose();
@@ -2721,5 +5138,73 @@ export function mountOrb(container: HTMLElement): OrbHandle {
     },
     startBodyDetection,
     stopBodyDetection,
+    setCharacter(name: string) {
+      stopCry();
+      disposeParticles(deskPFX, scene); deskPFX = null;
+      deskCurrentChar = name;
+      if (name === 'alphabrain') {
+        alphaBrain.group.visible = true;
+        pikaGroup.visible = false;
+        attachAura(pikaGroup, 'none');   // tear down any leftover Pokemon aura
+        renderer.setClearColor(charBg('alphabrain'), 0);
+        deskApplyAccent('alphabrain');
+        return;
+      }
+      alphaBrain.group.visible = false;
+      if (name === 'none') {
+        // No character — hide the model entirely. Keep a neutral background.
+        pikaGroup.visible = false;
+        attachAura(pikaGroup, 'none');   // tear down any aura
+        renderer.setClearColor(charBg('none'), 0);
+        return;
+      }
+      pikaGroup.visible = true;
+      renderer.setClearColor(charBg(name), 0);
+      deskApplyAccent(name);
+      deskPFX = createParticles(scene, name, false);
+      loadAndReplaceBody(pikaGroup, pikaMats, import.meta.env.BASE_URL || '/', name, (m) => {
+        deskCurrentModel = m;
+        flashArrival(m);
+        playCry(name);
+      });
+    },
+    throwPokeball: deskThrowPokeball,
+    pokeballHold: (nx: number, ny: number) => deskThrowPokeball.hold(nx, ny),
+    pokeballThrow: (onArrive?: () => void, speed?: number) => deskThrowPokeball.throwIt(onArrive, speed),
+    pokeballRelease: () => deskThrowPokeball.release(),
+    setPerfMode(on: boolean) { perfFast = on; resize(); },
+    getCharacterTransform() { return getCharXform(deskCurrentChar); },
+    setCharacterTransform(x: number, y: number, z: number, s: number, px: number, py: number, pz: number) {
+      if (deskCurrentChar === 'robot' || deskCurrentChar === 'alphabrain') x = 0;   // stays upright — X locked at 0
+      saveCharXform(deskCurrentChar, { x, y, z, s, px, py, pz });
+      if (deskCurrentModel) {
+        const bt = modelBaseTransform.get(deskCurrentModel);
+        applyModelXform(deskCurrentModel, bt ? bt.s : 1, x, y, z, s, px, py, pz);
+      }
+    },
+    resetCharacterTransform() {
+      clearCharXform(deskCurrentChar);
+      const pinned = getPinnedXform(deskCurrentChar);
+      const def = pinned ?? defaultXform(deskCurrentChar);
+      if (deskCurrentModel) {
+        const bt = modelBaseTransform.get(deskCurrentModel);
+        applyModelXform(deskCurrentModel, bt ? bt.s : 1, def.x, def.y, def.z, pinned ? def.s : 1, pinned ? def.px : 0, pinned ? def.py : 0, pinned ? def.pz : 0);
+      }
+    },
+    pinCharacterTransform() {
+      const xf = getCharXform(deskCurrentChar);
+      savePinnedXform(deskCurrentChar, xf);
+    },
+    hasPinnedTransform() {
+      return hasPinnedXform(deskCurrentChar);
+    },
+    attackCharacter(canvas: HTMLCanvasElement) {
+      playCry(deskCurrentChar);
+      const type: AttackType = POKEMON_ATTACK_TYPE[deskCurrentChar] || 'normal';
+      if (deskCurrentModel) flashAttack(deskCurrentModel, type);
+      canvas.width = canvas.offsetWidth || 400;
+      canvas.height = canvas.offsetHeight || 400;
+      runAttackFx(canvas, deskCurrentChar);
+    },
   };
 }

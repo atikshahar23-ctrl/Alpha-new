@@ -27,8 +27,25 @@ function markSeen(s: Record<string, number>) {
   try { localStorage.setItem(SEEN_KEY, JSON.stringify(s)); } catch {}
 }
 
-function pushNotification(title: string, body: string) {
+// Midnight Protocol (02:00–06:00 Israel time): routine OS notifications are
+// silenced so they don't buzz/ping while the owner is asleep — everything
+// still lands in the in-app message feed via notify(), just without the
+// intrusive push. Fleet/finance alerts (price thresholds, overdue invoices)
+// are marked critical and always break through, per "high-alert monitoring
+// of business metrics" even during quiet hours.
+function isMidnightProtocol(): boolean {
   try {
+    const h = parseInt(
+      new Intl.DateTimeFormat('en-US', { hour: '2-digit', hour12: false, timeZone: 'Asia/Jerusalem' }).format(new Date()),
+      10
+    );
+    return h >= 2 && h < 6;
+  } catch { return false; }
+}
+
+function pushNotification(title: string, body: string, critical = false) {
+  try {
+    if (isMidnightProtocol() && !critical) return;
     if ('Notification' in window) {
       if (Notification.permission === 'granted') new Notification(title, { body });
       else if (Notification.permission === 'default') Notification.requestPermission();
@@ -107,7 +124,7 @@ async function checkPrices(notify: Notify) {
       a.fired = true; changed = true;
       const dir = hitAbove ? `above ${a.above}` : `below ${a.below}`;
       notify(`${a.symbol} ${dir}`, `Now ${price}. ${a.note || ''}`.trim());
-      pushNotification(`📈 ${a.symbol}`, `${dir} — now ${price}`);
+      pushNotification(`📈 ${a.symbol}`, `${dir} — now ${price}`, true);
     }
   }
   if (changed) savePriceAlerts(loadPriceAlerts().map(a => alerts.find(x => x.id === a.id) || a));
@@ -155,7 +172,7 @@ function checkInvoiceDue(notify: Notify, s: Record<string, number>) {
         if (!s[key]) {
           s[key] = Date.now();
           notify('Invoice overdue', `${inv.number} — ${inv.customer}`);
-          pushNotification('📄 Invoice overdue', `${inv.number} — ${inv.customer}`);
+          pushNotification('📄 Invoice overdue', `${inv.number} — ${inv.customer}`, true);
         }
       }
     }

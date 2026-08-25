@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<script>
+/* Same cache/service-worker purge index.html already does. Without it an
+   iPad can keep serving a stale copy of THIS page, which then loads an old
+   JS bundle — the reason freshly-shipped fixes appeared not to work on
+   device even though the deploy had gone out. */
+(function(){
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});
+  }
+  if('caches' in window){
+    caches.keys().then(function(ks){ks.forEach(function(k){caches.delete(k);});}).catch(function(){});
+  }
+})();
+</script>
+
+<title>DoggyLife 🐾 · ניהול חיות מחמד</title>
+<meta name="theme-color" content="#D98E32" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- non-blocking: media=print keeps the webfont off the critical path (it was holding first paint hostage on slow/cellular iPads); onload swaps it in -->
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;900&display=swap" rel="stylesheet"></noscript>
+<!-- Tailwind is compiled at BUILD time (doggy/tailwind.css → PostCSS), not
+     pulled from the Play CDN: the app then styles correctly offline and
+     doesn't depend on an external host staying reachable. -->
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #FAF5EC; font-family: 'Heebo', sans-serif; }
+  /* back-to-Alpha pill — same gold accent language as the other apps */
+  #alphaHome { position: fixed; top: 10px; left: 10px; z-index: 90;
+    display: flex; align-items: center; gap: 6px; padding: 8px 13px;
+    font-size: 13px; font-weight: 700; color: #8a6d1a; text-decoration: none;
+    border: 1px solid rgba(217,142,50,.55); border-radius: 999px; background: rgba(255,255,255,.85);
+    backdrop-filter: blur(6px);-webkit-backdrop-filter:blur(6px); box-shadow: 0 2px 10px rgba(43,38,32,.08); }
+  #alphaHome:hover { border-color: #D98E32; }
+</style>
+<style>
+  /* smooth crossfade on same-origin navigation (ignored where unsupported) */
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
+</style>
+</head>
+<body>
+<a id="alphaHome" href="./" title="חזרה לאלפא">⌂ אלפא</a>
+<div id="root"></div>
+<script type="module" src="/doggy/main.jsx"></script>
+</body>
+</html>

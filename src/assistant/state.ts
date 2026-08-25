@@ -2,7 +2,7 @@ export type ReplyLang = 'en' | 'he' | 'es';
 export type MicLang = 'he' | 'en' | 'es';
 export type TextLang = 'en' | 'he' | 'ar' | 'ru' | 'fr' | 'es' | 'de' | 'auto';
 
-export type AIProvider = 'puter' | 'gemini' | 'grok' | 'openai';
+export type AIProvider = 'groq' | 'puter' | 'gemini' | 'grok' | 'openai' | 'lmstudio';
 
 export type VoiceGender = 'female' | 'male' | 'auto';
 
@@ -11,6 +11,7 @@ export type UILang = 'he' | 'en';
 export interface AppState {
   key: string;
   grokKey: string;
+  groqKey: string;
   openaiKey: string;
   provider: AIProvider;
   puterModel: string;
@@ -38,7 +39,7 @@ export interface AppState {
   pikaPitch: number;
 }
 
-const KEY = 'alpha_key', GROK = 'alpha_grok', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
+const KEY = 'alpha_key', GROK = 'alpha_grok', GROQ = 'alpha_groq', OPENAI = 'alpha_openai', PROV = 'alpha_provider',
   PUTERMODEL = 'alpha_putermodel',
   NAME = 'alpha_name', MICLANG = 'alpha_micLang', REPLYLANG = 'alpha_replyLang',
   TEXTLANG = 'alpha_textLang', AMB = 'alpha_amb', AMBPRESET = 'alpha_ambpreset',
@@ -62,8 +63,11 @@ export function loadState(): AppState {
   return {
     key: localStorage.getItem(KEY) || '',
     grokKey: localStorage.getItem(GROK) || '',
+    groqKey: localStorage.getItem(GROQ) || '',
     openaiKey: localStorage.getItem(OPENAI) || '',
-    provider: (localStorage.getItem(PROV) as AIProvider) || 'puter',
+    // Puter was disconnected as an AI engine (it rate-limited accounts). Any user
+    // still pinned to 'puter' is migrated to the free Groq engine automatically.
+    provider: (() => { const p = localStorage.getItem(PROV); return (!p || p === 'puter') ? 'groq' : p as AIProvider; })(),
     puterModel: localStorage.getItem(PUTERMODEL) || 'gpt-4o-mini',
     name: localStorage.getItem(NAME) || 'ALPHA',
     micLang: (localStorage.getItem(MICLANG) as MicLang) || 'he',
@@ -84,15 +88,16 @@ export function loadState(): AppState {
     haptics: localStorage.getItem(HAPTICS) !== '0',
     autoSpeak: localStorage.getItem(AUTOSPEAK) !== '0',
     uiLang: (localStorage.getItem(UILANG) as UILang) || 'he',
-    pikaVoiceOn: localStorage.getItem(PIKAVOICE) !== '0',
+    pikaVoiceOn: localStorage.getItem(PIKAVOICE) === '1',
     pikaVolume: (() => { const v = parseFloat(localStorage.getItem(PIKAVOL) || ''); return isNaN(v) ? 0.6 : v; })(),
-    pikaPitch: (() => { const v = parseFloat(localStorage.getItem(PIKAPITCH) || ''); return isNaN(v) ? 2.0 : v; })(),
+    pikaPitch: (() => { const v = parseFloat(localStorage.getItem(PIKAPITCH) || ''); return isNaN(v) ? 1.0 : v; })(),
   };
 }
 
 export function saveState(s: AppState) {
   localStorage.setItem(KEY, s.key);
   localStorage.setItem(GROK, s.grokKey);
+  localStorage.setItem(GROQ, s.groqKey);
   localStorage.setItem(OPENAI, s.openaiKey);
   localStorage.setItem(PROV, s.provider);
   localStorage.setItem(PUTERMODEL, s.puterModel);
@@ -136,7 +141,37 @@ export function loadEvents(): CalEvent[] {
   } catch {}
   const alphaKeys = new Set(alpha.map(e => e.title.toLowerCase() + '|' + e.date));
   const unique = hg.filter(t => !alphaKeys.has(t.title.toLowerCase() + '|' + t.date));
-  return [...alpha, ...unique].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  return [...alpha, ...unique, ...loadInstallEvents()].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+}
+
+// Same short id→display-name map app.ts's Heavy Guard panel uses for
+// contractors — duplicated here (not imported) because state.ts is a plain
+// localStorage data module with no dependency on the UI layer.
+const CONTRACTOR_NAMES: Record<string, string> = {
+  kobi: 'קובי', asi: 'אסי', sagi: 'שגיא מערכות',
+  mb: 'm.b מערכות', sd: 'ס.ד מיגונים', hg: 'Heavy Guard',
+};
+
+// Every completed Heavy Guard vehicle installation ('hg2:index', the daily
+// install-report log) shown as a real, written calendar entry on its actual
+// day — owner request: "שיהיה כתוב את כל ההתקנות שביצעתי", not just a marker.
+// Read-only from the calendar's side (id prefix 'hginst:' — removeEvent/
+// updateEventTitle only touch 'alpha_events'/'hg2:tasks', so these safely
+// no-op if ever passed to either).
+export function loadInstallEvents(): CalEvent[] {
+  try {
+    const rows: { date?: string; location?: string; contractor?: string; price?: number; status?: string }[] =
+      JSON.parse(localStorage.getItem('hg2:index') || '[]');
+    return rows
+      .filter(r => r.date && r.status !== 'running')
+      .map((r, i) => {
+        const loc = (r.location || '').trim();
+        const who = r.contractor ? (CONTRACTOR_NAMES[r.contractor] || r.contractor) : '';
+        const price = Number(r.price) || 0;
+        const parts = ['📦 התקנה', loc, who, price ? `₪${price.toLocaleString('he-IL')}` : ''].filter(Boolean);
+        return { id: `hginst:${r.date}-${i}`, title: parts.join(' · '), date: r.date as string, time: '' };
+      });
+  } catch { return []; }
 }
 
 export function saveEvents(ev: CalEvent[]) {
@@ -179,16 +214,28 @@ export function upcomingText(): string {
 }
 
 // --- TASKS ---
-export interface Task { id: string; text: string; done: boolean; created: string; priority: 'low' | 'med' | 'high' }
+// `due` is the optional scheduled date (YYYY-MM-DD). When set, the task is also
+// mirrored onto the calendar; when empty the task is "unscheduled" and shown in
+// the calendar's unscheduled panel + the widget.
+export interface Task { id: string; text: string; done: boolean; created: string; priority: 'low' | 'med' | 'high'; due?: string }
 
 export function loadTasks(): Task[] {
   try { return JSON.parse(localStorage.getItem('alpha_tasks') || '[]'); } catch { return []; }
 }
 export function saveTasks(t: Task[]) { localStorage.setItem('alpha_tasks', JSON.stringify(t)); }
-export function addTask(text: string, priority: 'low' | 'med' | 'high' = 'med'): Task[] {
+export function addTask(text: string, priority: 'low' | 'med' | 'high' = 'med', due?: string): Task[] {
   const tasks = loadTasks();
-  tasks.push({ id: Date.now() + '_' + Math.random(), text, done: false, created: new Date().toISOString().slice(0, 10), priority });
+  tasks.push({ id: Date.now() + '_' + Math.random(), text, done: false, created: new Date().toISOString().slice(0, 10), priority, due: due || '' });
   saveTasks(tasks);
+  // A dated task is also an appointment — mirror it onto the calendar.
+  if (due) addEvent(text, due, '');
+  return tasks;
+}
+// Give an existing (unscheduled) task a date and push it onto the calendar.
+export function scheduleTask(id: string, due: string): Task[] {
+  const tasks = loadTasks();
+  const t = tasks.find(x => x.id === id);
+  if (t && due) { t.due = due; saveTasks(tasks); addEvent(t.text, due, ''); }
   return tasks;
 }
 export function toggleTask(id: string): Task[] {
@@ -202,6 +249,127 @@ export function removeTask(id: string): Task[] {
   const tasks = loadTasks().filter(x => x.id !== id);
   saveTasks(tasks);
   return tasks;
+}
+
+// --- PERSONAL WALLET (owner's own finances — separate from HeavyGuard's
+// business revenue/pipeline numbers elsewhere in the app) ---
+// Monthly expenses are tracked as individual named/categorized line items
+// (rent, groceries, insurance, ...) rather than one lump number — the owner
+// explicitly asked for a full breakdown, not "a general figure". monthlyExpenses
+// stays on the record as a derived total (see saveWallet) so existing surplus/
+// ratio math elsewhere doesn't need to re-sum the list itself.
+export interface WalletExpenseItem { id: string; label: string; amount: number; category: string }
+export const EXPENSE_CATEGORIES = ['דיור', 'מזון', 'תחבורה', 'ביטוח', 'מנויים', 'פנאי', 'אחר'];
+export interface WalletData {
+  cash: number; bank: number; investments: number; realEstate: number; otherAssets: number;
+  debts: number; monthlyIncome: number; monthlyExpenses: number; expenses: WalletExpenseItem[];
+  notes: string; updated: string;
+}
+const WALLET_KEY = 'alpha_wallet_v1';
+const EMPTY_WALLET: WalletData = {
+  cash: 0, bank: 0, investments: 0, realEstate: 0, otherAssets: 0,
+  debts: 0, monthlyIncome: 0, monthlyExpenses: 0, expenses: [], notes: '', updated: '',
+};
+export function loadWallet(): WalletData {
+  let w: WalletData;
+  try { w = { ...EMPTY_WALLET, ...JSON.parse(localStorage.getItem(WALLET_KEY) || '{}') }; }
+  catch { w = { ...EMPTY_WALLET }; }
+  // One-time migration: a pre-existing flat monthlyExpenses number (from
+  // before itemized tracking existed) becomes a single editable line item
+  // instead of silently vanishing from the total.
+  if ((!w.expenses || w.expenses.length === 0) && w.monthlyExpenses > 0) {
+    w.expenses = [{ id: 'legacy', label: 'הוצאות (מספר קודם)', amount: w.monthlyExpenses, category: 'אחר' }];
+  }
+  return w;
+}
+export function addWalletExpense(label: string, amount: number, category: string): WalletData {
+  const w = loadWallet();
+  w.expenses = [...w.expenses, { id: Date.now() + '_' + Math.random().toString(36).slice(2, 6), label, amount, category }];
+  return saveWallet(w);
+}
+export function removeWalletExpense(id: string): WalletData {
+  const w = loadWallet();
+  w.expenses = w.expenses.filter((e) => e.id !== id);
+  return saveWallet(w);
+}
+// Net-worth snapshots — one point per calendar day (re-saving the same day
+// updates that day's point rather than duplicating it), capped to the last
+// 24 so the wallet panel can show a trend sparkline + a delta since last save.
+export interface WalletHistoryPoint { date: string; netWorth: number }
+const WALLET_HISTORY_KEY = 'alpha_wallet_history_v1';
+export function loadWalletHistory(): WalletHistoryPoint[] {
+  try { return JSON.parse(localStorage.getItem(WALLET_HISTORY_KEY) || '[]'); } catch { return []; }
+}
+function pushWalletHistory(netWorth: number) {
+  const hist = loadWalletHistory();
+  const today = new Date().toISOString().slice(0, 10);
+  if (hist.length && hist[hist.length - 1].date === today) hist[hist.length - 1].netWorth = netWorth;
+  else hist.push({ date: today, netWorth });
+  if (hist.length > 24) hist.splice(0, hist.length - 24);
+  localStorage.setItem(WALLET_HISTORY_KEY, JSON.stringify(hist));
+}
+export function saveWallet(w: Omit<WalletData, 'updated' | 'monthlyExpenses'>): WalletData {
+  const monthlyExpenses = w.expenses.reduce((s, e) => s + (e.amount || 0), 0);
+  const full: WalletData = { ...w, monthlyExpenses, updated: new Date().toISOString() };
+  localStorage.setItem(WALLET_KEY, JSON.stringify(full));
+  pushWalletHistory(w.cash + w.bank + w.investments + w.realEstate + w.otherAssets - w.debts);
+  return full;
+}
+
+// Heavy Guard's own task store ('hg2:tasks') has undated "backlog" items —
+// loadEvents() above only merges the DATED ones onto the calendar, so a
+// backlog task created in Heavy Guard used to be invisible here entirely.
+// These two functions bring backlog parity to the calendar's "unscheduled
+// tasks" panel, and let scheduling one from Alpha write straight back to
+// the same hg2:tasks record Heavy Guard reads (no fork/duplicate).
+export interface HgTask { id: string; title: string }
+export function loadHgBacklog(): HgTask[] {
+  try {
+    const tasks: { id: string; title: string; date?: string; done: boolean }[] = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+    return tasks.filter(t => !t.date && !t.done).map(t => ({ id: 'hg:' + t.id, title: t.title }));
+  } catch { return []; }
+}
+export function scheduleHgTask(id: string, due: string) {
+  const rawId = id.startsWith('hg:') ? id.slice(3) : id;
+  try {
+    const tasks = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+    const t = tasks.find((x: { id: string }) => x.id === rawId);
+    if (t) { t.date = due; localStorage.setItem('hg2:tasks', JSON.stringify(tasks)); }
+  } catch {}
+}
+
+// Quick-edit an event's title straight from the calendar's day-agenda view —
+// writes back into hg2:tasks for HG-sourced ("hg:"-prefixed) events so the
+// rename round-trips to Heavy Guard's own store, same as removeEvent already does.
+export function updateEventTitle(id: string, title: string) {
+  if (id.startsWith('hg:')) {
+    const hgId = id.slice(3);
+    try {
+      const tasks = JSON.parse(localStorage.getItem('hg2:tasks') || '[]');
+      const t = tasks.find((x: { id: string }) => x.id === hgId);
+      if (t) { t.title = title; localStorage.setItem('hg2:tasks', JSON.stringify(tasks)); }
+    } catch {}
+  } else {
+    const ev = loadAlphaEvents();
+    const e = ev.find(x => x.id === id);
+    if (e) { e.title = title; saveEvents(ev); }
+  }
+}
+
+// --- DAY JOURNAL — a free-text diary entry per calendar date, the "planner"
+// half of the calendar (separate from dated events/tasks above).
+const JOURNAL_KEY = 'alpha_journal_v1';
+function loadJournal(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(JOURNAL_KEY) || '{}'); } catch { return {}; }
+}
+export function getJournalEntry(date: string): string {
+  return loadJournal()[date] || '';
+}
+export function saveJournalEntry(date: string, text: string) {
+  const j = loadJournal();
+  const trimmed = text.trim();
+  if (trimmed) j[date] = text; else delete j[date];
+  localStorage.setItem(JOURNAL_KEY, JSON.stringify(j));
 }
 
 // --- NOTES ---
