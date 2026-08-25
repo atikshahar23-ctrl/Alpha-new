@@ -1,0 +1,1 @@
+import"./modulepreload-polyfill-DIrsccGL.js";import{r as e}from"./three.module-B5e4EpOu.js";import{a as t,i as n,n as r,r as i,t as a}from"./OutputPass-CrVK4wS5.js";import{t as o}from"./SMAAPass-BI7RV0QM.js";window.THREE=e,window.__FX={EffectComposer:n,RenderPass:i,UnrealBloomPass:r,OutputPass:a,ShaderPass:t,SMAAPass:o},window.dispatchEvent(new Event(`three-ready`));

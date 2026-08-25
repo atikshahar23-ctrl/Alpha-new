@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Alpha OS · Heavy Guard</title>
+  <script>
+    // Force-clear old service workers and caches on every load
+    (function(){
+      if('serviceWorker' in navigator){
+        navigator.serviceWorker.getRegistrations().then(function(regs){
+          regs.forEach(function(r){ r.unregister(); });
+        });
+      }
+      if('caches' in window){
+        caches.keys().then(function(keys){
+          keys.forEach(function(k){ caches.delete(k); });
+        });
+      }
+    })();
+  </script>
+  <link rel="manifest" href="/Alpha-new/manifest.json" />
+  <link rel="icon" type="image/png" href="/Alpha-new/favicon-bull.png" />
+  <link rel="apple-touch-icon" href="/Alpha-new/apple-touch-icon.png" />
+  <meta name="theme-color" content="#daa520" />
+  <!-- iOS ignores most of manifest.json — without these, "Add to Home
+       Screen" saves a plain Safari bookmark instead of a standalone app. -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Alpha" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <!-- Warm the default orb character + pokeball so they appear instantly. -->
+  <!-- prefetch (NOT preload): pikachu.glb (318KB) + pokeball.glb (2.2MB) are
+       only needed when a character is summoned, but as rel=preload they were
+       fetched at FULL priority on every boot, competing with the app bundle
+       and the intro video for bandwidth — 2.5MB of critical-path waste.
+       rel=prefetch warms the cache at idle priority after load instead, so
+       the first summon stays fast without slowing the boot at all. -->
+  <link rel="prefetch" as="fetch" type="model/gltf-binary" href="/Alpha-new/ar-models/pikachu.glb" crossorigin="anonymous" />
+  <link rel="prefetch" as="fetch" type="model/gltf-binary" href="/Alpha-new/ar-models/pokeball.glb" crossorigin="anonymous" />
+  <!-- Puter removed — cloud sync is Google Drive only (the owner's Google
+       account), and the AI provider is Groq/Gemini/Claude via API key. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- Non-blocking font CSS: loaded as print media then swapped to all once
+       fetched, so a slow fonts.googleapis.com response can never delay the
+       first paint of the boot screen. display=swap already guarantees text
+       shows in a fallback face until the webfonts land. -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Assistant:wght@300;400;500;600&display=swap"
+    rel="stylesheet" media="print" onload="this.media='all'"
+  />
+  <noscript>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Assistant:wght@300;400;500;600&display=swap" rel="stylesheet">
+  </noscript>
+  <script type="module" crossorigin src="/Alpha-new/assets/main-D4aKo15L.js"></script>
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/modulepreload-polyfill-DIrsccGL.js">
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/preload-helper-DGuKeUGT.js">
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/three.module-B5e4EpOu.js">
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/books-D9RnlfF-.js">
+  <link rel="stylesheet" crossorigin href="/Alpha-new/assets/main-DWhETU2J.css">
+</head>
+<body>
+  <!-- ── Intro: the owner's own Suno anthem (golden-gate lyric video) plays
+            fullscreen with its music as the app's opening — then the panels
+            appear. Replaces the old alien/biometric/vault sequence. ── -->
+  <div id="introOverlay">
+    <video id="introVid" playsinline preload="none"></video>
+    <div class="intro-brand" aria-hidden="true">A L P H A<span class="intro-hg">HEAVY GUARD OS</span></div>
+    <div class="intro-progress" aria-hidden="true"><span id="introBar"></span></div>
+    <button id="introSound" type="button" hidden>🔊 הקש לסאונד</button>
+    <button id="introSkip" type="button">דלג ⏭</button>
+  </div>
+  <style>
+    /* keep EVERYTHING out until the intro completes — nothing shows before reveal */
+    html.booting #app{ opacity:0 !important; }
+    html.booting .welcome-overlay{ opacity:0 !important; pointer-events:none !important; }
+    body.revealed .app{ animation: app-in .9s ease both; }
+    @keyframes app-in{ from{opacity:0} to{opacity:1} }   /* opacity only — no layout shift */
+    #introOverlay{position:fixed;inset:0;z-index:99999;background:#000;overflow:hidden;transition:opacity .6s ease,transform .7s ease}
+    /* The boot cinematic (starfield → the golden Alpha core igniting → a
+       dashboard match-cut) is 16:9 with its subject dead-center, so cover
+       works on every screen — portrait phones crop the sides, the core
+       stays centered. The dark navy backdrop matches its starfield. */
+    #introOverlay{background:#04070f}
+    #introVid{position:absolute;inset:0;width:100%;height:100%;-o-object-fit:cover;object-fit:cover;transition:opacity .5s ease}
+    .intro-brand{position:absolute;top:max(26px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:3;
+      color:rgba(255,248,230,.92);font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;letter-spacing:9px;
+      text-shadow:0 1px 12px rgba(120,60,0,.55);text-align:center;white-space:nowrap}
+    .intro-brand .intro-hg{display:block;margin-top:7px;font-size:9px;font-weight:600;letter-spacing:5px;
+      color:rgba(255,217,122,.85);text-shadow:0 0 10px rgba(255,200,90,.45)}
+    .intro-progress{position:absolute;left:0;right:0;bottom:0;height:3px;z-index:3;background:rgba(120,60,0,.25)}
+    .intro-progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,#fff2cf,#ffd97a);
+      box-shadow:0 0 10px rgba(255,220,140,.8);transition:width .25s linear}
+    #introSound{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));left:22px;z-index:5;
+      background:rgba(60,30,4,.55);border:1px solid rgba(255,236,190,.55);color:#fff4d8;
+      padding:8px 16px;border-radius:999px;font-family:Assistant,system-ui,sans-serif;font-size:14px;cursor:pointer;
+      animation:sndPulse 1.6s ease-in-out infinite}
+    @keyframes sndPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,220,140,.5)}50%{box-shadow:0 0 0 9px rgba(255,220,140,0)}}
+    #introOverlay.gone{opacity:0;pointer-events:none}
+    #introSkip{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));right:22px;z-index:5;
+      background:rgba(60,30,4,.55);border:1px solid rgba(255,236,190,.45);color:#fff4d8;
+      padding:8px 16px;border-radius:999px;font-family:Assistant,system-ui,sans-serif;font-size:14px;cursor:pointer}
+  </style>
+  <script>
+    (function(){
+      var ov=document.getElementById('introOverlay'); if(!ov) return;
+      // ── Anti-double-intro guard ────────────────────────────────────────────
+      // The intro was occasionally playing twice (a spurious re-load/re-render
+      // replays the whole sequence). Two guards: (1) a window flag stops the
+      // IIFE running twice in one document; (2) a short session timestamp skips
+      // the intro on any reload that lands within 8s of the last one — that's a
+      // double-load, never an intentional revisit. A deliberate reload later
+      // still shows the intro.
+      if(window.__alphaIntro){ return; } window.__alphaIntro=true;
+      // ── INSTANT BOOT (owner request) ───────────────────────────────────────
+      // The anthem cinematic and its sound are OFF: every open goes straight
+      // to the live dashboard. This also removes the ~2MB video download from
+      // the boot path entirely — on cellular that fetch was competing with the
+      // app bundle for bandwidth even before its 10 seconds of screen time.
+      // The whole sequence below is kept intact behind this gate so it can be
+      // re-enabled by removing one flag, but the default is: open NOW.
+      try{ sessionStorage.setItem('alpha_session_booted','1'); }catch(e){}
+      ov.parentNode && ov.parentNode.removeChild(ov);
+      revealApp();
+      if(true) return;
+      // ── Per-session boot gate ──────────────────────────────────────────────
+      // The boot animation + startup chime play ONLY on the first open of the
+      // app session. Opening a sub-app (Heavy Guard / agents) and coming back
+      // reloads index.html, which used to replay the whole veil + sound every
+      // single time. sessionStorage persists across those same-tab navigations
+      // but is cleared when the app is fully closed — so a return within the
+      // same session reveals instantly and silently (no chime, no re-init
+      // theatre), exactly "boot once until you fully close the main app".
+      var __sessBooted=false;
+      try{ __sessBooted=sessionStorage.getItem('alpha_session_booted')==='1'; }catch(e){}
+      try{ sessionStorage.setItem('alpha_session_booted','1'); }catch(e){}
+      if(__sessBooted){ ov.parentNode&&ov.parentNode.removeChild(ov); revealApp(); return; }
+      // (No once-a-day gate anymore: the anthem video IS the loading screen
+      // on every fresh open — and per explicit owner request there is NO
+      // loader after it either ("מאתחל מערכת" is gone): the video hands off
+      // straight to the live dashboard, and any data still in flight simply
+      // fills the panels in as it lands. Same-session returns from sub-apps
+      // reveal instantly. The old alpha_intro_day flag is intentionally
+      // ignored.)
+      document.documentElement.classList.add('booting');   // hide app + welcome until reveal
+      var vid=document.getElementById('introVid'); var ended=false;
+      function revealApp(){
+        document.documentElement.classList.remove('booting');
+        document.body.classList.add('revealed');   // panels animate in — only now
+      }
+      function finish(waitReady){
+        if(ended) return; ended=true;
+        var go=function(){
+          revealApp();              // video → the live dashboard, nothing between
+          ov.classList.add('gone'); // fades out + pointer-events:none via CSS
+          var reaped=false;
+          var reap=function(){
+            if(reaped) return; reaped=true;
+            try{ if(vid) vid.pause(); }catch(e){}
+            try{ if(vid && vid.src && vid.src.indexOf('blob:')===0) URL.revokeObjectURL(vid.src); }catch(e){}
+            ov.parentNode && ov.parentNode.removeChild(ov);
+          };
+          if(vid && !vid.paused && !vid.muted && !vid.__skipped){
+            // The MUSIC rides over the reveal — it's the opening theme. The
+            // faded-out overlay (with the still-playing video inside) stays in
+            // the DOM until the song's own fade-out ends, then gets reaped.
+            vid.addEventListener('ended', reap, {once:true});
+            setTimeout(reap, 31000); // safety cap
+          } else {
+            setTimeout(reap, 800);
+          }
+        };
+        // Timed to the system: the clip ENDS on a frame that looks like the
+        // dashboard itself. If the app needs a moment longer than the 10s
+        // cinematic, HOLD that final frame (no loader, no cut) and reveal the
+        // instant the HUD is actually ready (window.__alphaReady, set by
+        // main.ts once live data settled). 15s cap so a hung connection can
+        // never trap the boot on a frozen frame.
+        if(waitReady && !window.__alphaReady){
+          var t0=performance.now();
+          (function hold(){
+            if(window.__alphaReady || performance.now()-t0>15000){ go(); return; }
+            setTimeout(hold, 80);
+          })();
+        } else { go(); }
+      }
+      // Fade+stop — the user asked OUT of the intro, sound included.
+      function silence(){
+        if(vid) vid.__skipped=true;
+        try{
+          var f=setInterval(function(){
+            if(!vid || vid.muted || vid.volume<=0.06){ clearInterval(f); if(vid) vid.pause(); return; }
+            vid.volume=Math.max(0,vid.volume-0.12);
+          },60);
+        }catch(e){}
+      }
+      function skip(){ silence(); finish(false); } // the user wants IN now — no ready-hold
+      document.getElementById('introSkip').addEventListener('click', skip);
+      // ── The owner's Suno anthem IS the loading screen ────────────────────
+      // Play WITH sound when the browser allows it; when autoplay-with-audio
+      // is blocked, keep rolling muted and surface a pulsing 🔊 button — the
+      // first tap anywhere unmutes without restarting.
+      var sndBtn=document.getElementById('introSound');
+      function unmute(){
+        if(!vid) return;
+        vid.muted=false; vid.volume=1;
+        if(sndBtn) sndBtn.hidden=true;
+      }
+      if(sndBtn) sndBtn.addEventListener('click', function(e){ e.stopPropagation(); unmute(); });
+      window.addEventListener('pointerdown', function(){ if(vid && vid.muted && !ended) unmute(); }, {once:true});
+      // bottom progress line — download progress first, then real playback
+      // progress once the clip is actually rolling (never a fake animation).
+      var bar=document.getElementById('introBar');
+      if(vid && bar){
+        vid.addEventListener('timeupdate', function(){
+          if(vid.duration) bar.style.width=Math.min(100,(vid.currentTime/vid.duration)*100)+'%';
+        });
+      }
+      // ── Stutter-proof playback: fetch the WHOLE clip into memory first ──
+      // The stall the owner hit on phone was mid-clip buffering underrun —
+      // canplaythrough only estimates buffer health, and that estimate is
+      // unreliable on cellular. Playing from a fully-downloaded blob makes a
+      // stall structurally impossible: there is no network in the loop once
+      // playback starts. A lighter, phone-sized encode (boot-intro-m.mp4,
+      // ~1.7MB vs 2.4MB) is used under the mobile breakpoint so the download
+      // itself finishes faster on cellular.
+      if(vid){
+        vid.loop=false;
+        vid.addEventListener('ended', function(){ finish(true); }, {once:true});
+        vid.addEventListener('error', function(){ finish(false); }, {once:true}); // no video to hold on → reveal now
+        var isPhone = matchMedia('(max-width: 820px)').matches;
+        var videoUrl = '/Alpha-new/' + (isPhone ? 'boot-intro-m.mp4' : 'boot-intro.mp4');
+        var started=false;
+        function playFrom(src){
+          if(started || ended) return; started=true;
+          vid.src = src;
+          vid.muted=false; vid.volume=1;
+          var pr=vid.play && vid.play();
+          if(pr && pr.catch) pr.catch(function(){
+            // autoplay with sound blocked → roll muted + offer one-tap sound
+            vid.muted=true;
+            if(sndBtn) sndBtn.hidden=false;
+            var p2=vid.play && vid.play();
+            if(p2 && p2.catch) p2.catch(function(){ finish(false); }); // video itself blocked → straight in
+          });
+          // The cinematic is 10s and ENDS on a frame that looks like the
+          // dashboard itself — so the reveal is a match-cut: play it through
+          // ('ended' → finish above) and land directly on the live app.
+          setTimeout(function(){ finish(true); }, 13000); // hard fallback from actual start — never get stuck
+        }
+        // Legacy streaming path — used only if the blob preload itself can't
+        // be attempted (no fetch support). Kept as a last-resort so old
+        // browsers still see SOMETHING rather than a blank boot.
+        function playStreaming(){
+          vid.addEventListener('canplaythrough', function(){ playFrom(videoUrl); }, {once:true});
+          setTimeout(function(){ playFrom(videoUrl); }, 1800);
+        }
+        if(!window.fetch){ playStreaming(); }
+        else {
+          var ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+          var DL_TIMEOUT = 12000;
+          var dlTimer = setTimeout(function(){
+            try{ ctrl && ctrl.abort(); }catch(e){}
+            // A connection too slow to finish a ~2MB fetch in 12s will stutter
+            // on streaming too — better a clean skip than a broken cinematic.
+            finish(false);
+          }, DL_TIMEOUT);
+          fetch(videoUrl, { signal: ctrl && ctrl.signal }).then(function(res){
+            if(!res.ok || !res.body){ throw new Error('bad response'); }
+            var total = +res.headers.get('content-length') || 0;
+            var reader = res.body.getReader();
+            var chunks = []; var received = 0;
+            function pump(){
+              return reader.read().then(function(step){
+                if(step.done){
+                  clearTimeout(dlTimer);
+                  var blob = new Blob(chunks, { type:'video/mp4' });
+                  var blobUrl = URL.createObjectURL(blob);
+                  playFrom(blobUrl);
+                  return;
+                }
+                chunks.push(step.value);
+                received += step.value.length;
+                if(total && bar) bar.style.width = Math.min(100, (received/total)*100) + '%';
+                return pump();
+              });
+            }
+            return pump();
+          }).catch(function(){
+            clearTimeout(dlTimer);
+            if(!started) playStreaming(); // fetch/stream unsupported mid-flight → degrade gracefully
+          });
+        }
+      } else { finish(false); }
+    })();
+  </script>
+  <div id="app"></div>
+</body>
+</html>

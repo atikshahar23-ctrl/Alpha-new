@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<script>
+/* Same cache/service-worker purge every standalone page carries — a stale
+   cached copy of this page would load an old JS bundle and make freshly
+   shipped fixes look broken on device. */
+(function(){
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});
+  }
+  if('caches' in window){
+    caches.keys().then(function(ks){ks.forEach(function(k){caches.delete(k);});}).catch(function(){});
+  }
+})();
+</script>
+
+<title>מנוע סומטי 🧠 · NEURO-SOMATIC</title>
+<meta name="theme-color" content="#020617" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- non-blocking: media=print keeps the webfonts off the critical path; onload swaps them in -->
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"></noscript>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #020617; }
+  /* back-to-Alpha pill — dark variant matching this app's slate theme */
+  #alphaHome { position: fixed; bottom: 12px; left: 12px; z-index: 90;
+    display: flex; align-items: center; gap: 6px; padding: 8px 13px;
+    font-size: 13px; font-weight: 700; color: #ffd166; text-decoration: none;
+    font-family: 'Rubik', system-ui, sans-serif;
+    border: 1px solid rgba(255,209,102,.4); border-radius: 999px; background: rgba(2,6,23,.8);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  #alphaHome:hover { border-color: #ffd166; }
+</style>
+<style>
+  /* smooth crossfade on same-origin navigation (ignored where unsupported) */
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
+</style>
+  <script type="module" crossorigin src="/Alpha-new/assets/neuro-m2BmsuAE.js"></script>
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/modulepreload-polyfill-DIrsccGL.js">
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/jsx-runtime-BeRM4PoA.js">
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/clock-Bnju1Twz.js">
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/zap-D_7J1mvH.js">
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/eye-Ck_yFm4q.js">
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/square-BO_aARxD.js">
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/settings-CSV7pyJQ.js">
+  <link rel="modulepreload" crossorigin href="/Alpha-new/assets/shield-D7UlRTnb.js">
+  <link rel="stylesheet" crossorigin href="/Alpha-new/assets/neuro-UBl-10XT.css">
+</head>
+<body>
+<a id="alphaHome" href="./" title="חזרה לאלפא">⌂ אלפא</a>
+<div id="root"></div>
+</body>
+</html>
